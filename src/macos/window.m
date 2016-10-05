@@ -1,13 +1,16 @@
 #import <Cocoa/Cocoa.h>
 #include <OpenGL/gl.h>
+
 #include <stdlib.h>
 #include <stdint.h>
+#include <unistd.h>
 
 #include <mach/mach_time.h>
 #include <dlfcn.h>
 #include <signal.h>
 
-//#include "game.h"
+#include "game.h"
+#include "assets.h"
 
 @interface MacOSAppDelegate : NSObject<NSApplicationDelegate, NSWindowDelegate>
 {
@@ -177,14 +180,9 @@ void MacOS_HandleEvents(void)
   }
 }
 
-void MacOS_Sleep(int ms)
+void macos_usleep(int microsecs)
 {
-    if (ms <= 0) {
-      return;
-    }
-
-    double sec = (double) ms / 1000.0;
-    [NSThread sleepForTimeInterval:sec];
+  usleep(microsecs);
 }
 
 typedef struct {
@@ -197,10 +195,10 @@ static GLuint texId = 0;
 
 static void DEBUG_DrawScene() {
   const static Vertex vertices[] = {
-      {{0.78125, 0.5859375}, {1, -1}},
-      {{0.78125, 0}, {1, 1}},
-      {{0, 0}, {-1, 1}},
-      {{0, 0.5859375}, {-1, -1}}
+      {{0.78125, 0}, {1, -1}},
+      {{0.78125, 0.5859375}, {1, 1}},
+      {{0, 0.5859375}, {-1, 1}},
+      {{0, 0}, {-1, -1}}
   };
   const static int indices[] = {0, 1, 2, 2, 3, 0};
 
@@ -233,7 +231,7 @@ static inline double mach_time_in_seconds(uint64_t interval)
   return (double) interval * (double)timebase.numer / (double)timebase.denom / 1e9;
 }
 
-static void (* draw_frame)(uint8_t *, int, int, int, int) = NULL;
+static DrawFrameFunc draw_frame = NULL;
 static bool shouldReloadDylib = false;
 static void *dylibHandle = NULL;
 
@@ -287,46 +285,71 @@ int main(int argc, char *argv[])
 
   srand(123);
 
-  void *framePixelData = calloc(1024*1024, 4); // width * height * RGBA
+  void *framePixelData = calloc(800*600, 4); // width * height * RGBA
 
   glActiveTexture(GL_TEXTURE0);
   glEnable(GL_TEXTURE_2D);
   glGenTextures(1, &texId);
   glBindTexture(GL_TEXTURE_2D, texId);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1024, 1024, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
   uint64_t start;
   uint64_t end;
   uint64_t elapsed;
 
-  start = mach_absolute_time();
-  gameRunning = true;
+  uint64_t teststart;
+  uint64_t testend;
 
   GLint swapInt = 0;
   [openGLContext setValues:&swapInt forParameter:NSOpenGLCPSwapInterval];
 
+  DrawingBuffer drawing_buffer;
+  drawing_buffer.pixels = framePixelData;
+  drawing_buffer.width = 800;
+  drawing_buffer.height = 600;
+  drawing_buffer.pitch = 800;
+  drawing_buffer.bits_per_pixel = 4;
+
+  GlobalState state;
+  state.platform_api.read_file_contents = macos_read_file_contents;
+
+  gameRunning = true;gameRunning = true;
+  start = mach_absolute_time();  
+
   while(gameRunning) {
     if (shouldReloadDylib) {
-      printf("Reloading dylib!\n");
       load_dylib();
     }
 
     MacOS_HandleEvents();
-    MacOS_Sleep(1);
 
     if (draw_frame) {
-      draw_frame(framePixelData, 800, 600, 1024, 4);
-      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1024, 1024, 0, GL_RGBA, GL_UNSIGNED_BYTE, framePixelData);
+      draw_frame(&state, &drawing_buffer);
+      glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 800, 600, GL_RGBA, GL_UNSIGNED_BYTE, framePixelData);
     }
 
     DEBUG_DrawScene();
-    [openGLContext flushBuffer];
 
+    teststart = mach_absolute_time();
+    uint64_t now = mach_absolute_time();
+    double targetMsPerFrame = 16.66666666666;
+    while ((targetMsPerFrame - (mach_time_in_seconds(now - start) * 1000.0)) > 0.0) {
+      now = mach_absolute_time();
+    }
+
+    // This code needs to be directly below busy loop / sleep to account for the entire frame worth of computations
     end = mach_absolute_time();
     elapsed = end - start;
     start = end;
 
+    testend = mach_absolute_time();
+    double waitMs = mach_time_in_seconds(testend - teststart) * 1000.0;
+    //printf("waited %2.6g\n", waitMs);
+
+    [openGLContext flushBuffer];
+
     double frameTime = mach_time_in_seconds(elapsed) * 1000.0;
-    //printf("%.4g ms\n", frameTime);
+    //printf("%.6g ms\n", frameTime);
   }
 
   return 0;

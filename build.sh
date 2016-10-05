@@ -31,9 +31,10 @@ function build_exe() {
   prepare
 
   EXE="evolve"
-  OBJS="$OBJDIR/window.o"
+  OBJS="$OBJDIR/window.o $OBJDIR/assets.o"
 
   $CC src/macos/window.m $CFLAGS -o $OBJDIR/window.o
+  $CC src/macos/assets.cpp $CFLAGS -o $OBJDIR/assets.o
   $CC -o $BINDIR/$EXE $OBJS $LIBS
 }
 

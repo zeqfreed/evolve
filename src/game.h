@@ -7,4 +7,28 @@
     #define C_LINKAGE extern
 #endif
 
-C_LINKAGE void draw_frame(uint8_t *pixels, int width, int height, int pitch, int bpp);
+typedef struct DrawingBuffer {
+  uint32_t width;
+  uint32_t height;
+  uint32_t pitch;
+  uint32_t bits_per_pixel;  
+  void *pixels;
+} DrawingBuffer;
+
+typedef struct FileContents {
+  uint32_t size;
+  void *bytes;
+} FileContents;
+
+typedef FileContents (* ReadFileContentsFunc)(char *);
+
+typedef struct PlatformAPI {
+  ReadFileContentsFunc read_file_contents;
+} PlatformAPI;
+
+
+typedef struct GlobalState {
+    PlatformAPI platform_api;
+} GlobalState;
+
+typedef void (* DrawFrameFunc)(GlobalState *state, DrawingBuffer *buffer);
