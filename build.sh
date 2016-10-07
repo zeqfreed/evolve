@@ -20,7 +20,7 @@ function prepare() {
 function build_renderer() {
   prepare
 
-  $CC src/renderer.cpp $CFLAGS -o $OBJDIR/renderer.o
+  $CC src/renderer/renderer.cpp $CFLAGS -o $OBJDIR/renderer.o
   libtool -macosx_version_min 10.11 -dynamic $OBJDIR/renderer.o -lSystem -o $OBJDIR/renderer.dylib
   cp $OBJDIR/renderer.dylib $BINDIR/renderer.dylib
 

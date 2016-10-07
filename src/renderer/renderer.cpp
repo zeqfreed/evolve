@@ -3,6 +3,7 @@
 #include <math.h>
 
 #include "game.h"
+#include "math.cpp"
 
 static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b)
 {
@@ -100,75 +101,11 @@ static void draw_line(DrawingBuffer *buffer, int32_t x0, int32_t y0, int32_t x1,
   }
 }
 
-typedef union Vec3f {
-  struct {
-    float x;
-    float y;
-    float z;
-  };
-
-  struct {
-    float r;
-    float g;
-    float b;
-  };
-
-  Vec3f cross(Vec3f v);
-  float dot(Vec3f v);
-  float length();
-  Vec3f normalized();
-} Vec3f;
-
 typedef struct Vertex {
   Vec3f pos;
   Vec3f color;
   Vec3f normal;
 } Vertex;
-
-
-inline Vec3f operator+(Vec3f a, Vec3f b)
-{
-  return (Vec3f){a.x + b.x, a.y + b.y, a.z + b.z};
-}
-
-inline Vec3f operator-(Vec3f a, Vec3f b)
-{
-  return (Vec3f){a.x - b.x, a.y - b.y, a.z - b.z};
-}
-
-inline Vec3f operator-(Vec3f a)
-{
-  return (Vec3f){-a.x, -a.y, -a.z};
-}
-
-inline Vec3f operator*(Vec3f v, float scalar)
-{
-  return (Vec3f){v.x * scalar, v.y * scalar, v.z * scalar};
-}
-
-inline Vec3f Vec3f::cross(Vec3f v)
-{
-  float nx = y * v.z - z * v.y;
-  float ny = z * v.x - x * v.z;
-  float nz = x * v.y - y * v.x;
-  return (Vec3f){nx, ny, nz};
-}
-
-inline float Vec3f::dot(Vec3f v)
-{
-  return x * v.x + y * v.y + z * v.z;
-}
-
-inline float Vec3f::length()
-{
-  return sqrt(x * x + y * y + z * z);
-}
-
-inline Vec3f Vec3f::normalized()
-{
-  float factor = 1.0 / this->length();
-  return (Vec3f){x *= factor, y *= factor, z *= factor};
-}
 
 inline static float edge_func(float x0, float y0, float x1, float y1)
 {
@@ -208,7 +145,7 @@ static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex 
   if (p1.y > maxy) { maxy = p1.y; }
   if (p2.y > maxy) { maxy = p2.y; }
 
-  // Flat shading
+  //Flat shading
   // Vec3f normal = ((p2 - p0).cross(p1 - p0)).normalized();
   // float intensity = normal.dot((Vec3f){0, 0, -1});
 
@@ -228,7 +165,7 @@ static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex 
         t1 /= area;
         t2 /= area;
 
-        Vec3f normal = -(v0->normal * t0 + v1->normal * t1 + v2->normal * t2);
+        Vec3f normal = v0->normal * t0 + v1->normal * t1 + v2->normal * t2;
         float intensity = normal.dot(light);
 
         Vec3f color = (Vec3f){v0->color.r * t0 + v1->color.r * t1 + v2->color.r * t2,
@@ -331,7 +268,7 @@ static void load_model(GlobalState *state, Model *model)
         }
         p += consumed;
 
-        model->normals[ni++] = (Vec3f){x, y, z};
+        model->normals[ni++] = (Vec3f){-x, -y, -z};
       }
     } else if (*p == 'f') {
       p++;
@@ -377,9 +314,9 @@ static void load_model(GlobalState *state, Model *model)
   }
 
   for (int i = 0; i < model->vcount; i++) {
-    model->vertices[i].x = model->vertices[i].x * scale * 400;
-    model->vertices[i].y = model->vertices[i].y * scale * 400;
-    model->vertices[i].z = model->vertices[i].z * scale * 400;
+    model->vertices[i].x = model->vertices[i].x * scale;
+    model->vertices[i].y = model->vertices[i].y * scale;
+    model->vertices[i].z = model->vertices[i].z * scale;
   }  
 }
 
@@ -401,49 +338,6 @@ static void clear_buffer(DrawingBuffer *buffer, uint32_t color)
   }  
 }
 
-typedef struct Mat33 {
-  float m[3][3];
-} Mat33;
-
-static Mat33 rotate_z(float angle)
-{
-  Mat33 result = {};
-
-  result.m[0][0] = cos(angle);
-  result.m[1][0] = sin(angle);
-  result.m[0][1] = -sin(angle);
-  result.m[1][1] = cos(angle);
-  result.m[2][2] = 1.0;
-
-  return result;
-}
-
-static Mat33 rotate_y(float angle)
-{
-  Mat33 result = {};
-
-  result.m[0][0] = cos(angle);
-  result.m[2][0] = -sin(angle);
-  result.m[0][2] = sin(angle);
-  result.m[2][2] = cos(angle);
-  result.m[1][1] = 1.0;
-
-  return result;
-}
-
-static Vec3f vec_mat_mul(Vec3f vec, Mat33 mat)
-{
-  Vec3f result = {};
-
-  result.x = vec.x * mat.m[0][0] + vec.y * mat.m[0][1] + vec.z * mat.m[0][2];
-  result.y = vec.x * mat.m[1][0] + vec.y * mat.m[1][1] + vec.z * mat.m[1][2];
-  result.z = vec.x * mat.m[2][0] + vec.y * mat.m[2][1] + vec.z * mat.m[2][2];
-
-  return result;
-}
-
-
-#define PI 3.1415926
 static float angle = 0;
 
 static void render_triangle(DrawingBuffer *buffer)
@@ -452,10 +346,10 @@ static void render_triangle(DrawingBuffer *buffer)
   Vec3f p1 = {100, -100, 0};
   Vec3f p2 = {0, 100, 0};
 
-  Mat33 mat = rotate_z(angle);
-  p0 = vec_mat_mul(p0, mat);
-  p1 = vec_mat_mul(p1, mat);
-  p2 = vec_mat_mul(p2, mat);
+  Mat44 mat = Mat44::rotate_z(angle);
+  p0 = p0 * mat;
+  p1 = p0 * mat;
+  p2 = p0 * mat;
 
   p0.x += 400;
   p0.y += 300;
@@ -485,7 +379,11 @@ static float hue = 0.0;
 
 static void render_model(DrawingBuffer *buffer)
 {
- Mat33 mat = rotate_y(angle);
+  Mat44 mat_rot = Mat44::rotate_y(angle);
+  Mat44 mat_trans = Mat44::translate(400, 300, 0);
+  Mat44 mat_scale = Mat44::scale(500, 500, 500);
+  Mat44 mat = mat_trans * mat_rot * mat_scale;
+
   angle += 0.005;
   if (angle > 2*PI) {
     angle -= 2*PI;
@@ -502,35 +400,29 @@ static void render_model(DrawingBuffer *buffer)
 
   clear_zbuffer();
 
-  Mat33 mat2 = rotate_y(-angle);
-  Vec3f light = vec_mat_mul((Vec3f){0, 0, -1}, mat2);
+  Mat44 light_mat = Mat44::rotate_y(-angle);
+  Vec3f light = (Vec3f){0, 0, -1} * light_mat;
 
-  Vec3f translate = {400, 300, 0};
+  Vec3f tr = {400, 300, 0};
 
   for (int fi = 0; fi < model.fcount; fi++) {
     int *face = model.faces[fi];
 
-    Vertex v0 = {};
-    Vertex v1 = {};
-    Vertex v2 = {};
+    Vertex v0;
+    Vertex v1;
+    Vertex v2;
 
+    v0.pos = model.vertices[face[0]] * mat;
     v0.color = color;
     v0.normal = model.normals[face[2]];
+
+    v1.pos = model.vertices[face[3]] * mat;
     v1.color = color;
     v1.normal = model.normals[face[5]];
+
+    v2.pos = model.vertices[face[6]] * mat;
     v2.color = color;
     v2.normal = model.normals[face[8]];
-
-    Vec3f p0 = model.vertices[face[0]];
-    Vec3f p1 = model.vertices[face[3]];
-    Vec3f p2 = model.vertices[face[6]];
-    p0 = vec_mat_mul(p0, mat);
-    p1 = vec_mat_mul(p1, mat);
-    p2 = vec_mat_mul(p2, mat);
-
-    v0.pos = p0 + translate;
-    v1.pos = p1 + translate;
-    v2.pos = p2 + translate;
 
     draw_triangle(buffer, &v0, &v1, &v2, light);
   }  
@@ -545,4 +437,6 @@ C_LINKAGE void draw_frame(GlobalState *state, DrawingBuffer *drawing_buffer)
   clear_buffer(drawing_buffer, BLACK);
   //render_triangle(drawing_buffer);
   render_model(drawing_buffer);
+
+
 }

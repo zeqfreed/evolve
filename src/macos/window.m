@@ -313,7 +313,7 @@ int main(int argc, char *argv[])
   GlobalState state;
   state.platform_api.read_file_contents = macos_read_file_contents;
 
-  gameRunning = true;gameRunning = true;
+  gameRunning = true;
   start = mach_absolute_time();  
 
   while(gameRunning) {
@@ -332,7 +332,7 @@ int main(int argc, char *argv[])
 
     teststart = mach_absolute_time();
     uint64_t now = mach_absolute_time();
-    double targetMsPerFrame = 16.66666666666;
+    double targetMsPerFrame = 33.333333333;
     while ((targetMsPerFrame - (mach_time_in_seconds(now - start) * 1000.0)) > 0.0) {
       now = mach_absolute_time();
     }
