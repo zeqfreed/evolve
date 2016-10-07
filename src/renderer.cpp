@@ -4,39 +4,39 @@
 
 #include "game.h"
 
-// static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b)
-// {
-//   h = fmod(h / 60.0, 6);
-//   float c = v * s;
-//   float x = c * (1 - fabs(fmod(h, 2) - 1));  
-//   float m = v - c;
+static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b)
+{
+  h = fmod(h / 60.0, 6);
+  float c = v * s;
+  float x = c * (1 - fabs(fmod(h, 2) - 1));  
+  float m = v - c;
 
-//   int hh = (int) h;
+  int hh = (int) h;
 
-//   *r = m;
-//   *g = m;
-//   *b = m;  
+  *r = m;
+  *g = m;
+  *b = m;  
   
-//   if (hh == 0) {
-//     *r += c;
-//     *g += x;
-//   } else if (hh == 1) {
-//     *r += x;
-//     *g += c;
-//   } else if (hh == 2) {
-//     *g += c;
-//     *b += x;
-//   } else if (hh == 3) {
-//     *g += x;
-//     *b += c;
-//   } else if (hh == 4) {
-//     *r += x;
-//     *b += c;
-//   } else if (hh == 5) {
-//     *r += c;
-//     *b += x;
-//   }
-// }
+  if (hh == 0) {
+    *r += c;
+    *g += x;
+  } else if (hh == 1) {
+    *r += x;
+    *g += c;
+  } else if (hh == 2) {
+    *g += c;
+    *b += x;
+  } else if (hh == 3) {
+    *g += x;
+    *b += c;
+  } else if (hh == 4) {
+    *r += x;
+    *b += c;
+  } else if (hh == 5) {
+    *r += c;
+    *b += x;
+  }
+}
 
 static inline void set_pixel(DrawingBuffer *buffer, int32_t x, int32_t y, uint32_t color)
 {
@@ -100,72 +100,157 @@ static void draw_line(DrawingBuffer *buffer, int32_t x0, int32_t y0, int32_t x1,
   }
 }
 
+typedef union Vec3f {
+  struct {
+    float x;
+    float y;
+    float z;
+  };
+
+  struct {
+    float r;
+    float g;
+    float b;
+  };
+
+  Vec3f cross(Vec3f v);
+  float dot(Vec3f v);
+  float length();
+  Vec3f normalized();
+} Vec3f;
+
 typedef struct Vertex {
-  float x;
-  float y;
-  float z;
-  float r;
-  float g;
-  float b;
-  float nx;
-  float ny;
-  float nz;
+  Vec3f pos;
+  Vec3f color;
+  Vec3f normal;
 } Vertex;
+
+
+inline Vec3f operator+(Vec3f a, Vec3f b)
+{
+  return (Vec3f){a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+inline Vec3f operator-(Vec3f a, Vec3f b)
+{
+  return (Vec3f){a.x - b.x, a.y - b.y, a.z - b.z};
+}
+
+inline Vec3f operator-(Vec3f a)
+{
+  return (Vec3f){-a.x, -a.y, -a.z};
+}
+
+inline Vec3f operator*(Vec3f v, float scalar)
+{
+  return (Vec3f){v.x * scalar, v.y * scalar, v.z * scalar};
+}
+
+inline Vec3f Vec3f::cross(Vec3f v)
+{
+  float nx = y * v.z - z * v.y;
+  float ny = z * v.x - x * v.z;
+  float nz = x * v.y - y * v.x;
+  return (Vec3f){nx, ny, nz};
+}
+
+inline float Vec3f::dot(Vec3f v)
+{
+  return x * v.x + y * v.y + z * v.z;
+}
+
+inline float Vec3f::length()
+{
+  return sqrt(x * x + y * y + z * z);
+}
+
+inline Vec3f Vec3f::normalized()
+{
+  float factor = 1.0 / this->length();
+  return (Vec3f){x *= factor, y *= factor, z *= factor};
+}
 
 inline static float edge_func(float x0, float y0, float x1, float y1)
 {
   return (x0 * y1) - (x1 * y0);
 }
 
+static float zbuffer[800][600];
+
+static void clear_zbuffer()
+{
+  for (int i = 0; i < 800; i++) {
+    for (int j = 0; j < 600; j++) {
+      zbuffer[i][j] = -1000000.0;
+    }
+  }
+}
+
 static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex *v2)
 {
-  int minx = v0->x;
-  if (v1->x < minx) { minx = v1->x; }
-  if (v2->x < minx) { minx = v2->x; }
+  Vec3f p0 = v0->pos;
+  Vec3f p1 = v1->pos;
+  Vec3f p2 = v2->pos;
 
-  int miny = v0->y;
-  if (v1->y < miny) { miny = v1->y; }
-  if (v2->y < miny) { miny = v2->y; }  
+  int minx = p0.x;
+  if (p1.x < minx) { minx = p1.x; }
+  if (p2.x < minx) { minx = p2.x; }
 
-  int maxx = v0->x;
-  if (v1->x > maxx) { maxx = v1->x; }
-  if (v2->x > maxx) { maxx = v2->x; }  
+  int miny = p0.y;
+  if (p1.y < miny) { miny = p1.y; }
+  if (p2.y < miny) { miny = p2.y; }  
 
-  int maxy = v0->y;
-  if (v1->y > maxy) { maxy = v1->y; }
-  if (v2->y > maxy) { maxy = v2->y; }
+  int maxx = p0.x;
+  if (p1.x > maxx) { maxx = p1.x; }
+  if (p2.x > maxx) { maxx = p2.x; }  
+
+  int maxy = p0.y;
+  if (p1.y > maxy) { maxy = p1.y; }
+  if (p2.y > maxy) { maxy = p2.y; }
+
+  // Flat shading
+  // Vec3f normal = ((p2 - p0).cross(p1 - p0)).normalized();
+  // float intensity = normal.dot((Vec3f){0, 0, -1});
 
   for (int j = miny; j <= maxy; j++) {
     for (int i = minx; i <= maxx; i++) {
       float tx = i + 0.5;
       float ty = j + 0.5;
 
-      float area = edge_func(v1->x - v0->x, v1->y - v0->y, v2->x - v1->x, v2->y - v1->y);
-      float t0 = edge_func(v2->x - v1->x, v2->y - v1->y, tx - v1->x, ty - v1->y);
-      float t1 = edge_func(v0->x - v2->x, v0->y - v2->y, tx - v2->x, ty - v2->y);
-      float t2 = edge_func(v1->x - v0->x, v1->y - v0->y, tx - v0->x, ty - v0->y);
-      if (t0 >= 0.0 && t1 >= 0.0 && t2 >= 0.0) {
+      float area = edge_func(p1.x - p0.x, p1.y - p0.y, p2.x - p1.x, p2.y - p1.y);
+      float t0 = edge_func(p2.x - p1.x, p2.y - p1.y, tx - p1.x, ty - p1.y);
+      float t1 = edge_func(p0.x - p2.x, p0.y - p2.y, tx - p2.x, ty - p2.y);
+      float t2 = edge_func(p1.x - p0.x, p1.y - p0.y, tx - p0.x, ty - p0.y);
+
+      if ((t0 >= 0.0 && t1 >= 0.0 && t2 >= 0.0) ||
+         (t0 <= 0.0 && t1 <= 0.0 && t2 <= 0.0)) {
         t0 /= area;
         t1 /= area;
         t2 /= area;
-        uint8_t r = 255.0 * (v0->r * t0 + v1->r * t1 + v2->r * t2);
-        uint8_t g = 255.0 * (v0->g * t0 + v1->g * t1 + v2->g * t2);
-        uint8_t b = 255.0 * (v0->b * t0 + v1->b * t1 + v2->b * t2);
-        set_pixel(buffer, i, j, 0xFF000000 | (r << 16) | (g << 8) | b);
+
+        Vec3f normal = -(v0->normal * t0 + v1->normal * t1 + v2->normal * t2);
+        float intensity = normal.dot((Vec3f){0, 0, -1});
+
+        Vec3f color = (Vec3f){v0->color.r * t0 + v1->color.r * t1 + v2->color.r * t2,
+                       v0->color.g * t0 + v1->color.g * t1 + v2->color.g * t2,
+                       v0->color.b * t0 + v1->color.b * t1 + v2->color.b * t2} * intensity;
+        
+        if (color.r < 0) { color.r = 0.0; }
+        if (color.g < 0) { color.g = 0.0; }
+        if (color.b < 0) { color.b = 0.0; }
+        uint8_t r = (uint8_t) (255.0 * color.r);
+        uint8_t g = (uint8_t) (255.0 * color.g);
+        uint8_t b = (uint8_t) (255.0 * color.b);
+
+        float zvalue = p0.z * t0 + p1.z * t1 + p2.z * t2;
+        if (zvalue > zbuffer[i][j]) {
+          zbuffer[i][j] = zvalue;
+          set_pixel(buffer, i, j, 0xFF000000 | (r << 16) | (g << 8) | b);
+        }
       }
     }
   }
 }
-
-static int32_t tx0 = 50;
-static int32_t tx1 = 400;
-static int32_t tx2 = 750;
-static int32_t ty0 = 50;
-static int32_t ty1 = 0;
-static int32_t ty2 = 0;
-static int32_t tv0 = 2.0;
-static int32_t tv1 = 4.0;
-static int32_t tv2 = 3.0;
 
 static bool initialized = false;
 
@@ -174,9 +259,9 @@ typedef struct Model {
   int tcount;
   int ncount;
   int fcount;
-  float vertices[2048][3];
+  Vec3f vertices[2048];
+  Vec3f normals[2048];
   float texture_coords[2048][3];
-  float normals[2048][3];
   int faces[4000][9];
 } Model;
 
@@ -194,6 +279,7 @@ static void load_model(GlobalState *state, Model *model)
 
   int vi = 0;
   int fi = 0;
+  int ni = 0;
 
   float minx = 0;
   float maxx = 0;
@@ -213,13 +299,12 @@ static void load_model(GlobalState *state, Model *model)
       p++;
       if (*p == ' ') {
         int consumed = 0;
-        sscanf(p, "%f %f %f%n", &x, &y, &z, &consumed);
+        if (sscanf(p, "%f %f %f%n", &x, &y, &z, &consumed) != 3) {
+          continue;
+        }
         p += consumed;
 
-        model->vertices[vi][0] = x;
-        model->vertices[vi][1] = y;
-        model->vertices[vi][2] = z;
-        vi++;
+        model->vertices[vi++] = (Vec3f){x, y, z};
 
         if (x < minx) {
           minx = x;
@@ -238,28 +323,38 @@ static void load_model(GlobalState *state, Model *model)
         } else if (z > maxz) {
           maxz = z;
         }        
+      } else if (*p == 'n') {
+        p++;
+        int consumed = 0;
+        if (sscanf(p, "%f %f %f%n", &x, &y, &z, &consumed) != 3) {
+          continue;
+        }
+        p += consumed;
+
+        model->normals[ni++] = (Vec3f){x, y, z};
       }
     } else if (*p == 'f') {
       p++;
 
       int vi0, ti0, ni0, vi1, ti1, ni1, vi2, ti2, ni2;
       int consumed = 0;
-      sscanf(p, "%d/%d/%d %d/%d/%d %d/%d/%d%n", &vi0, &ti0, &ni0, &vi1, &ti1, &ni1, &vi2, &ti2, &ni2, &consumed);
+      if (sscanf(p, "%d/%d/%d %d/%d/%d %d/%d/%d%n", &vi0, &ti0, &ni0, &vi1, &ti1, &ni1, &vi2, &ti2, &ni2, &consumed) != 9) {
+        continue;
+      }
       p += consumed;
 
-      model->faces[fi][0] = vi0;
-      model->faces[fi][1] = ti0;
-      model->faces[fi][2] = ni0;
+      int *face = model->faces[fi++];
+      face[0] = vi0 - 1;
+      face[1] = ti0 - 1;
+      face[2] = ni0 - 1;
 
-      model->faces[fi][3] = vi1;
-      model->faces[fi][4] = ti1;
-      model->faces[fi][5] = ni1;      
+      face[3] = vi1 - 1;
+      face[4] = ti1 - 1;
+      face[5] = ni1 - 1;
 
-      model->faces[fi][6] = vi2;
-      model->faces[fi][7] = ti2;
-      model->faces[fi][8] = ni2;
-
-      fi++;
+      face[6] = vi2 - 1;
+      face[7] = ti2 - 1;
+      face[8] = ni2 - 1;
     }
 
     p++;
@@ -267,7 +362,8 @@ static void load_model(GlobalState *state, Model *model)
 
   model->vcount = vi;
   model->fcount = fi;
-  printf("read %d vertices, %d faces\n", model->vcount, model->fcount);
+  model->ncount = ni;
+  printf("read %d vertices, %d faces, %d normals\n", model->vcount, model->fcount, model->ncount);
 
   float dx = maxx - minx;
   float dy = maxy - miny;
@@ -281,9 +377,9 @@ static void load_model(GlobalState *state, Model *model)
   }
 
   for (int i = 0; i < model->vcount; i++) {
-    model->vertices[i][0] = model->vertices[i][0] * scale * 400 + 400;
-    model->vertices[i][1] = model->vertices[i][1] * scale * 300 + 300;
-    model->vertices[i][2] = model->vertices[i][2] * scale;
+    model->vertices[i].x = model->vertices[i].x * scale * 400;
+    model->vertices[i].y = model->vertices[i].y * scale * 400;
+    model->vertices[i].z = model->vertices[i].z * scale * 400;
   }  
 }
 
@@ -305,6 +401,126 @@ static void clear_buffer(DrawingBuffer *buffer, uint32_t color)
   }  
 }
 
+typedef struct Mat33 {
+  float m[3][3];
+} Mat33;
+
+static Mat33 rotation_mat(float angle)
+{
+  Mat33 result = {};
+
+  result.m[0][0] = cos(angle);
+  result.m[1][0] = sin(angle);
+  result.m[0][1] = -sin(angle);
+  result.m[1][1] = cos(angle);
+  result.m[2][2] = 1.0;
+
+  return result;
+}
+
+static Vec3f vec_mat_mul(Vec3f vec, Mat33 mat)
+{
+  Vec3f result = {};
+
+  result.x = vec.x * mat.m[0][0] + vec.y * mat.m[0][1] + vec.z * mat.m[0][2];
+  result.y = vec.x * mat.m[1][0] + vec.y * mat.m[1][1] + vec.z * mat.m[1][2];
+  result.z = vec.x * mat.m[2][0] + vec.y * mat.m[2][1] + vec.z * mat.m[2][2];
+
+  return result;
+}
+
+
+#define PI 3.1415926
+static float angle = 0;
+
+static void render_triangle(DrawingBuffer *buffer)
+{
+  Vec3f p0 = {-100, -100, 0};
+  Vec3f p1 = {100, -100, 0};
+  Vec3f p2 = {0, 100, 0};
+
+  Mat33 mat = rotation_mat(angle);
+  p0 = vec_mat_mul(p0, mat);
+  p1 = vec_mat_mul(p1, mat);
+  p2 = vec_mat_mul(p2, mat);
+
+  p0.x += 400;
+  p0.y += 300;
+  p1.x += 400;
+  p1.y += 300;
+  p2.x += 400;
+  p2.y += 300;  
+
+  Vertex v0 = {p0, {1, 0, 0}};
+  Vertex v1 = {p1, {0, 1, 0}};
+  Vertex v2 = {p2, {0, 0, 1}};
+
+  clear_zbuffer();
+  draw_triangle(buffer, &v0, &v1, &v2);
+
+  angle += 0.005;
+  if (angle > 2*PI) {
+    angle -= 2*PI;
+  }  
+}
+
+static float hue = 0.0;
+
+#define ASSERT(x) if (!(x)) { printf("Assertion at %s, line %d failed: %s\n", __FILE__, __LINE__, #x); *((uint32_t *)1) = 0xDEADCAFE; }
+
+static void render_model(DrawingBuffer *buffer)
+{
+ Mat33 mat = rotation_mat(angle);
+  //angle += 0.005;
+  if (angle > 2*PI) {
+    angle -= 2*PI;
+  }
+
+  hue += 0.5;
+  if (hue > 360.0) {
+    hue -= 360.0;
+  }
+
+  float r, g, b;
+  hsv_to_rgb(hue, 1.0, 1.0, &r, &g, &b);
+  Vec3f color = {r, g, b};
+
+  clear_zbuffer();
+
+  for (int fi = 0; fi < model.fcount; fi++) {
+    int *face = model.faces[fi];
+
+    Vertex v0 = {};
+    Vertex v1 = {};
+    Vertex v2 = {};
+
+    v0.color = color;
+    v0.normal = model.normals[face[2]];
+    v1.color = color;
+    v1.normal = model.normals[face[5]];
+    v2.color = color;
+    v2.normal = model.normals[face[8]];
+
+    Vec3f p0 = model.vertices[face[0]];
+    Vec3f p1 = model.vertices[face[3]];
+    Vec3f p2 = model.vertices[face[6]];
+
+    v0.pos = vec_mat_mul(p0, mat);
+    v0.pos.x += 400;
+    v0.pos.y += 300;
+
+    v1.pos = vec_mat_mul(p1, mat);
+    v1.pos.x += 400;
+    v1.pos.y += 300;
+
+    v2.pos = vec_mat_mul(p2, mat);
+    v2.pos.x += 400;
+    v2.pos.y += 300;
+
+    draw_triangle(buffer, &v0, &v1, &v2);
+  }  
+}
+
 C_LINKAGE void draw_frame(GlobalState *state, DrawingBuffer *drawing_buffer)
 {
   if (!initialized) {
@@ -312,28 +528,6 @@ C_LINKAGE void draw_frame(GlobalState *state, DrawingBuffer *drawing_buffer)
   }
 
   clear_buffer(drawing_buffer, BLACK);
-
-  // Vertex v0 = {50, 50, 0, 1, 0, 0};
-  // Vertex v1 = {750, 50, 0, 0, 1, 0};
-  // Vertex v2 = {400, 550, 0, 0, 0, 1};
-  // draw_triangle(drawing_buffer, &v0, &v1, &v2);
-
-  for (int fi = 0; fi < model.fcount; fi++) {
-    int vi0 = model.faces[fi][0] - 1;
-    int vi1 = model.faces[fi][3] - 1;
-    int vi2 = model.faces[fi][6] - 1;
-
-    float *sv0 = model.vertices[vi0];
-    float *sv1 = model.vertices[vi1];
-    float *sv2 = model.vertices[vi2];
-
-    Vertex v0 = {sv0[0], sv0[1], sv0[2], 1, 0, 0};
-    Vertex v1 = {sv1[0], sv1[1], sv1[2], 0, 1, 0};
-    Vertex v2 = {sv2[0], sv2[1], sv2[2], 0, 0, 1};
-    draw_triangle(drawing_buffer, &v0, &v1, &v2);
-
-    // draw_line(drawing_buffer, model.vertices[vi0][0], model.vertices[vi0][1], model.vertices[vi1][0], model.vertices[vi1][1], WHITE);
-    // draw_line(drawing_buffer, model.vertices[vi1][0], model.vertices[vi1][1], model.vertices[vi2][0], model.vertices[vi2][1], WHITE);
-    // draw_line(drawing_buffer, model.vertices[vi2][0], model.vertices[vi2][1], model.vertices[vi0][0], model.vertices[vi0][1], WHITE);
-  }
+  //render_triangle(drawing_buffer);
+  render_model(drawing_buffer);
 }

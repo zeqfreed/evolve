@@ -4,7 +4,7 @@ OBJDIR="_build"
 BINDIR="bin"
 
 CC="clang"
-CFLAGS="-c -DMACOSX -Isrc"
+CFLAGS="-c -g -DMACOSX -Isrc"
 LIBS="-framework Cocoa -framework OpenGL"
 
 function prepare() {
