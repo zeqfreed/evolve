@@ -3,7 +3,11 @@
 #include <math.h>
 
 #include "game.h"
+
+#define ASSERT(x) if (!(x)) { printf("Assertion at %s, line %d failed: %s\n", __FILE__, __LINE__, #x); *((uint32_t *)1) = 0xDEADCAFE; }
+
 #include "math.cpp"
+#include "tga.cpp"
 
 static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b)
 {
@@ -105,6 +109,7 @@ typedef struct Vertex {
   Vec3f pos;
   Vec3f color;
   Vec3f normal;
+  Vec3f texture_coords;
 } Vertex;
 
 inline static float edge_func(float x0, float y0, float x1, float y1)
@@ -122,6 +127,8 @@ static void clear_zbuffer()
     }
   }
 }
+
+static TgaImage diffuseTexture;
 
 static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex *v2, Vec3f light)
 {
@@ -159,8 +166,8 @@ static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex 
       float t1 = edge_func(p0.x - p2.x, p0.y - p2.y, tx - p2.x, ty - p2.y);
       float t2 = edge_func(p1.x - p0.x, p1.y - p0.y, tx - p0.x, ty - p0.y);
 
-      if ((t0 >= 0.0 && t1 >= 0.0 && t2 >= 0.0) ||
-         (t0 <= 0.0 && t1 <= 0.0 && t2 <= 0.0)) {
+      if (t0 >= 0.0 && t1 >= 0.0 && t2 >= 0.0) {
+          //(t0 <= 0.0 && t1 <= 0.0 && t2 <= 0.0)) {
         t0 /= area;
         t1 /= area;
         t2 /= area;
@@ -168,9 +175,16 @@ static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex 
         Vec3f normal = v0->normal * t0 + v1->normal * t1 + v2->normal * t2;
         float intensity = normal.dot(light);
 
-        Vec3f color = (Vec3f){v0->color.r * t0 + v1->color.r * t1 + v2->color.r * t2,
+        Vec3f vcolor = (Vec3f){v0->color.r * t0 + v1->color.r * t1 + v2->color.r * t2,
                        v0->color.g * t0 + v1->color.g * t1 + v2->color.g * t2,
-                       v0->color.b * t0 + v1->color.b * t1 + v2->color.b * t2} * intensity;
+                       v0->color.b * t0 + v1->color.b * t1 + v2->color.b * t2};
+
+        Vec3f tex = v0->texture_coords * t0 + v1->texture_coords * t1 + v2->texture_coords * t2;
+        int texX = tex.x * diffuseTexture.width;
+        int texY = tex.y * diffuseTexture.height;
+
+        Vec3f tcolor = diffuseTexture.pixels[texY*diffuseTexture.width+texX];
+        Vec3f color = (Vec3f){vcolor.r * tcolor.r, vcolor.g * tcolor.g, vcolor.b * tcolor.b} * intensity;
         
         if (color.r < 0) { color.r = 0.0; }
         if (color.g < 0) { color.g = 0.0; }
@@ -198,25 +212,26 @@ typedef struct Model {
   int fcount;
   Vec3f vertices[2048];
   Vec3f normals[2048];
-  float texture_coords[2048][3];
+  Vec3f texture_coords[2048];
   int faces[4000][9];
 } Model;
 
 static Model model;
 
-static void load_model(GlobalState *state, Model *model)
+static void load_model(GlobalState *state, Model *model, char *filename)
 {
-  FileContents contents = state->platform_api.read_file_contents((char *) "data/boar.obj");
+  FileContents contents = state->platform_api.read_file_contents(filename);
   if (contents.size <= 0) {
     printf("Failed to load model\n");
     return;
   }
 
-  printf("Loaded %d bytes\n", contents.size);
+  printf("Read model file of %d bytes\n", contents.size);
 
   int vi = 0;
   int fi = 0;
   int ni = 0;
+  int ti = 0;
 
   float minx = 0;
   float maxx = 0;
@@ -228,9 +243,9 @@ static void load_model(GlobalState *state, Model *model)
   char *p = (char *) contents.bytes;
   while(p < (char *) contents.bytes + contents.size) {
 
-    float x;
-    float y;
-    float z;
+    float x = 0;
+    float y = 0;
+    float z = 0;
 
     if (*p == 'v') {
       p++;
@@ -269,6 +284,15 @@ static void load_model(GlobalState *state, Model *model)
         p += consumed;
 
         model->normals[ni++] = (Vec3f){-x, -y, -z};
+      } else if (*p == 't') {
+        p++;
+        int consumed = 0;
+        if (sscanf(p, "%f %f %f%n", &x, &y, &z, &consumed) < 2) {
+          continue;
+        }
+        p += consumed;
+
+        model->texture_coords[ti++] = (Vec3f){x, y, z};
       }
     } else if (*p == 'f') {
       p++;
@@ -300,7 +324,8 @@ static void load_model(GlobalState *state, Model *model)
   model->vcount = vi;
   model->fcount = fi;
   model->ncount = ni;
-  printf("read %d vertices, %d faces, %d normals\n", model->vcount, model->fcount, model->ncount);
+  model->tcount = ti;
+  printf("read %d vertices, %d texture coords, %d normals, %d faces\n", model->vcount, model->tcount, model->ncount, model->fcount);
 
   float dx = maxx - minx;
   float dy = maxy - miny;
@@ -320,10 +345,23 @@ static void load_model(GlobalState *state, Model *model)
   }  
 }
 
+static void load_texture(GlobalState *state, char *filename)
+{
+  FileContents contents = state->platform_api.read_file_contents(filename);
+  if (contents.size <= 0) {
+    printf("Failed to load texture\n");
+    return;
+  }
+
+  printf("Read texture file of %d bytes\n", contents.size);
+  tga_read_image(contents.bytes, contents.size, &diffuseTexture);
+}
+
 static void initialize(GlobalState *state)
 {
   initialized = true;
-  load_model(state, &model);
+  load_model(state, &model, (char *) "data/rabbit/rabbit.obj");
+  load_texture(state, (char *) "data/rabbit/diffuse.tga");
 }
 
 #define WHITE 0xFFFFFFFF
@@ -346,21 +384,20 @@ static void render_triangle(DrawingBuffer *buffer)
   Vec3f p1 = {100, -100, 0};
   Vec3f p2 = {0, 100, 0};
 
-  Mat44 mat = Mat44::rotate_z(angle);
-  p0 = p0 * mat;
-  p1 = p0 * mat;
-  p2 = p0 * mat;
+  Mat44 mat_rot = Mat44::rotate_z(angle);
+  Mat44 mat_trans = Mat44::translate(400, 300, 0);
+  p0 = p0 * mat_trans; // * mat_rot;
+  p1 = p1 * mat_trans; // * mat_rot;
+  p2 = p2 * mat_trans; // * mat_rot;
 
-  p0.x += 400;
-  p0.y += 300;
-  p1.x += 400;
-  p1.y += 300;
-  p2.x += 400;
-  p2.y += 300;  
+  Vec3f red = {1, 0, 0};
+  Vec3f green = {0, 1, 0};
+  Vec3f blue = {0, 0, 1};
+  Vec3f white = {1, 1, 1};
 
-  Vertex v0 = {p0, {1, 0, 0}};
-  Vertex v1 = {p1, {0, 1, 0}};
-  Vertex v2 = {p2, {0, 0, 1}};
+  Vertex v0 = {p0, white, {0, 0, 1}, {0, 0, 0}};
+  Vertex v1 = {p1, white, {0, 0, 1}, {1, 0, 0}};
+  Vertex v2 = {p2, white, {0, 0, 1}, {0, 1, 0}};
 
   Vec3f light = {0, 0, -1};
 
@@ -375,12 +412,10 @@ static void render_triangle(DrawingBuffer *buffer)
 
 static float hue = 0.0;
 
-#define ASSERT(x) if (!(x)) { printf("Assertion at %s, line %d failed: %s\n", __FILE__, __LINE__, #x); *((uint32_t *)1) = 0xDEADCAFE; }
-
 static void render_model(DrawingBuffer *buffer)
 {
   Mat44 mat_rot = Mat44::rotate_y(angle);
-  Mat44 mat_trans = Mat44::translate(400, 300, 0);
+  Mat44 mat_trans = Mat44::translate(400, 100, 0);
   Mat44 mat_scale = Mat44::scale(500, 500, 500);
   Mat44 mat = mat_trans * mat_rot * mat_scale;
 
@@ -396,7 +431,7 @@ static void render_model(DrawingBuffer *buffer)
 
   float r, g, b;
   hsv_to_rgb(hue, 1.0, 1.0, &r, &g, &b);
-  Vec3f color = {r, g, b};
+  Vec3f color = {1, 1, 1}; //{r, g, b};
 
   clear_zbuffer();
 
@@ -412,16 +447,20 @@ static void render_model(DrawingBuffer *buffer)
     Vertex v1;
     Vertex v2;
 
-    v0.pos = model.vertices[face[0]] * mat;
     v0.color = color;
+    v1.color = color;
+    v2.color = color;
+
+    v0.pos = model.vertices[face[0]] * mat;
+    v0.texture_coords = model.texture_coords[face[1]];
     v0.normal = model.normals[face[2]];
 
     v1.pos = model.vertices[face[3]] * mat;
-    v1.color = color;
+    v1.texture_coords = model.texture_coords[face[4]];
     v1.normal = model.normals[face[5]];
 
     v2.pos = model.vertices[face[6]] * mat;
-    v2.color = color;
+    v2.texture_coords = model.texture_coords[face[7]];
     v2.normal = model.normals[face[8]];
 
     draw_triangle(buffer, &v0, &v1, &v2, light);
