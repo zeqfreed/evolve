@@ -45,10 +45,6 @@ static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b)
 
 static inline void set_pixel(DrawingBuffer *buffer, int32_t x, int32_t y, uint32_t color)
 {
-  if ((x < 0) || (y < 0) || (x > buffer->width) || (y > buffer->height)) {
-    return;
-  }
-
   int idx = (y * buffer->pitch + x) * buffer->bits_per_pixel;
   *((uint32_t *) &((uint8_t *)buffer->pixels)[idx]) = color;
 }
@@ -152,11 +148,27 @@ static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex 
   if (p1.y > maxy) { maxy = p1.y; }
   if (p2.y > maxy) { maxy = p2.y; }
 
+
+  // Clip bounding rect to buffer rect
+  if (minx < 0) { minx = 0; }
+  if (miny < 0) { miny = 0; }
+  if (maxx > buffer->width - 1) { maxx = buffer->width - 1; }
+  if (maxy > buffer->height - 1) { maxy = buffer->height - 1; }
+
   //Flat shading
   // Vec3f normal = ((p2 - p0).cross(p1 - p0)).normalized();
   // float intensity = normal.dot((Vec3f){0, 0, -1});
 
+  // Backface culling
+  Vec3f face_normal = ((p2 - p0).cross(p1 - p0)).normalized();
+  float face_visibility = face_normal.dot((Vec3f){0,0,-1});
+  if (face_visibility < 0.0) {
+    return;
+  }
+
   for (int j = miny; j <= maxy; j++) {
+    bool inside = false;
+
     for (int i = minx; i <= maxx; i++) {
       float tx = i + 0.5;
       float ty = j + 0.5;
@@ -167,6 +179,8 @@ static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex 
       float t2 = edge_func(p1.x - p0.x, p1.y - p0.y, tx - p0.x, ty - p0.y);
 
       if (t0 >= 0.0 && t1 >= 0.0 && t2 >= 0.0) {
+        inside = true;
+
           //(t0 <= 0.0 && t1 <= 0.0 && t2 <= 0.0)) {
         t0 /= area;
         t1 /= area;
@@ -197,6 +211,10 @@ static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex 
         if (zvalue > zbuffer[i][j]) {
           zbuffer[i][j] = zvalue;
           set_pixel(buffer, i, j, 0xFF000000 | (r << 16) | (g << 8) | b);
+        }
+      } else {
+        if (inside) {
+          break;
         }
       }
     }
