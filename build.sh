@@ -22,6 +22,7 @@ function build_renderer() {
 
   $CC src/renderer/renderer.cpp $CFLAGS -o $OBJDIR/renderer.o
   libtool -macosx_version_min 10.11 -dynamic $OBJDIR/renderer.o -lSystem -o $OBJDIR/renderer.dylib
+  result=$?
   cp $OBJDIR/renderer.dylib $BINDIR/renderer.dylib
 
   killall -USR1 evolve
@@ -36,6 +37,8 @@ function build_exe() {
   $CC src/macos/window.m $CFLAGS -o $OBJDIR/window.o
   $CC src/macos/assets.cpp $CFLAGS -o $OBJDIR/assets.o
   $CC -o $BINDIR/$EXE $OBJS $LIBS
+
+  return $?
 }
 
 function build_all() {
@@ -49,3 +52,5 @@ case "$1" in
     "renderer") build_renderer;;
     *) echo "Unknown target: $1";;
 esac
+
+exit $result
