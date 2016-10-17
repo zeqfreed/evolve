@@ -43,10 +43,25 @@ static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b)
   }
 }
 
-static inline void set_pixel(DrawingBuffer *buffer, int32_t x, int32_t y, uint32_t color)
+static inline void set_pixel(DrawingBuffer *buffer, int32_t x, int32_t y, Vec3f color)
 {
+  uint8_t r = (uint8_t) (255.0 * color.r);
+  uint8_t g = (uint8_t) (255.0 * color.g);
+  uint8_t b = (uint8_t) (255.0 * color.b);
+  uint32_t c = 0xFF000000 | (r << 16) | (g << 8) | b;
+
   int idx = (y * buffer->pitch + x) * buffer->bits_per_pixel;
-  *((uint32_t *) &((uint8_t *)buffer->pixels)[idx]) = color;
+  *((uint32_t *) &((uint8_t *)buffer->pixels)[idx]) = c;
+}
+
+static inline void set_pixel_safe(DrawingBuffer *buffer, int32_t x, int32_t y, Vec3f color)
+{
+  if (x < 0) { return; }
+  if (y < 0) { return; }
+  if (x >= buffer->width) { return; }
+  if (y >= buffer->height) { return; }
+
+  set_pixel(buffer, x, y, color);
 }
 
 static inline int32_t abs(int32_t v)
@@ -54,7 +69,7 @@ static inline int32_t abs(int32_t v)
   return v > 0.0 ? v : -v;
 }
 
-static void draw_line(DrawingBuffer *buffer, int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color)
+static void draw_line(DrawingBuffer *buffer, int32_t x0, int32_t y0, int32_t x1, int32_t y1, Vec3f color)
 {
   int32_t t;
   bool transposed = abs(y1-y0) > abs(x1-x0);
@@ -88,9 +103,9 @@ static void draw_line(DrawingBuffer *buffer, int32_t x0, int32_t y0, int32_t x1,
 
   for (int32_t x = x0; x <= x1; x++) {
     if (transposed) {
-      set_pixel(buffer, y, x, color);
+      set_pixel_safe(buffer, y, x, color);
     } else {
-      set_pixel(buffer, x, y, color);
+      set_pixel_safe(buffer, x, y, color);
     }
 
     error += slope;
@@ -181,7 +196,6 @@ static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex 
       if (t0 >= 0.0 && t1 >= 0.0 && t2 >= 0.0) {
         inside = true;
 
-          //(t0 <= 0.0 && t1 <= 0.0 && t2 <= 0.0)) {
         t0 /= area;
         t1 /= area;
         t2 /= area;
@@ -203,14 +217,11 @@ static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex 
         if (color.r < 0) { color.r = 0.0; }
         if (color.g < 0) { color.g = 0.0; }
         if (color.b < 0) { color.b = 0.0; }
-        uint8_t r = (uint8_t) (255.0 * color.r);
-        uint8_t g = (uint8_t) (255.0 * color.g);
-        uint8_t b = (uint8_t) (255.0 * color.b);
 
         float zvalue = p0.z * t0 + p1.z * t1 + p2.z * t2;
         if (zvalue > zbuffer[i][j]) {
           zbuffer[i][j] = zvalue;
-          set_pixel(buffer, i, j, 0xFF000000 | (r << 16) | (g << 8) | b);
+          set_pixel(buffer, i, j, color);
         }
       } else {
         if (inside) {
@@ -257,6 +268,9 @@ static void load_model(GlobalState *state, Model *model, char *filename)
   float maxy = 0;
   float minz = 0;
   float maxz = 0;  
+  float accx = 0.0;
+  float accy = 0.0;
+  float accz = 0.0;
 
   char *p = (char *) contents.bytes;
   while(p < (char *) contents.bytes + contents.size) {
@@ -275,6 +289,10 @@ static void load_model(GlobalState *state, Model *model, char *filename)
         p += consumed;
 
         model->vertices[vi++] = (Vec3f){x, y, z};
+
+        accx += x;
+        accy += y;
+        accz += z;
 
         if (x < minx) {
           minx = x;
@@ -345,6 +363,9 @@ static void load_model(GlobalState *state, Model *model, char *filename)
   model->tcount = ti;
   printf("read %d vertices, %d texture coords, %d normals, %d faces\n", model->vcount, model->tcount, model->ncount, model->fcount);
 
+  printf("Model bbox x in (%.2f .. %.2f); y in (%.2f .. %.2f); z in (%.2f .. %.2f)\n",
+         minx, maxx, miny, maxy, minz, maxz);
+
   float dx = maxx - minx;
   float dy = maxy - miny;
   float dz = maxz - minz;
@@ -356,10 +377,15 @@ static void load_model(GlobalState *state, Model *model, char *filename)
     scale = 1.0 / dz;
   }
 
+  float ox = accx / vi;
+  float oy = accy / vi;
+  float oz = accz / vi;
+  printf("Model center offset x: %.3f, y: %.3f, z: %.3f\n", ox, oy, oz);
+
   for (int i = 0; i < model->vcount; i++) {
-    model->vertices[i].x = model->vertices[i].x * scale;
-    model->vertices[i].y = model->vertices[i].y * scale;
-    model->vertices[i].z = model->vertices[i].z * scale;
+    model->vertices[i].x = model->vertices[i].x * scale - ox * scale;
+    model->vertices[i].y = model->vertices[i].y * scale - oy * scale;
+    model->vertices[i].z = model->vertices[i].z * scale - oz * scale;
   }  
 }
 
@@ -382,10 +408,10 @@ static void initialize(GlobalState *state)
   load_texture(state, (char *) "data/rabbit/diffuse.tga");
 }
 
-#define WHITE 0xFFFFFFFF
-#define BLACK 0xFF000000
+#define WHITE (Vec3f){1, 1, 1}
+#define BLACK (Vec3f){0, 0, 0}
 
-static void clear_buffer(DrawingBuffer *buffer, uint32_t color)
+static void clear_buffer(DrawingBuffer *buffer, Vec3f color)
 {
   for (int j = 0; j <= buffer->height; j++) {
     for (int i = 0; i <= buffer->width; i++) {
@@ -430,10 +456,26 @@ static void render_triangle(DrawingBuffer *buffer)
 
 static float hue = 0.0;
 
-static void render_model(DrawingBuffer *buffer)
+static inline Vec3f world_to_screen(Vec3f v, int screen_width, int screen_height)
+{
+  Vec3f result = {};
+
+  float screen_aspect = (float) screen_width / (float) screen_height;
+
+  float hw = screen_width / 2.0;
+  float hh = screen_height / 2.0;
+
+  result.x = v.x * hw / screen_aspect + hw;
+  result.y = v.y * hh + hh;
+  result.z = v.z;
+
+  return result;
+}
+
+static void render_model(DrawingBuffer *buffer, bool wireframe = false)
 {
   Mat44 mat_rot = Mat44::rotate_y(angle);
-  Mat44 mat_trans = Mat44::translate(400, 100, 0);
+  Mat44 mat_trans = Mat44::translate(0, 0, 0);
   Mat44 mat_scale = Mat44::scale(500, 500, 500);
   Mat44 mat = mat_trans * mat_rot * mat_scale;
 
@@ -465,23 +507,44 @@ static void render_model(DrawingBuffer *buffer)
     Vertex v1;
     Vertex v2;
 
+    Vec3f p0 = model.vertices[face[0]] * mat_rot * mat_trans;
+    Vec3f p1 = model.vertices[face[3]] * mat_rot * mat_trans;
+    Vec3f p2 = model.vertices[face[6]] * mat_rot * mat_trans;
+    
+    p0.x /= 1 - p0.z;
+    p0.y /= 1 - p0.z;
+    p1.x /= 1 - p1.z;
+    p1.y /= 1 - p1.z;
+    p2.x /= 1 - p2.z;
+    p2.y /= 1 - p2.z;
+
+    p0 = world_to_screen(p0, buffer->width, buffer->height);
+    p1 = world_to_screen(p1, buffer->width, buffer->height);
+    p2 = world_to_screen(p2, buffer->width, buffer->height);
+
     v0.color = color;
     v1.color = color;
     v2.color = color;
 
-    v0.pos = model.vertices[face[0]] * mat;
+    v0.pos = p0;
     v0.texture_coords = model.texture_coords[face[1]];
     v0.normal = model.normals[face[2]];
 
-    v1.pos = model.vertices[face[3]] * mat;
+    v1.pos = p1;
     v1.texture_coords = model.texture_coords[face[4]];
     v1.normal = model.normals[face[5]];
 
-    v2.pos = model.vertices[face[6]] * mat;
+    v2.pos = p2;
     v2.texture_coords = model.texture_coords[face[7]];
     v2.normal = model.normals[face[8]];
 
-    draw_triangle(buffer, &v0, &v1, &v2, light);
+    if (wireframe) {
+      draw_line(buffer, v0.pos.x, v0.pos.y, v1.pos.x, v1.pos.y, WHITE);
+      draw_line(buffer, v1.pos.x, v1.pos.y, v2.pos.x, v2.pos.y, WHITE);
+      draw_line(buffer, v2.pos.x, v2.pos.y, v0.pos.x, v0.pos.y, WHITE);
+    } else {
+      draw_triangle(buffer, &v0, &v1, &v2, light);
+    }
   }  
 }
 
@@ -493,7 +556,5 @@ C_LINKAGE void draw_frame(GlobalState *state, DrawingBuffer *drawing_buffer)
 
   clear_buffer(drawing_buffer, BLACK);
   //render_triangle(drawing_buffer);
-  render_model(drawing_buffer);
-
-
+  render_model(drawing_buffer, false);
 }
