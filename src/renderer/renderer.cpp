@@ -456,29 +456,8 @@ static void render_triangle(DrawingBuffer *buffer)
 
 static float hue = 0.0;
 
-static inline Vec3f world_to_screen(Vec3f v, int screen_width, int screen_height)
-{
-  Vec3f result = {};
-
-  float screen_aspect = (float) screen_width / (float) screen_height;
-
-  float hw = screen_width / 2.0;
-  float hh = screen_height / 2.0;
-
-  result.x = v.x * hw / screen_aspect + hw;
-  result.y = v.y * hh + hh;
-  result.z = v.z;
-
-  return result;
-}
-
 static void render_model(DrawingBuffer *buffer, bool wireframe = false)
 {
-  Mat44 mat_rot = Mat44::rotate_y(angle);
-  Mat44 mat_trans = Mat44::translate(0, 0, 0);
-  Mat44 mat_scale = Mat44::scale(500, 500, 500);
-  Mat44 mat = mat_trans * mat_rot * mat_scale;
-
   angle += 0.005;
   if (angle > 2*PI) {
     angle -= 2*PI;
@@ -498,7 +477,20 @@ static void render_model(DrawingBuffer *buffer, bool wireframe = false)
   Mat44 light_mat = Mat44::rotate_y(-angle);
   Vec3f light = (Vec3f){0, 0, -1} * light_mat;
 
-  Vec3f tr = {400, 300, 0};
+  Mat44 model_mat = Mat44::rotate_y(angle);
+
+  Mat44 camera_mat = Mat44::identity();
+  camera_mat.m[3][2] = -1;
+
+  Mat44 view_mat = Mat44::identity();
+  float hw = (float) buffer->width / 2.0;
+  float hh = (float) buffer->height / 2.0;
+  view_mat.m[0][0] = hw / (hw / hh);
+  view_mat.m[0][3] = hw;
+  view_mat.m[1][1] = hh;
+  view_mat.m[1][3] = hh;
+
+  Mat44 mat = view_mat * camera_mat * model_mat;
 
   for (int fi = 0; fi < model.fcount; fi++) {
     int *face = model.faces[fi];
@@ -507,34 +499,19 @@ static void render_model(DrawingBuffer *buffer, bool wireframe = false)
     Vertex v1;
     Vertex v2;
 
-    Vec3f p0 = model.vertices[face[0]] * mat_rot * mat_trans;
-    Vec3f p1 = model.vertices[face[3]] * mat_rot * mat_trans;
-    Vec3f p2 = model.vertices[face[6]] * mat_rot * mat_trans;
-    
-    p0.x /= 1 - p0.z;
-    p0.y /= 1 - p0.z;
-    p1.x /= 1 - p1.z;
-    p1.y /= 1 - p1.z;
-    p2.x /= 1 - p2.z;
-    p2.y /= 1 - p2.z;
-
-    p0 = world_to_screen(p0, buffer->width, buffer->height);
-    p1 = world_to_screen(p1, buffer->width, buffer->height);
-    p2 = world_to_screen(p2, buffer->width, buffer->height);
-
     v0.color = color;
     v1.color = color;
     v2.color = color;
 
-    v0.pos = p0;
+    v0.pos = model.vertices[face[0]] * mat;
     v0.texture_coords = model.texture_coords[face[1]];
     v0.normal = model.normals[face[2]];
 
-    v1.pos = p1;
+    v1.pos = model.vertices[face[3]] * mat;
     v1.texture_coords = model.texture_coords[face[4]];
     v1.normal = model.normals[face[5]];
 
-    v2.pos = p2;
+    v2.pos = model.vertices[face[6]] * mat;
     v2.texture_coords = model.texture_coords[face[7]];
     v2.normal = model.normals[face[8]];
 
