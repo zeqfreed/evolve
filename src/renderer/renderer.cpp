@@ -128,13 +128,14 @@ inline static float edge_func(float x0, float y0, float x1, float y1)
   return (x0 * y1) - (x1 * y0);
 }
 
-static float zbuffer[800][600];
+#define MAX_UINT32 0xFFFFFFFF
+static uint32_t zbuffer[800][600];
 
 static void clear_zbuffer()
 {
   for (int i = 0; i < 800; i++) {
     for (int j = 0; j < 600; j++) {
-      zbuffer[i][j] = -1000000.0;
+      zbuffer[i][j] = MAX_UINT32;
     }
   }
 }
@@ -170,16 +171,20 @@ static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex 
   if (maxx > buffer->width - 1) { maxx = buffer->width - 1; }
   if (maxy > buffer->height - 1) { maxy = buffer->height - 1; }
 
-  //Flat shading
-  // Vec3f normal = ((p2 - p0).cross(p1 - p0)).normalized();
-  // float intensity = normal.dot((Vec3f){0, 0, -1});
 
-  // Backface culling
-  Vec3f face_normal = ((p2 - p0).cross(p1 - p0)).normalized();
-  float face_visibility = face_normal.dot((Vec3f){0,0,-1});
-  if (face_visibility < 0.0) {
-    return;
-  }
+  // As of now x and y are in canvas space and z is in normalized space,
+  // thus we can't calculate the normal to the face
+  //
+  //Flat shading
+  //Vec3f normal = ((p2 - p0).cross(p1 -//  p0)).normalized();
+  // float intensity = normal.dot(light);
+
+  // // Backface culling
+  // Vec3f face_normal = ((p2 - p0).cross(p1 - p0)).normalized();
+  // float face_visibility = face_normal.dot((Vec3f){0,0,-1});
+  // if (face_visibility < 0.0) {
+  //   return;
+  // }
 
   for (int j = miny; j <= maxy; j++) {
     bool inside = false;
@@ -218,8 +223,8 @@ static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex 
         if (color.g < 0) { color.g = 0.0; }
         if (color.b < 0) { color.b = 0.0; }
 
-        float zvalue = p0.z * t0 + p1.z * t1 + p2.z * t2;
-        if (zvalue > zbuffer[i][j]) {
+        uint32_t zvalue = (p0.z * t0 + p1.z * t1 + p2.z * t2) * MAX_UINT32;
+        if (zvalue < zbuffer[i][j]) {
           zbuffer[i][j] = zvalue;
           set_pixel(buffer, i, j, color);
         }
@@ -377,10 +382,14 @@ static void load_model(GlobalState *state, Model *model, char *filename)
     scale = 1.0 / dz;
   }
 
+#if 0
   float ox = accx / vi;
   float oy = accy / vi;
   float oz = accz / vi;
   printf("Model center offset x: %.3f, y: %.3f, z: %.3f\n", ox, oy, oz);
+#else
+  float ox, oy, oz = 0.0;
+#endif
 
   for (int i = 0; i < model->vcount; i++) {
     model->vertices[i].x = model->vertices[i].x * scale - ox * scale;
@@ -456,6 +465,21 @@ static void render_triangle(DrawingBuffer *buffer)
 
 static float hue = 0.0;
 
+static Mat44 projection_matrix(float near, float far, float fov)
+{
+  Mat44 result = Mat44::identity();
+  result.m[2][2] = (-far / (far - near));
+  result.m[2][3] = (-(far * near) / (far - near));
+  result.m[3][2] = -1.0;
+  result.m[3][3] = 0.0;
+
+  float s = 1.0 / (tan(fov / 2.0 * PI / 180.0));
+  result.m[0][0] = s;
+  result.m[1][1] = s;
+
+  return result;
+}
+
 static void render_model(DrawingBuffer *buffer, bool wireframe = false)
 {
   angle += 0.005;
@@ -474,13 +498,8 @@ static void render_model(DrawingBuffer *buffer, bool wireframe = false)
 
   clear_zbuffer();
 
-  Mat44 light_mat = Mat44::rotate_y(-angle);
-  Vec3f light = (Vec3f){0, 0, -1} * light_mat;
-
-  Mat44 model_mat = Mat44::rotate_y(angle);
-
-  Mat44 camera_mat = Mat44::identity();
-  camera_mat.m[3][2] = -1;
+  Mat44 model_mat = Mat44::translate(0, -0.4, -1) * Mat44::rotate_y(angle);
+  Mat44 proj_mat = projection_matrix(0.1, 10, 90);
 
   Mat44 view_mat = Mat44::identity();
   float hw = (float) buffer->width / 2.0;
@@ -490,7 +509,10 @@ static void render_model(DrawingBuffer *buffer, bool wireframe = false)
   view_mat.m[1][1] = hh;
   view_mat.m[1][3] = hh;
 
-  Mat44 mat = view_mat * camera_mat * model_mat;
+  Mat44 mat = view_mat * proj_mat * model_mat;
+
+  Mat44 light_mat = Mat44::rotate_y(-angle);
+  Vec3f light = (Vec3f){0, 0, -1} * light_mat;
 
   for (int fi = 0; fi < model.fcount; fi++) {
     int *face = model.faces[fi];
