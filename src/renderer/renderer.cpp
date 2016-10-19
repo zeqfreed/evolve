@@ -511,8 +511,7 @@ static void render_model(DrawingBuffer *buffer, bool wireframe = false)
 
   Mat44 mat = view_mat * proj_mat * model_mat;
 
-  Mat44 light_mat = Mat44::rotate_y(-angle);
-  Vec3f light = (Vec3f){0, 0, -1} * light_mat;
+  Vec3f light = ((Vec3f){0, 0, -1}).normalized();
 
   for (int fi = 0; fi < model.fcount; fi++) {
     int *face = model.faces[fi];
@@ -527,15 +526,15 @@ static void render_model(DrawingBuffer *buffer, bool wireframe = false)
 
     v0.pos = model.vertices[face[0]] * mat;
     v0.texture_coords = model.texture_coords[face[1]];
-    v0.normal = model.normals[face[2]];
+    v0.normal = (model.normals[face[2]] * model_mat).normalized();
 
     v1.pos = model.vertices[face[3]] * mat;
     v1.texture_coords = model.texture_coords[face[4]];
-    v1.normal = model.normals[face[5]];
+    v1.normal = (model.normals[face[5]] * model_mat).normalized();
 
     v2.pos = model.vertices[face[6]] * mat;
     v2.texture_coords = model.texture_coords[face[7]];
-    v2.normal = model.normals[face[8]];
+    v2.normal = (model.normals[face[8]] * model_mat).normalized();
 
     if (wireframe) {
       draw_line(buffer, v0.pos.x, v0.pos.y, v1.pos.x, v1.pos.y, WHITE);
