@@ -6,6 +6,7 @@ The code is mostly written in C++, but only very limited subset of C++ features 
 codebase simple and clear. Strictly OSX related parts are written in Objective-C.
 
 Possibly outdated list of implemented features includes:
+
 1. Minimal MacOS platform layer:
    * Window creation
    * Fixed frame rate game loop
