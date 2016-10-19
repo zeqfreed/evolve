@@ -2,6 +2,7 @@
 
 OBJDIR="_build"
 BINDIR="bin"
+DATASYMLINK="${BINDIR}/data"
 
 CC="clang"
 CFLAGS="-c -g -DMACOSX -Isrc"
@@ -14,7 +15,11 @@ function prepare() {
 
   if [ ! -d $BINDIR ]; then
     mkdir -p $BINDIR;
-  fi  
+  fi
+
+  if [ ! -x $DATASYMLINK ]; then
+    ln -s ../data $DATASYMLINK
+  fi
 }
 
 function build_renderer() {
