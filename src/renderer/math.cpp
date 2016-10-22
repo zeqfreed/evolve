@@ -17,6 +17,9 @@ typedef struct Mat44 {
   static inline Mat44 rotate_z(float angle);
   static inline Mat44 rotate_y(float angle);
   static inline Mat44 translate(float x, float y, float z);
+  
+  void print();
+  Mat44 inverse();
 } Mat44;
 
 typedef union Vec3f {
@@ -185,3 +188,67 @@ inline Mat44 operator*(Mat44 m1, Mat44 m2)
 
     return result;
 }
+
+inline Mat44 operator*(Mat44 m, float factor)
+{
+  Mat44 result = {};
+  for (int row = 0; row < 4; row++) {
+    for (int col = 0; col < 4; col++) {
+      result.el[row][col] = m.el[row][col] * factor;
+    }
+  }
+
+  return result;
+}
+
+#define DET2(a, b, c, d) (a * d - b * c)
+#define DET3(a, b, c, d, e, f, g, h, i) (a * DET2(e, f, h, i) - b * DET2(d, f, g, i) + c * DET2(d, e, g, h))
+
+Mat44 Mat44::inverse()
+{
+  Mat44 result = Mat44::identity();
+
+  float deta = DET3(f, g, h, j, k, l, n, o, p);
+  float detb = DET3(e, g, h, i, k, l, m, o, p);
+  float detc = DET3(e, f, h, i, j, l, m, n, p);
+  float detd = DET3(e, f, g, i, j, k, m, n, o);
+
+  float det = a * deta - b * detb + c * detc - d * detd;
+
+  ASSERT(det != 0.0);
+
+  if (det == 0.0) {
+    return result;
+  }
+
+  result.a = deta;
+  result.e = -detb;
+  result.i = detc;
+  result.m = -detd;
+
+  result.b = -DET3(b, c, d, j, k, l, n, o, p);
+  result.f = DET3(a, c, d, i, k, l, m, o, p);
+  result.j = -DET3(a, b, d, i, j, l, m, n, p);
+  result.n = DET3(a, b, c, i, j, k, m, n, o);
+
+  result.c = DET3(b, c, d, f, g, h, n, o, p);
+  result.g = -DET3(a, c, d, e, g, h, m, o, p);
+  result.k = DET3(a, b, d, e, f, h, m, n, p);
+  result.o = -DET3(a, b, c, e, f, g, m, n, o);
+
+  result.d = -DET3(b, c, d, f, g, h, j, k, l);
+  result.h = DET3(a, c, d, e, g, h, i, k, l);
+  result.l = -DET3(a, b, d, e, f, h, i, j, l);
+  result.p = DET3(a, b, c, e, f, g, i, j, k);
+
+  result = result * (1.0 / det);
+  return result;
+}
+
+void Mat44::print()
+{
+  for (int row = 0; row < 4; row++) {
+    printf("%.5f %.5f %.5f %.5f\n", el[row][0], el[row][1], el[row][2], el[row][3]);
+  }
+}
+

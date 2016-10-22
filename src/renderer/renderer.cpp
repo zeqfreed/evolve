@@ -518,13 +518,16 @@ static void render_model(DrawingBuffer *buffer, bool wireframe = false)
 
   clear_zbuffer();
 
-  Mat44 model_mat = Mat44::rotate_y(angle) * Mat44::translate(0, -0.4, -1);
-  Mat44 proj_mat = projection_matrix(0.1, 10, 90);
-  Mat44 view_mat = viewport_matrix(buffer->width, buffer->height);
+  Mat44 cam_mat = Mat44::translate(0, 0, 1) * Mat44::rotate_y(angle);
+  Mat44 model_mat = Mat44::translate(0, -0.4, 0);
 
-  Mat44 mat = model_mat * proj_mat * view_mat;
+  Mat44 modelview_mat = model_mat * cam_mat.inverse();
+  Mat44 projection_mat = projection_matrix(0.1, 10, 90);
+  Mat44 viewport_mat = viewport_matrix(buffer->width, buffer->height);
 
-  Vec3f light = ((Vec3f){0, 0, -1}).normalized();
+  Mat44 mat = modelview_mat * projection_mat * viewport_mat;
+
+  Vec3f light = ((Vec3f){0, -1, 0}).normalized();
 
   for (int fi = 0; fi < model.fcount; fi++) {
     int *face = model.faces[fi];
