@@ -430,18 +430,52 @@ static void clear_buffer(DrawingBuffer *buffer, Vec3f color)
 }
 
 static float angle = 0;
+static float hue = 0.0;
+
+static Mat44 projection_matrix(float near, float far, float fov)
+{
+  Mat44 result = Mat44::identity();
+  result.k = (-far / (far - near));
+  result.o = (-(far * near) / (far - near));
+  result.l = -1.0;
+  result.p = 0.0;
+
+  float s = 1.0 / (tan(fov / 2.0 * PI / 180.0));
+  result.a = s;
+  result.f = s;
+
+  return result;
+}
+
+static Mat44 viewport_matrix(float width, float height)
+{
+  Mat44 result = Mat44::identity();
+
+  float hw = width / 2.0;
+  float hh = height / 2.0;
+
+  result.a = hw / (hw / hh);
+  result.m = hw;
+  result.f = hh;
+  result.n = hh;
+
+  return result;
+}
 
 static void render_triangle(DrawingBuffer *buffer)
 {
-  Vec3f p0 = {-100, -100, 0};
-  Vec3f p1 = {100, -100, 0};
-  Vec3f p2 = {0, 100, 0};
+  Vec3f p0 = {-0.866, -0.5, 0};
+  Vec3f p1 = {0.866, -0.5, 0};
+  Vec3f p2 = {0, 1, 0};
 
-  Mat44 mat_rot = Mat44::rotate_z(angle);
-  Mat44 mat_trans = Mat44::translate(400, 300, 0);
-  p0 = p0 * mat_trans; // * mat_rot;
-  p1 = p1 * mat_trans; // * mat_rot;
-  p2 = p2 * mat_trans; // * mat_rot;
+  Mat44 mat_trans = Mat44::translate(0, 0, -1);
+  Mat44 mat_rot = Mat44::rotate_y(angle);
+  Mat44 view_mat = viewport_matrix(buffer->width, buffer->height);
+  Mat44 proj_mat = projection_matrix(0.1, 10, 90);
+
+  p0 = p0 * mat_rot * mat_trans * proj_mat * view_mat;
+  p1 = p1 * mat_rot * mat_trans * proj_mat * view_mat;
+  p2 = p2 * mat_rot * mat_trans * proj_mat * view_mat;
 
   Vec3f red = {1, 0, 0};
   Vec3f green = {0, 1, 0};
@@ -451,8 +485,11 @@ static void render_triangle(DrawingBuffer *buffer)
   Vertex v0 = {p0, white, {0, 0, 1}, {0, 0, 0}};
   Vertex v1 = {p1, white, {0, 0, 1}, {1, 0, 0}};
   Vertex v2 = {p2, white, {0, 0, 1}, {0, 1, 0}};
+  v0.normal = v0.normal * mat_rot;
+  v1.normal = v1.normal * mat_rot;
+  v2.normal = v2.normal * mat_rot;
 
-  Vec3f light = {0, 0, -1};
+  Vec3f light = {0, 0, 1};
 
   clear_zbuffer();
   draw_triangle(buffer, &v0, &v1, &v2, light);
@@ -461,23 +498,6 @@ static void render_triangle(DrawingBuffer *buffer)
   if (angle > 2*PI) {
     angle -= 2*PI;
   }  
-}
-
-static float hue = 0.0;
-
-static Mat44 projection_matrix(float near, float far, float fov)
-{
-  Mat44 result = Mat44::identity();
-  result.m[2][2] = (-far / (far - near));
-  result.m[2][3] = (-(far * near) / (far - near));
-  result.m[3][2] = -1.0;
-  result.m[3][3] = 0.0;
-
-  float s = 1.0 / (tan(fov / 2.0 * PI / 180.0));
-  result.m[0][0] = s;
-  result.m[1][1] = s;
-
-  return result;
 }
 
 static void render_model(DrawingBuffer *buffer, bool wireframe = false)
@@ -498,18 +518,11 @@ static void render_model(DrawingBuffer *buffer, bool wireframe = false)
 
   clear_zbuffer();
 
-  Mat44 model_mat = Mat44::translate(0, -0.4, -1) * Mat44::rotate_y(angle);
+  Mat44 model_mat = Mat44::rotate_y(angle) * Mat44::translate(0, -0.4, -1);
   Mat44 proj_mat = projection_matrix(0.1, 10, 90);
+  Mat44 view_mat = viewport_matrix(buffer->width, buffer->height);
 
-  Mat44 view_mat = Mat44::identity();
-  float hw = (float) buffer->width / 2.0;
-  float hh = (float) buffer->height / 2.0;
-  view_mat.m[0][0] = hw / (hw / hh);
-  view_mat.m[0][3] = hw;
-  view_mat.m[1][1] = hh;
-  view_mat.m[1][3] = hh;
-
-  Mat44 mat = view_mat * proj_mat * model_mat;
+  Mat44 mat = model_mat * proj_mat * view_mat;
 
   Vec3f light = ((Vec3f){0, 0, -1}).normalized();
 
