@@ -123,30 +123,93 @@ typedef struct Vertex {
   Vec3f texture_coords;
 } Vertex;
 
+#define ZBUFFER_MAX 0xFFFFFFFF
+
+typedef struct Model {
+  int vcount;
+  int tcount;
+  int ncount;
+  int fcount;
+  Vec3f vertices[2048];
+  Vec3f normals[2048];
+  Vec3f texture_coords[2048];
+  int faces[4000][9];
+} Model;
+
+typedef struct RenderingContext {
+  TgaImage *diffuse;
+  Model *model;
+  uint32_t *zbuffer;
+  DrawingBuffer *target;
+  Vec3f light;
+  Mat44 modelview;
+  Mat44 projection;
+  Mat44 viewport;
+} RenderingContext;
+
+typedef struct Shader {
+  Vec3f positions[3];
+  Vec3f normals[3];
+  Vec3f texture_coords[3];
+  Vec3f colors[3];
+
+  void vertex(RenderingContext *ctx, int idx, Vec3f position, Vec3f normal, Vec3f texture, Vec3f color);
+  bool fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f *color);
+} Shader;
+
 inline static float edge_func(float x0, float y0, float x1, float y1)
 {
   return (x0 * y1) - (x1 * y0);
 }
 
-#define MAX_UINT32 0xFFFFFFFF
-static uint32_t zbuffer[800][600];
-
-static void clear_zbuffer()
+static void clear_zbuffer(RenderingContext *ctx)
 {
   for (int i = 0; i < 800; i++) {
     for (int j = 0; j < 600; j++) {
-      zbuffer[i][j] = MAX_UINT32;
+      ctx->zbuffer[j*800+i] = 0;
     }
   }
 }
 
-static TgaImage diffuseTexture;
-
-static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex *v2, Vec3f light)
+void Shader::vertex(RenderingContext *ctx, int idx, Vec3f position, Vec3f normal, Vec3f texture, Vec3f color)
 {
-  Vec3f p0 = v0->pos;
-  Vec3f p1 = v1->pos;
-  Vec3f p2 = v2->pos;
+  Mat44 mvp = ctx->modelview * ctx->projection;
+
+  positions[idx] = position * mvp;
+  normals[idx] = (normal * ctx->modelview).normalized(); // TODO: Calculate correct normal
+  texture_coords[idx] = texture;
+  colors[idx] = color;
+}
+
+
+bool Shader::fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f *color)
+{
+  Vec3f normal = normals[0] * t0 + normals[1] * t1 + normals[2] * t2;
+  float intensity = normal.dot(ctx->light);
+
+  Vec3f vcolor = (Vec3f){colors[0].r * t0 + colors[1].r * t1 + colors[2].r * t2,
+                         colors[0].g * t0 + colors[1].g * t1 + colors[2].g * t2,
+                         colors[0].b * t0 + colors[1].b * t1 + colors[2].b * t2};
+
+  Vec3f tex = texture_coords[0] * t0 + texture_coords[1] * t1 + texture_coords[2] * t2;
+  int texX = tex.x * ctx->diffuse->width;
+  int texY = tex.y * ctx->diffuse->height;
+
+  Vec3f tcolor = ctx->diffuse->pixels[texY*ctx->diffuse->width+texX];
+  *color = (Vec3f){vcolor.r * tcolor.r, vcolor.g * tcolor.g, vcolor.b * tcolor.b} * intensity;
+
+  if (color->r < 0) { color->r = 0.0; }
+  if (color->g < 0) { color->g = 0.0; }
+  if (color->b < 0) { color->b = 0.0; }
+        
+  return true;
+}
+
+static void draw_triangle(RenderingContext *ctx, Shader *shader)
+{
+  Vec3f p0 = shader->positions[0] * ctx->viewport;
+  Vec3f p1 = shader->positions[1] * ctx->viewport;
+  Vec3f p2 = shader->positions[2] * ctx->viewport;
 
   int minx = p0.x;
   if (p1.x < minx) { minx = p1.x; }
@@ -165,11 +228,14 @@ static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex 
   if (p2.y > maxy) { maxy = p2.y; }
 
 
+  int target_width = ctx->target->width;
+  int target_height = ctx->target->height;
+
   // Clip bounding rect to buffer rect
   if (minx < 0) { minx = 0; }
   if (miny < 0) { miny = 0; }
-  if (maxx > buffer->width - 1) { maxx = buffer->width - 1; }
-  if (maxy > buffer->height - 1) { maxy = buffer->height - 1; }
+  if (maxx > target_width - 1) { maxx = target_width - 1; }
+  if (maxy > target_height - 1) { maxy = target_height - 1; }
 
 
   // As of now x and y are in canvas space and z is in normalized space,
@@ -205,28 +271,14 @@ static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex 
         t1 /= area;
         t2 /= area;
 
-        Vec3f normal = v0->normal * t0 + v1->normal * t1 + v2->normal * t2;
-        float intensity = normal.dot(light);
+        uint32_t zvalue = (1 - (p0.z * t0 + p1.z * t1 + p2.z * t2)) * ZBUFFER_MAX;
+        if (zvalue > ctx->zbuffer[j*target_width+i]) {
+          ctx->zbuffer[j*target_width+i] = zvalue;
 
-        Vec3f vcolor = (Vec3f){v0->color.r * t0 + v1->color.r * t1 + v2->color.r * t2,
-                       v0->color.g * t0 + v1->color.g * t1 + v2->color.g * t2,
-                       v0->color.b * t0 + v1->color.b * t1 + v2->color.b * t2};
-
-        Vec3f tex = v0->texture_coords * t0 + v1->texture_coords * t1 + v2->texture_coords * t2;
-        int texX = tex.x * diffuseTexture.width;
-        int texY = tex.y * diffuseTexture.height;
-
-        Vec3f tcolor = diffuseTexture.pixels[texY*diffuseTexture.width+texX];
-        Vec3f color = (Vec3f){vcolor.r * tcolor.r, vcolor.g * tcolor.g, vcolor.b * tcolor.b} * intensity;
-        
-        if (color.r < 0) { color.r = 0.0; }
-        if (color.g < 0) { color.g = 0.0; }
-        if (color.b < 0) { color.b = 0.0; }
-
-        uint32_t zvalue = (p0.z * t0 + p1.z * t1 + p2.z * t2) * MAX_UINT32;
-        if (zvalue < zbuffer[i][j]) {
-          zbuffer[i][j] = zvalue;
-          set_pixel(buffer, i, j, color);
+          Vec3f color;
+          if (shader->fragment(ctx, t0, t1, t2, &color)) {
+            set_pixel(ctx->target, i, j, color);
+          }
         }
       } else {
         if (inside) {
@@ -239,20 +291,13 @@ static void draw_triangle(DrawingBuffer *buffer, Vertex *v0, Vertex *v1, Vertex 
 
 static bool initialized = false;
 
-typedef struct Model {
-  int vcount;
-  int tcount;
-  int ncount;
-  int fcount;
-  Vec3f vertices[2048];
-  Vec3f normals[2048];
-  Vec3f texture_coords[2048];
-  int faces[4000][9];
-} Model;
-
+static TgaImage diffuseTexture;
 static Model model;
+static uint32_t zbuffer[800][600];
+static RenderingContext rendering_context;
+static Shader shader;
 
-static void load_model(GlobalState *state, Model *model, char *filename)
+static void load_model(GlobalState *state, char *filename, Model *model)
 {
   FileContents contents = state->platform_api.read_file_contents(filename);
   if (contents.size <= 0) {
@@ -398,7 +443,7 @@ static void load_model(GlobalState *state, Model *model, char *filename)
   }  
 }
 
-static void load_texture(GlobalState *state, char *filename)
+static void load_texture(GlobalState *state, char *filename, TgaImage *target)
 {
   FileContents contents = state->platform_api.read_file_contents(filename);
   if (contents.size <= 0) {
@@ -407,14 +452,20 @@ static void load_texture(GlobalState *state, char *filename)
   }
 
   printf("Read texture file of %d bytes\n", contents.size);
-  tga_read_image(contents.bytes, contents.size, &diffuseTexture);
+  tga_read_image(contents.bytes, contents.size, target);
 }
 
 static void initialize(GlobalState *state)
 {
   initialized = true;
-  load_model(state, &model, (char *) "data/rabbit/rabbit.obj");
-  load_texture(state, (char *) "data/rabbit/diffuse.tga");
+
+  // TODO: Allocate dynamically
+  rendering_context.model = &model;
+  rendering_context.diffuse = &diffuseTexture;
+  rendering_context.zbuffer = (uint32_t *) &zbuffer;
+
+  load_model(state, (char *) "data/rabbit/rabbit.obj", rendering_context.model);
+  load_texture(state, (char *) "data/rabbit/diffuse.tga", rendering_context.diffuse);
 }
 
 #define WHITE (Vec3f){1, 1, 1}
@@ -491,8 +542,8 @@ static void render_triangle(DrawingBuffer *buffer)
 
   Vec3f light = {0, 0, 1};
 
-  clear_zbuffer();
-  draw_triangle(buffer, &v0, &v1, &v2, light);
+  clear_zbuffer(&rendering_context);
+  draw_triangle(&rendering_context, &shader);
 
   angle += 0.005;
   if (angle > 2*PI) {
@@ -507,58 +558,37 @@ static void render_model(DrawingBuffer *buffer, bool wireframe = false)
     angle -= 2*PI;
   }
 
-  hue += 0.5;
-  if (hue > 360.0) {
-    hue -= 360.0;
-  }
+  // hue += 0.5;
+  // if (hue > 360.0) {
+  //   hue -= 360.0;
+  // }
 
-  float r, g, b;
-  hsv_to_rgb(hue, 1.0, 1.0, &r, &g, &b);
+  // float r, g, b;
+  // hsv_to_rgb(hue, 1.0, 1.0, &r, &g, &b);
   Vec3f color = {1, 1, 1}; //{r, g, b};
-
-  clear_zbuffer();
 
   Mat44 cam_mat = Mat44::translate(0, 0, 1) * Mat44::rotate_y(angle);
   Mat44 model_mat = Mat44::translate(0, -0.4, 0);
 
-  Mat44 modelview_mat = model_mat * cam_mat.inverse();
-  Mat44 projection_mat = projection_matrix(0.1, 10, 90);
-  Mat44 viewport_mat = viewport_matrix(buffer->width, buffer->height);
+  rendering_context.modelview = model_mat * cam_mat.inverse();
+  rendering_context.projection = projection_matrix(0.1, 10, 90);
+  rendering_context.viewport = viewport_matrix(buffer->width, buffer->height);
+  rendering_context.light = ((Vec3f){0, -1, 0}).normalized();
 
-  Mat44 mat = modelview_mat * projection_mat * viewport_mat;
-
-  Vec3f light = ((Vec3f){0, -1, 0}).normalized();
+  clear_zbuffer(&rendering_context);
 
   for (int fi = 0; fi < model.fcount; fi++) {
     int *face = model.faces[fi];
 
-    Vertex v0;
-    Vertex v1;
-    Vertex v2;
+    for (int vi = 0; vi < 3; vi++) {
+      Vec3f position = model.vertices[face[vi*3]];
+      Vec3f texture = model.texture_coords[face[vi*3+1]];
+      Vec3f normal = model.normals[face[vi*3+2]];
 
-    v0.color = color;
-    v1.color = color;
-    v2.color = color;
-
-    v0.pos = model.vertices[face[0]] * mat;
-    v0.texture_coords = model.texture_coords[face[1]];
-    v0.normal = (model.normals[face[2]] * model_mat).normalized();
-
-    v1.pos = model.vertices[face[3]] * mat;
-    v1.texture_coords = model.texture_coords[face[4]];
-    v1.normal = (model.normals[face[5]] * model_mat).normalized();
-
-    v2.pos = model.vertices[face[6]] * mat;
-    v2.texture_coords = model.texture_coords[face[7]];
-    v2.normal = (model.normals[face[8]] * model_mat).normalized();
-
-    if (wireframe) {
-      draw_line(buffer, v0.pos.x, v0.pos.y, v1.pos.x, v1.pos.y, WHITE);
-      draw_line(buffer, v1.pos.x, v1.pos.y, v2.pos.x, v2.pos.y, WHITE);
-      draw_line(buffer, v2.pos.x, v2.pos.y, v0.pos.x, v0.pos.y, WHITE);
-    } else {
-      draw_triangle(buffer, &v0, &v1, &v2, light);
+      shader.vertex(&rendering_context, vi, position, normal, texture, color);
     }
+
+    draw_triangle(&rendering_context, &shader);
   }  
 }
 
@@ -566,6 +596,7 @@ C_LINKAGE void draw_frame(GlobalState *state, DrawingBuffer *drawing_buffer)
 {
   if (!initialized) {
     initialize(state);
+    rendering_context.target = drawing_buffer;
   }
 
   clear_buffer(drawing_buffer, BLACK);
