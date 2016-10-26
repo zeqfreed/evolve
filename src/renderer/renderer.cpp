@@ -62,21 +62,24 @@ typedef struct RenderingContext {
   uint32_t *zbuffer;
 
   TgaImage *diffuse;
-  Model *model;
 
+  bool use_texture;
   Vec3f clear_color;
   Vec3f light;
 
-  Mat44 modelview;
-  Mat44 projection;
-  Mat44 viewport;
-  Mat44 mvp;
+  Mat44 model_mat;
+  Mat44 view_mat;
+  Mat44 projection_mat;
+  Mat44 viewport_mat;
+
+  Mat44 modelview_mat;
+  Mat44 normal_mat;
 } RenderingContext;
 
 typedef struct Shader {
   Vec3f positions[3];
   Vec3f normals[3];
-  Vec3f texture_coords[3];
+  Vec3f uvzs[3];
   Vec3f colors[3];
 
   void vertex(RenderingContext *ctx, int idx, Vec3f position, Vec3f normal, Vec3f texture, Vec3f color);
@@ -90,28 +93,50 @@ inline static float edge_func(float x0, float y0, float x1, float y1)
 
 void Shader::vertex(RenderingContext *ctx, int idx, Vec3f position, Vec3f normal, Vec3f texture, Vec3f color)
 {
-  positions[idx] = position * ctx->mvp;
-  normals[idx] = (normal * ctx->modelview).normalized(); // TODO: Calculate correct normal
-  texture_coords[idx] = texture;
-  colors[idx] = color;
-}
+  Vec3f cam_pos = position * ctx->modelview_mat;
+  positions[idx] = cam_pos * ctx->projection_mat;
 
+  // Perspective correct attribute mapping
+  float iz = 1 / cam_pos.z;
+  uvzs[idx] = (Vec3f){texture.x * iz, texture.y * iz, iz};
+  colors[idx] = (Vec3f){color.r * iz, color.g * iz, color.b * iz};
+
+  normals[idx] = (normal * ctx->normal_mat).normalized();
+}
 
 bool Shader::fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f *color)
 {
   Vec3f normal = normals[0] * t0 + normals[1] * t1 + normals[2] * t2;
   float intensity = normal.dot(ctx->light);
 
-  Vec3f vcolor = (Vec3f){colors[0].r * t0 + colors[1].r * t1 + colors[2].r * t2,
-                         colors[0].g * t0 + colors[1].g * t1 + colors[2].g * t2,
-                         colors[0].b * t0 + colors[1].b * t1 + colors[2].b * t2};
+  if (ctx->use_texture) {
+    Vec3f uvz = uvzs[0] * t0 + uvzs[1] * t1 + uvzs[2] * t2;
+    float z = 1 / uvz.z;
+    int texX = uvz.x * z * ctx->diffuse->width;
+    int texY = uvz.y * z * ctx->diffuse->height;
 
-  Vec3f tex = texture_coords[0] * t0 + texture_coords[1] * t1 + texture_coords[2] * t2;
-  int texX = tex.x * ctx->diffuse->width;
-  int texY = tex.y * ctx->diffuse->height;
+    Vec3f tcolor = ctx->diffuse->pixels[texY*ctx->diffuse->width+texX];
+    *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b} * intensity;
+  } else {
+    Vec3f vcolor = (Vec3f){colors[0].r * t0 + colors[1].r * t1 + colors[2].r * t2,
+                           colors[0].g * t0 + colors[1].g * t1 + colors[2].g * t2,
+                           colors[0].b * t0 + colors[1].b * t1 + colors[2].b * t2};
 
-  Vec3f tcolor = ctx->diffuse->pixels[texY*ctx->diffuse->width+texX];
-  *color = (Vec3f){vcolor.r * tcolor.r, vcolor.g * tcolor.g, vcolor.b * tcolor.b} * intensity;
+    Vec3f uvz = uvzs[0] * t0 + uvzs[1] * t1 + uvzs[2] * t2;
+    float z = 1 / uvz.z;
+    int texX = uvz.x * z * 5;
+    int texY = uvz.y * z * 5;
+
+    Vec3f tcolor;
+    if (texX % 2 == texY % 2) {
+      tcolor = (Vec3f){1, 1, 1};
+    } else {
+      tcolor = (Vec3f){0, 0, 0};
+    }
+
+    vcolor = vcolor * z;
+    *color = (Vec3f){vcolor.r * tcolor.r, vcolor.g * tcolor.g, vcolor.b * tcolor.b} * intensity;
+  }
 
   if (color->r < 0) { color->r = 0.0; }
   if (color->g < 0) { color->g = 0.0; }
@@ -125,11 +150,17 @@ bool Shader::fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define MAX3(a, b, c) (MAX(MAX(a, b), c))
 
+static void precalculate_matrices(RenderingContext *ctx)
+{
+  ctx->normal_mat = ctx->model_mat.inverse().transposed();
+  ctx->modelview_mat = ctx->model_mat * ctx->view_mat;
+}
+
 static void draw_triangle(RenderingContext *ctx, Shader *shader)
 {
-  Vec3f p0 = shader->positions[0] * ctx->viewport;
-  Vec3f p1 = shader->positions[1] * ctx->viewport;
-  Vec3f p2 = shader->positions[2] * ctx->viewport;
+  Vec3f p0 = shader->positions[0] * ctx->viewport_mat;
+  Vec3f p1 = shader->positions[1] * ctx->viewport_mat;
+  Vec3f p2 = shader->positions[2] * ctx->viewport_mat;
 
   int minx = MIN3(p0.x, p1.x, p2.x);
   int miny = MIN3(p0.y, p1.y, p2.y);
@@ -267,6 +298,9 @@ static float hue = 0.0;
 
 #define WHITE (Vec3f){1, 1, 1}
 #define BLACK (Vec3f){0, 0, 0}
+#define RED (Vec3f){1, 0, 0}
+#define GREEN (Vec3f){0, 1, 0}
+#define BLUE (Vec3f){0, 0, 1}
 
 static void initialize(GlobalState *state, DrawingBuffer *buffer)
 {
@@ -276,26 +310,47 @@ static void initialize(GlobalState *state, DrawingBuffer *buffer)
   ctx->target = buffer;
   ctx->clear_color = BLACK;
 
-  ctx->viewport = viewport_matrix(buffer->width, buffer->height);
-  ctx->projection = projection_matrix(0.1, 10, 90);
+  ctx->model_mat = Mat44::identity();
+  ctx->viewport_mat = viewport_matrix(buffer->width, buffer->height);
+  ctx->projection_mat = projection_matrix(0.1, 10, 90);
   ctx->light = ((Vec3f){0, -1, 0}).normalized();
 
   // TODO: Allocate dynamically
-  ctx->model = &model;
   ctx->diffuse = &diffuseTexture;
   ctx->zbuffer = (uint32_t *) &zbuffer;
 
-  load_model(state, (char *) "data/rabbit/rabbit.obj", rendering_context.model);
+  load_model(state, (char *) "data/rabbit/rabbit.obj", &model);
   load_texture(state, (char *) "data/rabbit/diffuse.tga", rendering_context.diffuse);
+}
+
+static void render_floor(RenderingContext *ctx)
+{
+  ctx->model_mat = Mat44::translate(0, -0.4, 0);
+  ctx->use_texture = false;
+
+  Vec3f vertices[4][2] = {
+    {{-0.5, 0, 0.5}, {0, 0, 0}},
+    {{0.5, 0, 0.5}, {1, 0, 0}},
+    {{0.5, 0, -0.5}, {1, 1, 0}},
+    {{-0.5, 0, -0.5}, {0, 1, 0}}
+  };
+  Vec3f normal = {0, -1, 0};
+
+  precalculate_matrices(ctx);
+
+  shader.vertex(ctx, 0, vertices[0][0], normal, vertices[0][1], RED);
+  shader.vertex(ctx, 1, vertices[1][0], normal, vertices[1][1], GREEN);
+  shader.vertex(ctx, 2, vertices[2][0], normal, vertices[2][1], BLUE);
+  draw_triangle(ctx, &shader);
+
+  shader.vertex(ctx, 0, vertices[0][0], normal, vertices[0][1], RED);
+  shader.vertex(ctx, 1, vertices[2][0], normal, vertices[2][1], BLUE);
+  shader.vertex(ctx, 2, vertices[3][0], normal, vertices[3][1], WHITE);
+  draw_triangle(ctx, &shader);
 }
 
 static void render_model(RenderingContext *ctx, Model *model, bool wireframe = false)
 {
-  angle += 0.005;
-  if (angle > 2*PI) {
-    angle -= 2*PI;
-  }
-
   // hue += 0.5;
   // if (hue > 360.0) {
   //   hue -= 360.0;
@@ -305,11 +360,10 @@ static void render_model(RenderingContext *ctx, Model *model, bool wireframe = f
   // hsv_to_rgb(hue, 1.0, 1.0, &r, &g, &b);
   Vec3f color = {1, 1, 1}; //{r, g, b};
 
-  Mat44 cam_mat = Mat44::translate(0, 0, 1) * Mat44::rotate_y(angle);
-  Mat44 model_mat = Mat44::translate(0, -0.4, 0);
+  ctx->model_mat = Mat44::translate(0, -0.4, 0);
+  ctx->use_texture = true;
 
-  ctx->modelview = model_mat * cam_mat.inverse();
-  ctx->mvp = ctx->modelview * ctx->projection;
+  precalculate_matrices(ctx);
 
   for (int fi = 0; fi < model->fcount; fi++) {
     int *face = model->faces[fi];
@@ -332,8 +386,16 @@ C_LINKAGE void draw_frame(GlobalState *state, DrawingBuffer *drawing_buffer)
     initialize(state, drawing_buffer);
   }
 
+  angle += 0.005; // TODO: Use frame dt
+  if (angle > 2*PI) {
+    angle -= 2*PI;
+  }
+
+  rendering_context.view_mat = (Mat44::translate(0, 0, 1) * Mat44::rotate_y(angle)).inverse();
+
   clear_buffer(&rendering_context);
   clear_zbuffer(&rendering_context);
 
+  render_floor(&rendering_context);
   render_model(&rendering_context, &model);
 }

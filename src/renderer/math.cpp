@@ -16,10 +16,12 @@ typedef struct Mat44 {
   static inline Mat44 scale(float x, float y, float z);
   static inline Mat44 rotate_z(float angle);
   static inline Mat44 rotate_y(float angle);
+  static inline Mat44 rotate_x(float angle);
   static inline Mat44 translate(float x, float y, float z);
   
   void print();
   Mat44 inverse();
+  Mat44 transposed();
 } Mat44;
 
 typedef union Vec3f {
@@ -159,6 +161,20 @@ Mat44 Mat44::rotate_y(float angle)
   return result;
 }
 
+Mat44 Mat44::rotate_x(float angle)
+{
+ Mat44 result = {};
+
+  result.a = 1.0;
+  result.f = cos(angle);
+  result.g = -sin(angle);
+  result.j = sin(angle);
+  result.k = cos(angle);
+  result.p = 1.0;
+
+  return result;
+}
+
 Mat44 Mat44::translate(float x, float y, float z)
 {
     Mat44 result = {0};
@@ -215,10 +231,10 @@ Mat44 Mat44::inverse()
 
   float det = a * deta - b * detb + c * detc - d * detd;
 
-  ASSERT(det != 0.0);
-
   if (det == 0.0) {
-    return result;
+    this->print();
+    ASSERT(det != 0.0);
+    return *this;
   }
 
   result.a = deta;
@@ -242,6 +258,30 @@ Mat44 Mat44::inverse()
   result.p = DET3(a, b, c, e, f, g, i, j, k);
 
   result = result * (1.0 / det);
+  return result;
+}
+
+Mat44 Mat44::transposed()
+{
+  Mat44 result = {};
+  result.a = a;
+  result.f = f;
+  result.k = k;
+  result.p = p;
+
+  result.b = e;
+  result.c = i;
+  result.d = m;
+  result.e = b;
+  result.g = j;
+  result.h = n;
+  result.i = c;
+  result.j = g;
+  result.l = o;
+  result.m = d;
+  result.n = h;
+  result.o = l;
+
   return result;
 }
 
