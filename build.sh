@@ -4,8 +4,8 @@ OBJDIR="_build"
 BINDIR="bin"
 DATASYMLINK="${BINDIR}/data"
 
-CC="clang"
-CFLAGS="-c -Wall -Wno-missing-braces -g -DMACOSX -Isrc"
+CC="g++"
+CFLAGS="-c -Wall -Wno-missing-braces -g -gmodules -O0 -DMACOSX -Isrc"
 LIBS="-framework Cocoa -framework OpenGL"
 
 function prepare() {
@@ -29,7 +29,7 @@ function build_renderer() {
   result=$?
 
   if [ $result -eq 0 ]; then
-    libtool -macosx_version_min 10.11 -dynamic $OBJDIR/renderer.o -lSystem -o $OBJDIR/renderer.dylib
+    libtool -macosx_version_min 10.11 -dynamic $OBJDIR/renderer.o -lstdc++ -lSystem -o $OBJDIR/renderer.dylib
     result=$?
     cp $OBJDIR/renderer.dylib $BINDIR/renderer.dylib
   fi

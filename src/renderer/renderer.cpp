@@ -57,13 +57,19 @@ static inline void set_pixel(DrawingBuffer *buffer, int32_t x, int32_t y, Vec3f 
 
 #define ZBUFFER_MAX 0xFFFFFFFF
 
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#define MIN3(a, b, c) (MIN(MIN(a, b), c))
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#define MAX3(a, b, c) (MAX(MAX(a, b), c))
+
+#define CLAMP(val, min, max) (MAX(min, MIN(max, val)))
+
 typedef struct RenderingContext {
   DrawingBuffer *target;
   uint32_t *zbuffer;
 
   TgaImage *diffuse;
 
-  bool use_texture;
   Vec3f clear_color;
   Vec3f light;
 
@@ -76,48 +82,68 @@ typedef struct RenderingContext {
   Mat44 normal_mat;
 } RenderingContext;
 
-typedef struct Shader {
+struct IShader {
   Vec3f positions[3];
+
+  virtual ~IShader() {};
+  virtual void vertex(RenderingContext *ctx, int idx, Vec3f position, Vec3f normal, Vec3f texture, Vec3f color) = 0;
+  virtual bool fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f *color) = 0;
+};
+
+struct ModelShader : public IShader {
   Vec3f normals[3];
-  Vec3f uvzs[3];
-  Vec3f colors[3];
+  Vec3f uvs[3];
 
-  void vertex(RenderingContext *ctx, int idx, Vec3f position, Vec3f normal, Vec3f texture, Vec3f color);
-  bool fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f *color);
-} Shader;
+  void vertex(RenderingContext *ctx, int idx, Vec3f position, Vec3f normal, Vec3f texture, Vec3f color)
+  {
+    positions[idx] = position * ctx->modelview_mat * ctx->projection_mat;
+    uvs[idx] = (Vec3f){texture.x, texture.y, 0};
+    normals[idx] = (normal * ctx->normal_mat).normalized();
+  }
 
-inline static float edge_func(float x0, float y0, float x1, float y1)
-{
-  return (x0 * y1) - (x1 * y0);
-}
+  bool fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f *color)
+  {
+    Vec3f normal = normals[0] * t0 + normals[1] * t1 + normals[2] * t2;
+    float intensity = normal.dot(ctx->light);
 
-void Shader::vertex(RenderingContext *ctx, int idx, Vec3f position, Vec3f normal, Vec3f texture, Vec3f color)
-{
-  Vec3f cam_pos = position * ctx->modelview_mat;
-  positions[idx] = cam_pos * ctx->projection_mat;
-
-  // Perspective correct attribute mapping
-  float iz = 1 / cam_pos.z;
-  uvzs[idx] = (Vec3f){texture.x * iz, texture.y * iz, iz};
-  colors[idx] = (Vec3f){color.r * iz, color.g * iz, color.b * iz};
-
-  normals[idx] = (normal * ctx->normal_mat).normalized();
-}
-
-bool Shader::fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f *color)
-{
-  Vec3f normal = normals[0] * t0 + normals[1] * t1 + normals[2] * t2;
-  float intensity = normal.dot(ctx->light);
-
-  if (ctx->use_texture) {
-    Vec3f uvz = uvzs[0] * t0 + uvzs[1] * t1 + uvzs[2] * t2;
-    float z = 1 / uvz.z;
-    int texX = uvz.x * z * ctx->diffuse->width;
-    int texY = uvz.y * z * ctx->diffuse->height;
+    Vec3f uv = uvs[0] * t0 + uvs[1] * t1 + uvs[2] * t2;
+    int texX = uv.x * ctx->diffuse->width;
+    int texY = uv.y * ctx->diffuse->height;
 
     Vec3f tcolor = ctx->diffuse->pixels[texY*ctx->diffuse->width+texX];
     *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b} * intensity;
-  } else {
+
+    color->r = CLAMP(color->r, 0, 1);
+    color->g = CLAMP(color->g, 0, 1);
+    color->b = CLAMP(color->b, 0, 1);
+
+    return true;
+  }
+};
+
+struct FloorShader : public IShader {
+  Vec3f uvzs[3];
+  Vec3f colors[3];
+  Vec3f normals[3];
+
+  void vertex(RenderingContext *ctx, int idx, Vec3f position, Vec3f normal, Vec3f texture, Vec3f color)
+  {
+    Vec3f cam_pos = position * ctx->modelview_mat;
+    positions[idx] = cam_pos * ctx->projection_mat;
+
+    // Perspective correct attribute mapping
+    float iz = 1 / cam_pos.z;
+    uvzs[idx] = (Vec3f){texture.x * iz, texture.y * iz, iz};
+    colors[idx] = (Vec3f){color.r * iz, color.g * iz, color.b * iz};
+
+    normals[idx] = (normal * ctx->normal_mat).normalized();
+  }
+
+  bool fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f *color)
+  {
+    Vec3f normal = normals[0];
+    float intensity = normal.dot(ctx->light);
+
     Vec3f vcolor = (Vec3f){colors[0].r * t0 + colors[1].r * t1 + colors[2].r * t2,
                            colors[0].g * t0 + colors[1].g * t1 + colors[2].g * t2,
                            colors[0].b * t0 + colors[1].b * t1 + colors[2].b * t2};
@@ -128,6 +154,7 @@ bool Shader::fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f
     int texY = uvz.y * z * 5;
 
     Vec3f tcolor;
+
     if (texX % 2 == texY % 2) {
       tcolor = (Vec3f){1, 1, 1};
     } else {
@@ -136,19 +163,14 @@ bool Shader::fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f
 
     vcolor = vcolor * z;
     *color = (Vec3f){vcolor.r * tcolor.r, vcolor.g * tcolor.g, vcolor.b * tcolor.b} * intensity;
+
+    color->r = CLAMP(color->r, 0, 1);
+    color->g = CLAMP(color->g, 0, 1);
+    color->b = CLAMP(color->b, 0, 1);
+
+    return true;
   }
-
-  if (color->r < 0) { color->r = 0.0; }
-  if (color->g < 0) { color->g = 0.0; }
-  if (color->b < 0) { color->b = 0.0; }
-        
-  return true;
-}
-
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#define MIN3(a, b, c) (MIN(MIN(a, b), c))
-#define MAX(a, b) (((a) > (b)) ? (a) : (b))
-#define MAX3(a, b, c) (MAX(MAX(a, b), c))
+};
 
 static void precalculate_matrices(RenderingContext *ctx)
 {
@@ -156,7 +178,12 @@ static void precalculate_matrices(RenderingContext *ctx)
   ctx->modelview_mat = ctx->model_mat * ctx->view_mat;
 }
 
-static void draw_triangle(RenderingContext *ctx, Shader *shader)
+inline static float edge_func(float x0, float y0, float x1, float y1)
+{
+  return (x0 * y1) - (x1 * y0);
+}
+
+static void draw_triangle(RenderingContext *ctx, IShader *shader)
 {
   Vec3f p0 = shader->positions[0] * ctx->viewport_mat;
   Vec3f p1 = shader->positions[1] * ctx->viewport_mat;
@@ -291,7 +318,8 @@ static TgaImage diffuseTexture;
 static Model model;
 static uint32_t zbuffer[800][600];
 static RenderingContext rendering_context;
-static Shader shader;
+static ModelShader modelShader;
+static FloorShader floorShader;
 
 static float angle = 0;
 static float hue = 0.0;
@@ -326,7 +354,6 @@ static void initialize(GlobalState *state, DrawingBuffer *buffer)
 static void render_floor(RenderingContext *ctx)
 {
   ctx->model_mat = Mat44::translate(0, -0.4, 0);
-  ctx->use_texture = false;
 
   Vec3f vertices[4][2] = {
     {{-0.5, 0, 0.5}, {0, 0, 0}},
@@ -338,15 +365,15 @@ static void render_floor(RenderingContext *ctx)
 
   precalculate_matrices(ctx);
 
-  shader.vertex(ctx, 0, vertices[0][0], normal, vertices[0][1], RED);
-  shader.vertex(ctx, 1, vertices[1][0], normal, vertices[1][1], GREEN);
-  shader.vertex(ctx, 2, vertices[2][0], normal, vertices[2][1], BLUE);
-  draw_triangle(ctx, &shader);
+  floorShader.vertex(ctx, 0, vertices[0][0], normal, vertices[0][1], RED);
+  floorShader.vertex(ctx, 1, vertices[1][0], normal, vertices[1][1], GREEN);
+  floorShader.vertex(ctx, 2, vertices[2][0], normal, vertices[2][1], BLUE);
+  draw_triangle(ctx, &floorShader);
 
-  shader.vertex(ctx, 0, vertices[0][0], normal, vertices[0][1], RED);
-  shader.vertex(ctx, 1, vertices[2][0], normal, vertices[2][1], BLUE);
-  shader.vertex(ctx, 2, vertices[3][0], normal, vertices[3][1], WHITE);
-  draw_triangle(ctx, &shader);
+  floorShader.vertex(ctx, 0, vertices[0][0], normal, vertices[0][1], RED);
+  floorShader.vertex(ctx, 1, vertices[2][0], normal, vertices[2][1], BLUE);
+  floorShader.vertex(ctx, 2, vertices[3][0], normal, vertices[3][1], WHITE);
+  draw_triangle(ctx, &floorShader);
 }
 
 static void render_model(RenderingContext *ctx, Model *model, bool wireframe = false)
@@ -361,7 +388,6 @@ static void render_model(RenderingContext *ctx, Model *model, bool wireframe = f
   Vec3f color = {1, 1, 1}; //{r, g, b};
 
   ctx->model_mat = Mat44::translate(0, -0.4, 0);
-  ctx->use_texture = true;
 
   precalculate_matrices(ctx);
 
@@ -373,10 +399,10 @@ static void render_model(RenderingContext *ctx, Model *model, bool wireframe = f
       Vec3f texture = model->texture_coords[face[vi*3+1]];
       Vec3f normal = model->normals[face[vi*3+2]];
 
-      shader.vertex(ctx, vi, position, normal, texture, color);
+      modelShader.vertex(ctx, vi, position, normal, texture, color);
     }
 
-    draw_triangle(ctx, &shader);
+    draw_triangle(ctx, &modelShader);
   }  
 }
 
