@@ -55,6 +55,73 @@ static inline void set_pixel(DrawingBuffer *buffer, int32_t x, int32_t y, Vec3f 
   *((uint32_t *) &((uint8_t *)buffer->pixels)[idx]) = c;
 }
 
+static inline void set_pixel_safe(DrawingBuffer *buffer, int32_t x, int32_t y, Vec3f color)
+{
+  if (x < 0) { return; }
+  if (y < 0) { return; }
+  if (x >= buffer->width) { return; }
+  if (y >= buffer->height) { return; }
+
+  set_pixel(buffer, x, y, color);
+}
+
+static inline int32_t abs(int32_t v)
+{
+  return v > 0.0 ? v : -v;
+}
+
+static void draw_line(DrawingBuffer *buffer, int32_t x0, int32_t y0, int32_t x1, int32_t y1, Vec3f color)
+{
+  int32_t t;
+  bool transposed = abs(y1-y0) > abs(x1-x0);
+  if (transposed) {
+    t = x0;
+    x0 = y0;
+    y0 = t;
+
+    t = x1;
+    x1 = y1;
+    y1 = t;
+  }
+
+  if (x0 > x1) {
+    t = x0;
+    x0 = x1;
+    x1 = t;
+
+    t = y0;
+    y0 = y1;
+    y1 = t;
+  }
+
+  int32_t dx = x1 - x0;
+  int32_t dy = y1 - y0;
+
+  float eps = 0.0000001;
+  if (dx < eps && dy < eps) {
+    return; // Degenerate case
+  }
+
+  int32_t y = y0;
+  int32_t slope = 2 * abs(dy);
+  int32_t error = 0;
+  int32_t inc = dy > 0 ? 1 : -1;
+
+  for (int32_t x = x0; x <= x1; x++) {
+    if (transposed) {
+      set_pixel_safe(buffer, y, x, color);
+    } else {
+      set_pixel_safe(buffer, x, y, color);
+    }
+
+    error += slope;
+    if (error > dx) {
+      y += inc;
+      error -= 2*dx;
+    }
+  }
+}
+
 #define ZBUFFER_MAX 0xFFFFFFFF
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
@@ -69,6 +136,7 @@ typedef struct RenderingContext {
   uint32_t *zbuffer;
 
   TgaImage *diffuse;
+  TgaImage *normal;
 
   Vec3f clear_color;
   Vec3f light;
@@ -93,9 +161,11 @@ struct IShader {
 struct ModelShader : public IShader {
   Vec3f normals[3];
   Vec3f uvs[3];
+  Vec3f pos[3];
 
   void vertex(RenderingContext *ctx, int idx, Vec3f position, Vec3f normal, Vec3f texture, Vec3f color)
   {
+    pos[idx] = position;
     positions[idx] = position * ctx->modelview_mat * ctx->projection_mat;
     uvs[idx] = (Vec3f){texture.x, texture.y, 0};
     normals[idx] = (normal * ctx->normal_mat).normalized();
@@ -103,15 +173,43 @@ struct ModelShader : public IShader {
 
   bool fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f *color)
   {
+    float intensity = 0.0;
+    // Vec3f normal = (pos[2] - pos[1]).cross(pos[1] - pos[0]).normalized();
     Vec3f normal = normals[0] * t0 + normals[1] * t1 + normals[2] * t2;
-    float intensity = normal.dot(ctx->light);
 
     Vec3f uv = uvs[0] * t0 + uvs[1] * t1 + uvs[2] * t2;
     int texX = uv.x * ctx->diffuse->width;
     int texY = uv.y * ctx->diffuse->height;
 
     Vec3f tcolor = ctx->diffuse->pixels[texY*ctx->diffuse->width+texX];
-    *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b} * intensity;
+    *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b};
+
+    int nx = uv.x * ctx->normal->width;
+    int ny = uv.y * ctx->normal->height;
+    Vec3f ncolor = ctx->normal->pixels[ny*ctx->normal->width+nx];
+    Vec3f tnormal = (Vec3f){2 * ncolor.r - 1, 2 * ncolor.g - 1, ncolor.b};
+
+    if (1) {
+      Vec3f dp1 = pos[1] - pos[0];
+      Vec3f dp2 = pos[2] - pos[1];
+      Vec3f duv1 = uvs[1] - uvs[0];
+      Vec3f duv2 = uvs[2] - uvs[1];
+      float r = 1.0 / (duv1.x * duv2.y - duv1.y * duv2.x);
+      Vec3f tangent = -(dp1 * duv2.y - dp2 * duv1.y) * r;
+      tangent = (tangent - normal * normal.dot(tangent)).normalized();
+      Vec3f bitangent = -((dp2 * duv1.x - dp1 * duv2.x) * r).normalized();
+
+      Mat44 invTBN = {
+        tangent.x, tangent.y, tangent.z, 0,
+        bitangent.x, bitangent.y, bitangent.z, 0,
+        normal.x, normal.y, normal.z, 0,
+        0, 0, 0, 1
+      };
+      normal = (tnormal * invTBN).normalized();
+    }
+
+    intensity = normal.dot(-ctx->light);
+    *color = tcolor * intensity;
 
     color->r = CLAMP(color->r, 0, 1);
     color->g = CLAMP(color->g, 0, 1);
@@ -142,7 +240,7 @@ struct FloorShader : public IShader {
   bool fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f *color)
   {
     Vec3f normal = normals[0];
-    float intensity = normal.dot(ctx->light);
+    float intensity = 1.0; //normal.dot(ctx->light);
 
     Vec3f vcolor = (Vec3f){colors[0].r * t0 + colors[1].r * t1 + colors[2].r * t2,
                            colors[0].g * t0 + colors[1].g * t1 + colors[2].g * t2,
@@ -154,7 +252,6 @@ struct FloorShader : public IShader {
     int texY = uvz.y * z * 5;
 
     Vec3f tcolor;
-
     if (texX % 2 == texY % 2) {
       tcolor = (Vec3f){1, 1, 1};
     } else {
@@ -315,6 +412,7 @@ static Mat44 viewport_matrix(float width, float height)
 static bool initialized = false;
 
 static TgaImage diffuseTexture;
+static TgaImage normalTexture;
 static Model model;
 static uint32_t zbuffer[800][600];
 static RenderingContext rendering_context;
@@ -345,10 +443,12 @@ static void initialize(GlobalState *state, DrawingBuffer *buffer)
 
   // TODO: Allocate dynamically
   ctx->diffuse = &diffuseTexture;
+  ctx->normal = &normalTexture;
   ctx->zbuffer = (uint32_t *) &zbuffer;
 
   load_model(state, (char *) "data/rabbit/rabbit.obj", &model);
   load_texture(state, (char *) "data/rabbit/diffuse.tga", rendering_context.diffuse);
+  load_texture(state, (char *) "data/rabbit/normal.tga", rendering_context.normal);
 }
 
 static void render_floor(RenderingContext *ctx)
@@ -361,7 +461,7 @@ static void render_floor(RenderingContext *ctx)
     {{0.5, 0, -0.5}, {1, 1, 0}},
     {{-0.5, 0, -0.5}, {0, 1, 0}}
   };
-  Vec3f normal = {0, -1, 0};
+  Vec3f normal = {0, 1, 0};
 
   precalculate_matrices(ctx);
 
@@ -403,7 +503,45 @@ static void render_model(RenderingContext *ctx, Model *model, bool wireframe = f
     }
 
     draw_triangle(ctx, &modelShader);
-  }  
+  }
+}
+
+static void render_unit_axes(RenderingContext *ctx)
+{
+  Mat44 mat = ctx->view_mat * ctx->projection_mat * ctx->viewport_mat;
+  Vec3f c = (Vec3f){0, 0, 0} * mat;
+  Vec3f x = (Vec3f){1, 0, 0} * mat;
+  Vec3f y = (Vec3f){0, 1, 0} * mat;
+  Vec3f z = (Vec3f){0, 0, 1} * mat;
+  Vec3f l = ctx->light * mat;
+
+  draw_line(ctx->target, c.x, c.y, x.x, x.y, RED);
+  draw_line(ctx->target, c.x, c.y, y.x, y.y, GREEN);
+  draw_line(ctx->target, c.x, c.y, z.x, z.y, BLUE);
+  draw_line(ctx->target, c.x, c.y, l.x, l.y, WHITE);
+}
+
+Mat44 look_at_matrix(Vec3f from, Vec3f to, Vec3f up)
+{
+  Mat44 result = Mat44::identity();
+  Mat44 translate = Mat44::translate(-from.x, -from.y, -from.z);
+
+  Vec3f bz = (from - to).normalized();
+  Vec3f bx = up.cross(bz).normalized();
+  Vec3f by = bz.cross(bx).normalized();
+
+  result.a = bx.x;
+  result.e = bx.y;
+  result.i = bx.z;
+  result.b = by.x;
+  result.f = by.y;
+  result.j = by.z;
+  result.c = bz.x;
+  result.g = bz.y;
+  result.k = bz.z;
+  result = translate * result;
+
+  return result;
 }
 
 C_LINKAGE void draw_frame(GlobalState *state, DrawingBuffer *drawing_buffer)
@@ -412,16 +550,22 @@ C_LINKAGE void draw_frame(GlobalState *state, DrawingBuffer *drawing_buffer)
     initialize(state, drawing_buffer);
   }
 
-  angle += 0.005; // TODO: Use frame dt
+  angle += 0.001; // TODO: Use frame dt
   if (angle > 2*PI) {
     angle -= 2*PI;
   }
 
-  rendering_context.view_mat = (Mat44::translate(0, 0, 1) * Mat44::rotate_y(angle)).inverse();
+  Mat44 light_mat = Mat44::rotate_y(0);
+  Vec3f light = ((Vec3f){1, 1, 1} * light_mat).normalized();
+  rendering_context.light = light;
+
+  Mat44 view_mat = look_at_matrix((Vec3f){0.2, 0.15, 0.9}, (Vec3f){0, 0, 0}, (Vec3f){0, 1, 0});
+  rendering_context.view_mat = Mat44::rotate_y(-angle) * view_mat;
 
   clear_buffer(&rendering_context);
   clear_zbuffer(&rendering_context);
 
   render_floor(&rendering_context);
   render_model(&rendering_context, &model);
+  // render_unit_axes(&rendering_context);
 }
