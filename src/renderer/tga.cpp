@@ -27,6 +27,8 @@ static void tga_read_compressed_pixels(TgaHeader *header, uint8_t *pixelData, Tg
 {
     ASSERT((header->imageDescriptor & 0b110000) == 0);
 
+    int bpp = header->pixelDepth / 8;
+
     uint32_t pixelIdx = 0;
     while (pixelIdx < header->width * header->height) {
         uint8_t packet = *pixelData++;
@@ -34,9 +36,10 @@ static void tga_read_compressed_pixels(TgaHeader *header, uint8_t *pixelData, Tg
         uint8_t packetCount = packet & 127;
 
         if (packetRLE) { // RLE packet
-          uint8_t r = *pixelData++;
-          uint8_t g = *pixelData++;
-          uint8_t b = *pixelData++;
+          uint8_t b = pixelData[0];
+          uint8_t g = pixelData[1];
+          uint8_t r = pixelData[2];
+          pixelData += bpp;
 
           for (int i = 0; i <= packetCount; i++) {
             image->pixels[pixelIdx++] = (Vec3f){r / 255.0, g / 255.0, b / 255.0};
@@ -44,9 +47,10 @@ static void tga_read_compressed_pixels(TgaHeader *header, uint8_t *pixelData, Tg
 
         } else { // RAW packet
             for (int i = 0; i <= packetCount; i++) {
-                uint8_t r = *pixelData++;
-                uint8_t g = *pixelData++;
-                uint8_t b = *pixelData++;
+                uint8_t b = pixelData[0];
+                uint8_t g = pixelData[1];
+                uint8_t r = pixelData[2];
+                pixelData += bpp;
 
                 image->pixels[pixelIdx++] = (Vec3f){r / 255.0, g / 255.0, b / 255.0};
             } 
@@ -72,11 +76,14 @@ static void tga_read_uncompressed_pixels(TgaHeader *header, uint8_t *pixelData, 
         yinc = -1;
     }
 
+    int bpp = header->pixelDepth / 8;
+
     uint32_t pixelsRead = 0;
     while (pixelsRead < header->width * header->height) {
-        uint8_t r = *pixelData++;
-        uint8_t g = *pixelData++;
-        uint8_t b = *pixelData++;
+        uint8_t b = pixelData[0];
+        uint8_t g = pixelData[1];
+        uint8_t r = pixelData[2];
+        pixelData += bpp;
 
         image->pixels[y*header->width+x] = (Vec3f){r / 255.0, g / 255.0, b / 255.0};
         pixelsRead++;
@@ -101,14 +108,16 @@ static void tga_read_image(void *bytes, uint32_t size, TgaImage *image)
 {
     TgaHeader *header = (TgaHeader *) bytes;
 
-    printf("TGA Image width: %d; height: %d; bits per pixel: %d\n", header->width, header->height, header->pixelDepth);
+    printf("TGA Image width: %d; height: %d; type: %d; bpp: %d\n",
+           header->width, header->height, header->imageType, header->pixelDepth);
+
     uint8_t origin = (header->imageDescriptor & 0b110000) >> 4;
     printf("X offset: %d; Y offset: %d; Origin: %d\n", header->xOffset, header->yOffset, origin);
 
     ASSERT(header->idLength == 0);
     ASSERT(header->colorMapType == 0);
     ASSERT(header->imageType == 10 || header->imageType == 2);
-    ASSERT(header->pixelDepth == 24);
+    ASSERT(header->pixelDepth == 24 || header->pixelDepth == 32);
 
     image->width = header->width;
     image->height = header->height;
