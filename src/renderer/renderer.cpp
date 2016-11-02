@@ -6,9 +6,59 @@
 
 #define ASSERT(x) if (!(x)) { printf("Assertion at %s, line %d failed: %s\n", __FILE__, __LINE__, #x); *((uint32_t *)1) = 0xDEADCAFE; }
 
+#define ZBUFFER_MAX 0xFFFFFFFF
+
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#define MIN3(a, b, c) (MIN(MIN(a, b), c))
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#define MAX3(a, b, c) (MAX(MAX(a, b), c))
+
+#define CLAMP(val, min, max) (MAX(min, MIN(max, val)))
+
+#include "memory.cpp"
 #include "math.cpp"
 #include "tga.cpp"
 #include "model.cpp"
+
+typedef struct RenderingContext {
+  DrawingBuffer *target;
+  uint32_t *zbuffer;
+
+  Texture *diffuse;
+  Texture *normal;
+
+  Vec3f clear_color;
+  Vec3f light;
+
+  Mat44 model_mat;
+  Mat44 view_mat;
+  Mat44 projection_mat;
+  Mat44 viewport_mat;
+
+  Mat44 modelview_mat;
+  Mat44 normal_mat;
+} RenderingContext;
+
+struct IShader {
+  Vec3f positions[3];
+
+  virtual ~IShader() {};
+  virtual void vertex(RenderingContext *ctx, int idx, Vec3f position, Vec3f normal, Vec3f texture, Vec3f color) = 0;
+  virtual bool fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f *color) = 0;
+};
+
+typedef struct State {
+  PlatformAPI *platform_api;
+  MemoryArena *main_arena;
+
+  Model *model;
+
+  RenderingContext rendering_context;
+  IShader *modelShader;
+  IShader *floorShader;
+
+  float angle;
+} State;
 
 static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b)
 {
@@ -121,42 +171,6 @@ static void draw_line(DrawingBuffer *buffer, int32_t x0, int32_t y0, int32_t x1,
     }
   }
 }
-
-#define ZBUFFER_MAX 0xFFFFFFFF
-
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#define MIN3(a, b, c) (MIN(MIN(a, b), c))
-#define MAX(a, b) (((a) > (b)) ? (a) : (b))
-#define MAX3(a, b, c) (MAX(MAX(a, b), c))
-
-#define CLAMP(val, min, max) (MAX(min, MIN(max, val)))
-
-typedef struct RenderingContext {
-  DrawingBuffer *target;
-  uint32_t *zbuffer;
-
-  TgaImage *diffuse;
-  TgaImage *normal;
-
-  Vec3f clear_color;
-  Vec3f light;
-
-  Mat44 model_mat;
-  Mat44 view_mat;
-  Mat44 projection_mat;
-  Mat44 viewport_mat;
-
-  Mat44 modelview_mat;
-  Mat44 normal_mat;
-} RenderingContext;
-
-struct IShader {
-  Vec3f positions[3];
-
-  virtual ~IShader() {};
-  virtual void vertex(RenderingContext *ctx, int idx, Vec3f position, Vec3f normal, Vec3f texture, Vec3f color) = 0;
-  virtual bool fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f *color) = 0;
-};
 
 struct ModelShader : public IShader {
   Vec3f normals[3];
@@ -337,28 +351,62 @@ static void draw_triangle(RenderingContext *ctx, IShader *shader)
   }
 }
 
-static void load_model(GlobalState *state, char *filename, Model *model)
+static Model *load_model(State *state, char *filename)
 {
-  FileContents contents = state->platform_api.read_file_contents(filename);
+  FileContents contents = state->platform_api->read_file_contents(filename);
   if (contents.size <= 0) {
     printf("Failed to load model\n");
-    return;
+    return NULL;
   }
 
   printf("Read model file of %d bytes\n", contents.size);
-  model_read(contents.bytes, contents.size, model);
+  Model *model = (Model *) state->main_arena->allocate(sizeof(Model));
+
+  model->parse(contents.bytes, contents.size, true);
+
+  printf("Vertices: %d; Texture coords: %d; Normals: %d; Faces: %d\n",
+         model->vcount, model->tcount, model->ncount, model->fcount);
+
+  printf("Model bbox x in (%.2f .. %.2f); y in (%.2f .. %.2f); z in (%.2f .. %.2f)\n",
+         model->min.x, model->max.x, model->min.y, model->max.y, model->min.z, model->max.z);
+
+  model->vertices = (Vec3f *) state->main_arena->allocate(sizeof(Vec3f) * model->vcount);
+  model->normals = (Vec3f *) state->main_arena->allocate(sizeof(Vec3f) * model->ncount);
+  model->texture_coords = (Vec3f *) state->main_arena->allocate(sizeof(Vec3f) * model->tcount);
+  model->faces = (ModelFace *) state->main_arena->allocate(sizeof(ModelFace) * model->fcount);
+
+  model->parse(contents.bytes, contents.size);
+
+  return model;
 }
 
-static void load_texture(GlobalState *state, char *filename, TgaImage *target)
+static Texture *load_texture(State *state, char *filename)
 {
-  FileContents contents = state->platform_api.read_file_contents(filename);
+  FileContents contents = state->platform_api->read_file_contents(filename);
   if (contents.size <= 0) {
     printf("Failed to load texture\n");
-    return;
+    return NULL;
   }
 
   printf("Read texture file of %d bytes\n", contents.size);
-  tga_read_image(contents.bytes, contents.size, target);
+
+  TgaImage image;
+  image.read_header(contents.bytes, contents.size);
+
+  TgaHeader *header = &image.header;
+  printf("TGA Image width: %d; height: %d; type: %d; bpp: %d\n",
+         header->width, header->height, header->imageType, header->pixelDepth);
+
+  printf("X offset: %d; Y offset: %d; FlipX: %d; FlipY: %d\n",
+         header->xOffset, header->yOffset, image.flipX, image.flipY);
+  
+  Texture *texture = (Texture *) state->main_arena->allocate(sizeof(Texture));
+  texture->width = header->width;
+  texture->height = header->height;
+  texture->pixels = (Vec3f *) state->main_arena->allocate(sizeof(Vec3f) * texture->width * texture->height);
+
+  image.read_into_texture(contents.bytes, contents.size, texture);
+  return texture;
 }
 
 static void clear_buffer(RenderingContext *ctx)
@@ -409,30 +457,15 @@ static Mat44 viewport_matrix(float width, float height)
   return result;
 }
 
-static bool initialized = false;
-
-static TgaImage diffuseTexture;
-static TgaImage normalTexture;
-static Model model;
-static uint32_t zbuffer[800][600];
-static RenderingContext rendering_context;
-static ModelShader modelShader;
-static FloorShader floorShader;
-
-static float angle = 0;
-static float hue = 0.0;
-
 #define WHITE (Vec3f){1, 1, 1}
 #define BLACK (Vec3f){0, 0, 0}
 #define RED (Vec3f){1, 0, 0}
 #define GREEN (Vec3f){0, 1, 0}
 #define BLUE (Vec3f){0, 0, 1}
 
-static void initialize(GlobalState *state, DrawingBuffer *buffer)
+static void initialize(State *state, DrawingBuffer *buffer)
 {
-  initialized = true;
-
-  RenderingContext *ctx = &rendering_context;
+  RenderingContext *ctx = &state->rendering_context;
   ctx->target = buffer;
   ctx->clear_color = BLACK;
 
@@ -441,17 +474,18 @@ static void initialize(GlobalState *state, DrawingBuffer *buffer)
   ctx->projection_mat = projection_matrix(0.1, 10, 90);
   ctx->light = ((Vec3f){0, -1, 0}).normalized();
 
-  // TODO: Allocate dynamically
-  ctx->diffuse = &diffuseTexture;
-  ctx->normal = &normalTexture;
-  ctx->zbuffer = (uint32_t *) &zbuffer;
+  ctx->zbuffer = (uint32_t *) state->main_arena->allocate(buffer->width * buffer->height * sizeof(uint32_t));
 
-  load_model(state, (char *) "data/rabbit/rabbit.obj", &model);
-  load_texture(state, (char *) "data/rabbit/diffuse.tga", rendering_context.diffuse);
-  load_texture(state, (char *) "data/rabbit/normal.tga", rendering_context.normal);
+  // TODO: DON'T ALLOCATE IN DYLIB !!!
+  state->floorShader = new FloorShader();
+  state->modelShader = new ModelShader();
+
+  state->model = load_model(state, (char *) "data/rabbit/rabbit.obj");
+  ctx->diffuse = load_texture(state, (char *) "data/rabbit/diffuse.tga");
+  ctx->normal = load_texture(state, (char *) "data/rabbit/normal.tga");
 }
 
-static void render_floor(RenderingContext *ctx)
+static void render_floor(State *state, RenderingContext *ctx)
 {
   ctx->model_mat = Mat44::translate(0, -0.4, 0);
 
@@ -465,44 +499,37 @@ static void render_floor(RenderingContext *ctx)
 
   precalculate_matrices(ctx);
 
-  floorShader.vertex(ctx, 0, vertices[0][0], normal, vertices[0][1], RED);
-  floorShader.vertex(ctx, 1, vertices[1][0], normal, vertices[1][1], GREEN);
-  floorShader.vertex(ctx, 2, vertices[2][0], normal, vertices[2][1], BLUE);
-  draw_triangle(ctx, &floorShader);
+  state->floorShader->vertex(ctx, 0, vertices[0][0], normal, vertices[0][1], RED);
+  state->floorShader->vertex(ctx, 1, vertices[1][0], normal, vertices[1][1], GREEN);
+  state->floorShader->vertex(ctx, 2, vertices[2][0], normal, vertices[2][1], BLUE);
+  draw_triangle(ctx, state->floorShader);
 
-  floorShader.vertex(ctx, 0, vertices[0][0], normal, vertices[0][1], RED);
-  floorShader.vertex(ctx, 1, vertices[2][0], normal, vertices[2][1], BLUE);
-  floorShader.vertex(ctx, 2, vertices[3][0], normal, vertices[3][1], WHITE);
-  draw_triangle(ctx, &floorShader);
+  state->floorShader->vertex(ctx, 0, vertices[0][0], normal, vertices[0][1], RED);
+  state->floorShader->vertex(ctx, 1, vertices[2][0], normal, vertices[2][1], BLUE);
+  state->floorShader->vertex(ctx, 2, vertices[3][0], normal, vertices[3][1], WHITE);
+  draw_triangle(ctx, state->floorShader);
 }
 
-static void render_model(RenderingContext *ctx, Model *model, bool wireframe = false)
+static void render_model(State *state, RenderingContext *ctx, Model *model, bool wireframe = false)
 {
-  // hue += 0.5;
-  // if (hue > 360.0) {
-  //   hue -= 360.0;
-  // }
-
-  // float r, g, b;
-  // hsv_to_rgb(hue, 1.0, 1.0, &r, &g, &b);
-  Vec3f color = {1, 1, 1}; //{r, g, b};
+  Vec3f color = {1, 1, 1};
 
   ctx->model_mat = Mat44::translate(0, -0.4, 0);
 
   precalculate_matrices(ctx);
 
   for (int fi = 0; fi < model->fcount; fi++) {
-    int *face = model->faces[fi];
+    ModelFace face = model->faces[fi];
 
     for (int vi = 0; vi < 3; vi++) {
-      Vec3f position = model->vertices[face[vi*3]];
-      Vec3f texture = model->texture_coords[face[vi*3+1]];
-      Vec3f normal = model->normals[face[vi*3+2]];
+      Vec3f position = model->vertices[face.vi[vi]];
+      Vec3f texture = model->texture_coords[face.ti[vi]];
+      Vec3f normal = model->normals[face.ni[vi]];
 
-      modelShader.vertex(ctx, vi, position, normal, texture, color);
+      state->modelShader->vertex(ctx, vi, position, normal, texture, color);
     }
 
-    draw_triangle(ctx, &modelShader);
+    draw_triangle(ctx, state->modelShader);
   }
 }
 
@@ -544,28 +571,41 @@ Mat44 look_at_matrix(Vec3f from, Vec3f to, Vec3f up)
   return result;
 }
 
-C_LINKAGE void draw_frame(GlobalState *state, DrawingBuffer *drawing_buffer)
+C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer)
 {
-  if (!initialized) {
+  State *state = (State *) global_state->state;
+
+  if (!state) {
+    MemoryArena *arena = MemoryArena::initialize(global_state->platform_api.allocate_memory(MB(64)), MB(64));
+    // memset(state, 0, MB(64));
+
+    state = (State *) arena->allocate(MB(1));
+    global_state->state = state;
+
+    state->main_arena = arena;
+    state->platform_api = &global_state->platform_api;
+
     initialize(state, drawing_buffer);
   }
 
-  angle += 0.001; // TODO: Use frame dt
-  if (angle > 2*PI) {
-    angle -= 2*PI;
+  RenderingContext *ctx = &state->rendering_context;
+
+  state->angle += 0.001; // TODO: Use frame dt
+  if (state->angle > 2*PI) {
+    state->angle -= 2*PI;
   }
 
   Mat44 light_mat = Mat44::rotate_y(0);
   Vec3f light = ((Vec3f){1, 1, 1} * light_mat).normalized();
-  rendering_context.light = light;
+  ctx->light = light;
 
   Mat44 view_mat = look_at_matrix((Vec3f){0.2, 0.15, 0.9}, (Vec3f){0, 0, 0}, (Vec3f){0, 1, 0});
-  rendering_context.view_mat = Mat44::rotate_y(-angle) * view_mat;
+  ctx->view_mat = Mat44::rotate_y(-state->angle) * view_mat;
 
-  clear_buffer(&rendering_context);
-  clear_zbuffer(&rendering_context);
+  clear_buffer(ctx);
+  clear_zbuffer(ctx);
 
-  render_floor(&rendering_context);
-  render_model(&rendering_context, &model);
+  render_floor(state, ctx);
+  render_model(state, ctx, state->model);
   // render_unit_axes(&rendering_context);
 }

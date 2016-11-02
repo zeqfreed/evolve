@@ -275,6 +275,12 @@ static void setup_signal_handlers()
   }
 }
 
+C_LINKAGE void *macos_allocate_memory(size_t size)
+{
+  void *result = calloc(size, 1);
+  return result;
+}
+
 int main(int argc, char *argv[])
 {
   setup_signal_handlers();
@@ -310,8 +316,9 @@ int main(int argc, char *argv[])
   drawing_buffer.pitch = 800;
   drawing_buffer.bits_per_pixel = 4;
 
-  GlobalState state;
+  GlobalState state = {};
   state.platform_api.read_file_contents = macos_read_file_contents;
+  state.platform_api.allocate_memory = macos_allocate_memory;
 
   gameRunning = true;
   start = mach_absolute_time();  

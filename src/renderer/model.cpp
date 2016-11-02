@@ -1,31 +1,37 @@
 
+typedef struct ModelFace {
+  int vi[3];
+  int ti[3];
+  int ni[3];
+} ModelFace;
+
 typedef struct Model {
   int vcount;
   int tcount;
   int ncount;
   int fcount;
-  Vec3f vertices[2048];
-  Vec3f normals[2048];
-  Vec3f texture_coords[2048];
-  int faces[4000][9];
+  Vec3f min;
+  Vec3f max;
+  Vec3f center;
+  Vec3f *vertices;
+  Vec3f *normals;
+  Vec3f *texture_coords;
+  ModelFace *faces;
+
+  void parse(void *bytes, size_t size, bool dry_run);
+  void normalize(bool move_to_center);
 } Model;
 
-static void model_read(void *bytes, size_t size, Model *model)
+void Model::parse(void *bytes, size_t size, bool dry_run = false)
 {
   int vi = 0;
   int fi = 0;
   int ni = 0;
   int ti = 0;
 
-  float minx = 0;
-  float maxx = 0;
-  float miny = 0;
-  float maxy = 0;
-  float minz = 0;
-  float maxz = 0;  
-  float accx = 0.0;
-  float accy = 0.0;
-  float accz = 0.0;
+  Vec3f acc = {0, 0, 0};
+  min = (Vec3f){0, 0, 0};
+  max = (Vec3f){0, 0, 0};
 
   char *p = (char *) bytes;
   while(p < (char *) bytes + size) {
@@ -43,29 +49,21 @@ static void model_read(void *bytes, size_t size, Model *model)
         }
         p += consumed;
 
-        model->vertices[vi++] = (Vec3f){x, y, z};
-
-        accx += x;
-        accy += y;
-        accz += z;
-
-        if (x < minx) {
-          minx = x;
-        } else if (x > maxx) {
-          maxx = x;
+        Vec3f vertex = (Vec3f){x, y, z};
+        if (dry_run) {
+          vi++;
+        } else {
+          vertices[vi++] = vertex;
         }
 
-        if (y < miny) {
-          miny = y;
-        } else if (y > maxy) {
-          maxy = y;
-        }        
+        acc = acc + vertex;
+        min.x = MIN(min.x, x);
+        min.y = MIN(min.y, y);
+        min.z = MIN(min.z, z);
+        max.x = MAX(max.x, x);
+        max.y = MAX(max.y, y);
+        max.z = MAX(max.z, z);
 
-        if (z < minz) {
-          minz = z;
-        } else if (z > maxz) {
-          maxz = z;
-        }        
       } else if (*p == 'n') {
         p++;
         int consumed = 0;
@@ -74,7 +72,11 @@ static void model_read(void *bytes, size_t size, Model *model)
         }
         p += consumed;
 
-        model->normals[ni++] = (Vec3f){-x, -y, -z};
+        if (dry_run) {
+          ni++;
+        } else {
+          normals[ni++] = (Vec3f){-x, -y, -z};
+        }
       } else if (*p == 't') {
         p++;
         int consumed = 0;
@@ -82,70 +84,66 @@ static void model_read(void *bytes, size_t size, Model *model)
           continue;
         }
         p += consumed;
-
-        model->texture_coords[ti++] = (Vec3f){x, y, z};
+        
+        if (dry_run) {
+          ti++;
+        } else {
+          texture_coords[ti++] = (Vec3f){x, y, z};
+        }
       }
     } else if (*p == 'f') {
       p++;
 
       int vi0, ti0, ni0, vi1, ti1, ni1, vi2, ti2, ni2;
+      ModelFace face;
       int consumed = 0;
-      if (sscanf(p, "%d/%d/%d %d/%d/%d %d/%d/%d%n", &vi0, &ti0, &ni0, &vi1, &ti1, &ni1, &vi2, &ti2, &ni2, &consumed) != 9) {
+      if (sscanf(p, "%d/%d/%d %d/%d/%d %d/%d/%d%n",
+                 &vi0, &ti0, &ni0, &vi1, &ti1, &ni1, &vi2, &ti2, &ni2, &consumed) != 9) {
         continue;
       }
       p += consumed;
 
-      int *face = model->faces[fi++];
-      face[0] = vi0 - 1;
-      face[1] = ti0 - 1;
-      face[2] = ni0 - 1;
+      if (dry_run) {
+        fi++;
+      } else {
+        face.vi[0] = vi0 - 1;
+        face.ti[0] = ti0 - 1;
+        face.ni[0] = ni0 - 1;
+ 
+        face.vi[1] = vi1 - 1;
+        face.ti[1] = ti1 - 1;
+        face.ni[1] = ni1 - 1;
 
-      face[3] = vi1 - 1;
-      face[4] = ti1 - 1;
-      face[5] = ni1 - 1;
+        face.vi[2] = vi2 - 1;
+        face.ti[2] = ti2 - 1;
+        face.ni[2] = ni2 - 1;
 
-      face[6] = vi2 - 1;
-      face[7] = ti2 - 1;
-      face[8] = ni2 - 1;
+        faces[fi++] = face;
+      }
     }
 
     p++;
   }
 
-  model->vcount = vi;
-  model->fcount = fi;
-  model->ncount = ni;
-  model->tcount = ti;
-  printf("read %d vertices, %d texture coords, %d normals, %d faces\n", model->vcount, model->tcount, model->ncount, model->fcount);
+  vcount = vi;
+  fcount = fi;
+  ncount = ni;
+  tcount = ti;
 
-  printf("Model bbox x in (%.2f .. %.2f); y in (%.2f .. %.2f); z in (%.2f .. %.2f)\n",
-         minx, maxx, miny, maxy, minz, maxz);
+  center = acc * (1.0 / vcount);
+}
 
-  float dx = maxx - minx;
-  float dy = maxy - miny;
-  float dz = maxz - minz;
-  float scale = 1.0 / dx;
-  if (dy > dx) {
-    scale = 1.0 / dy;
-  }
-  if ((dz > dy) && (dz > dx)) {
-    scale = 1.0 / dz;
+void Model::normalize(bool move_to_center)
+{
+  Vec3f d = max - min;
+  float scale = 1.0 / MAX(MAX(d.x, d.y), d.z);
+
+  Vec3f offset = {0, 0, 0};
+  if (move_to_center) {
+    offset = -center;
   }
 
-#if 0
-  float ox = accx / vi;
-  float oy = accy / vi;
-  float oz = accz / vi;
-  printf("Model center offset x: %.3f, y: %.3f, z: %.3f\n", ox, oy, oz);
-#else
-  float ox = 0.0;
-  float oy = 0.0;
-  float oz = 0.0;
-#endif
-
-  for (int i = 0; i < model->vcount; i++) {
-    model->vertices[i].x = model->vertices[i].x * scale - ox * scale;
-    model->vertices[i].y = model->vertices[i].y * scale - oy * scale;
-    model->vertices[i].z = model->vertices[i].z * scale - oz * scale;
+  for (int i = 0; i < vcount; i++) {
+    vertices[i] = vertices[i] * scale - offset * scale;
   }  
 }

@@ -21,14 +21,16 @@ typedef struct FileContents {
 } FileContents;
 
 typedef FileContents (* ReadFileContentsFunc)(char *);
+typedef void *(* AllocateMemoryFunc)(size_t size);
 
 typedef struct PlatformAPI {
   ReadFileContentsFunc read_file_contents;
+  AllocateMemoryFunc allocate_memory;
 } PlatformAPI;
 
-
 typedef struct GlobalState {
-    PlatformAPI platform_api;
+  PlatformAPI platform_api;
+  void *state;
 } GlobalState;
 
 typedef void (* DrawFrameFunc)(GlobalState *state, DrawingBuffer *buffer);

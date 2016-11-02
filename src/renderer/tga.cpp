@@ -1,9 +1,9 @@
 
-typedef struct TgaImage {
+typedef struct Texture{
     uint32_t width;
     uint32_t height;
-    Vec3f pixels[2048*2048];
-} TgaImage;
+    Vec3f *pixels;
+} Texture;
 
 #define TGA_ATTRIBUTES_PER_PIXEL_MASK 0b111
 
@@ -23,110 +23,163 @@ typedef struct TgaHeader
   uint8_t imageDescriptor;
 } __attribute__((packed)) TgaHeader;
 
-static void tga_read_compressed_pixels(TgaHeader *header, uint8_t *pixelData, TgaImage *image)
+typedef struct TgaImage {
+  TgaHeader header;
+  bool flipX;
+  bool flipY;
+
+  void read_header(void *bytes, size_t size);
+  void read_into_texture(void *bytes, size_t size, Texture *texture);
+} TgaImage;
+
+typedef struct TgaPixelIter {
+  bool initialized;
+
+  TgaImage *image;
+  uint8_t *pixelData;
+  uint32_t pixelsRead;
+  bool compressed;
+  int rleCount;
+  int rawCount;
+  Vec3f rleValue;
+
+  int bpp;
+
+  int x;
+  int y;
+  int yinc;
+
+  TgaPixelIter(TgaImage *image, uint8_t *pixelData);
+  bool hasMore();
+  Vec3f next();
+
+private:
+ 
+} TgaPixelIter;
+
+TgaPixelIter::TgaPixelIter(TgaImage *image, uint8_t *pixelData)
 {
-    ASSERT((header->imageDescriptor & 0b110000) == 0);
+  initialized = 0;
+   x = 0;
+   y = 0;
+   yinc = 1;
 
-    int bpp = header->pixelDepth / 8;
+   this->image = image;
 
-    uint32_t pixelIdx = 0;
-    while (pixelIdx < header->width * header->height) {
-        uint8_t packet = *pixelData++;
-        bool packetRLE = packet & (1 << 7);
-        uint8_t packetCount = packet & 127;
+   if (image->flipX) {
+     x = image->header.width - 1;
+   }
 
-        if (packetRLE) { // RLE packet
-          uint8_t b = pixelData[0];
-          uint8_t g = pixelData[1];
-          uint8_t r = pixelData[2];
-          pixelData += bpp;
+   if (image->flipY) {
+     y = image->header.height - 1;
+     yinc = -1;
+   }
 
-          for (int i = 0; i <= packetCount; i++) {
-            image->pixels[pixelIdx++] = (Vec3f){r / 255.0, g / 255.0, b / 255.0};
-          }
+   compressed = (image->header.imageType == 10);
+   rleCount = 0;
+   rawCount = 0;
+   pixelsRead = 0;
+   bpp = image->header.pixelDepth / 8;
 
-        } else { // RAW packet
-            for (int i = 0; i <= packetCount; i++) {
-                uint8_t b = pixelData[0];
-                uint8_t g = pixelData[1];
-                uint8_t r = pixelData[2];
-                pixelData += bpp;
-
-                image->pixels[pixelIdx++] = (Vec3f){r / 255.0, g / 255.0, b / 255.0};
-            } 
-        }
-    }    
+   this->pixelData = pixelData;
 }
 
-static void tga_read_uncompressed_pixels(TgaHeader *header, uint8_t *pixelData, TgaImage *image)
+bool TgaPixelIter::hasMore()
 {
-    bool flipX = (header->imageDescriptor & 0b010000) > 0;
-    bool flipY = (header->imageDescriptor & 0b100000) > 0;
+  bool result = (pixelsRead < image->header.width * image->header.height);
+  return result;
+}
 
-    int x = 0;
-    int y = 0;
-    int yinc = 1;
+Vec3f TgaPixelIter::next()
+{
+  Vec3f result = {};
 
-    if (flipX) {
-        x = header->width - 1;
+  if (initialized) {
+    if (image->flipX) {
+      x--;
+      if (x < 0) {
+        x = image->header.width - 1;
+        y += yinc;
+      }
+    } else {
+      x++;
+      if (x >= image->header.width) {
+        x = 0;
+        y += yinc;
+      }
     }
+  } else {
+    initialized = true;
+  }
 
-    if (flipY) {
-        y = header->height - 1;
-        yinc = -1;
-    }
+  if (compressed) {
+    if (!rleCount && !rawCount) {
+      uint8_t packet = *pixelData++;
+      bool isRLE = packet & (1 << 7);
 
-    int bpp = header->pixelDepth / 8;
+      if (isRLE) {
+        rleCount = packet & 127;
 
-    uint32_t pixelsRead = 0;
-    while (pixelsRead < header->width * header->height) {
         uint8_t b = pixelData[0];
         uint8_t g = pixelData[1];
         uint8_t r = pixelData[2];
         pixelData += bpp;
 
-        image->pixels[y*header->width+x] = (Vec3f){r / 255.0, g / 255.0, b / 255.0};
-        pixelsRead++;
-
-        if (flipX) {
-            x--;
-            if (x < 0) {
-                x = header->width - 1;
-                y += yinc;
-            }
-        } else {
-            x++;
-            if (x >= header->width) {
-                x = 0;
-                y += yinc;
-            }
-        }
+        rleValue = (Vec3f){r / 255.0, g / 255.0, b / 255.0};
+      } else {
+        rawCount = packet & 127;
+      }
     }
+
+    if (rleCount--) {
+      result = rleValue;
+    } else if (rawCount--) {
+      uint8_t b = pixelData[0];
+      uint8_t g = pixelData[1];
+      uint8_t r = pixelData[2];
+      pixelData += bpp;
+
+      result = (Vec3f){r / 255.0, g / 255.0, b / 255.0};
+    }
+
+  } else {
+    uint8_t b = pixelData[0];
+    uint8_t g = pixelData[1];
+    uint8_t r = pixelData[2];
+    pixelData += bpp;
+
+    result = (Vec3f){r / 255.0, g / 255.0, b / 255.0};
+  }
+
+  pixelsRead++;
+  return result;
 }
 
-static void tga_read_image(void *bytes, uint32_t size, TgaImage *image)
+void TgaImage::read_header(void *bytes, size_t size)
 {
-    TgaHeader *header = (TgaHeader *) bytes;
+    header = *(TgaHeader *) bytes;
+    flipX = (header.imageDescriptor & 0b010000) > 0;
+    flipY = (header.imageDescriptor & 0b100000) > 0;
 
-    printf("TGA Image width: %d; height: %d; type: %d; bpp: %d\n",
-           header->width, header->height, header->imageType, header->pixelDepth);
+    ASSERT(header.idLength == 0);
+    ASSERT(header.colorMapType == 0);
+    ASSERT(header.imageType == 10 || header.imageType == 2);
+    ASSERT(header.pixelDepth == 24 || header.pixelDepth == 32);
+}
 
-    uint8_t origin = (header->imageDescriptor & 0b110000) >> 4;
-    printf("X offset: %d; Y offset: %d; Origin: %d\n", header->xOffset, header->yOffset, origin);
+void TgaImage::read_into_texture(void *bytes, size_t size, Texture *texture)
+{
+  read_header(bytes, size);
 
-    ASSERT(header->idLength == 0);
-    ASSERT(header->colorMapType == 0);
-    ASSERT(header->imageType == 10 || header->imageType == 2);
-    ASSERT(header->pixelDepth == 24 || header->pixelDepth == 32);
+  ASSERT(texture->width == header.width);
+  ASSERT(texture->height == header.height);
 
-    image->width = header->width;
-    image->height = header->height;
+  uint8_t *pixelData = (uint8_t *) ((uint8_t *)bytes + sizeof(TgaHeader)); // Doesn't account for ImageID or Palette
+  TgaPixelIter iter = TgaPixelIter(this, pixelData);
 
-    uint8_t *pixelData = (uint8_t *) ((uint8_t *)bytes + sizeof(TgaHeader)); // Doesn't account for ImageID or Palette
-
-    if (header->imageType == 2) {
-        tga_read_uncompressed_pixels(header, pixelData, image);
-    } else if (header->imageType == 10) {
-        tga_read_compressed_pixels(header, pixelData, image);
-    }
+  while (iter.hasMore()) {
+    Vec3f pixel = iter.next();
+    //printf("(%d, %d): %.3f %.3f %.3f\n", iter.x, iter.y, pixel.r, pixel.g, pixel.b);
+    texture->pixels[iter.y * header.width + iter.x] = pixel;
+  }
 }
