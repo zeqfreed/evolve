@@ -222,12 +222,13 @@ struct ModelShader : public IShader {
       normal = (tnormal * invTBN).normalized();
     }
 
+    Vec3f ambient = tcolor * 0.15;
     intensity = normal.dot(-ctx->light);
-    *color = tcolor * intensity;
+    if (intensity < 0.0) {
+      intensity = 0.0;
+    }
 
-    color->r = CLAMP(color->r, 0, 1);
-    color->g = CLAMP(color->g, 0, 1);
-    color->b = CLAMP(color->b, 0, 1);
+    *color = (ambient + tcolor * intensity).clamped();
 
     return true;
   }
@@ -273,11 +274,7 @@ struct FloorShader : public IShader {
     }
 
     vcolor = vcolor * z;
-    *color = (Vec3f){vcolor.r * tcolor.r, vcolor.g * tcolor.g, vcolor.b * tcolor.b} * intensity;
-
-    color->r = CLAMP(color->r, 0, 1);
-    color->g = CLAMP(color->g, 0, 1);
-    color->b = CLAMP(color->b, 0, 1);
+    *color = ((Vec3f){vcolor.r * tcolor.r, vcolor.g * tcolor.g, vcolor.b * tcolor.b} * intensity).clamped();
 
     return true;
   }

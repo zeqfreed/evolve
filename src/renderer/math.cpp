@@ -41,6 +41,7 @@ typedef union Vec3f {
   float dot(Vec3f v);
   float length();
   Vec3f normalized();
+  Vec3f clamped(float min = 0.0, float max = 1.0);
 } Vec3f;
 
 inline Vec3f operator+(Vec3f a, Vec3f b)
@@ -85,6 +86,16 @@ inline Vec3f Vec3f::normalized()
 {
   float factor = 1.0 / this->length();
   return (Vec3f){x *= factor, y *= factor, z *= factor};
+}
+
+inline Vec3f Vec3f::clamped(float min, float max)
+{
+  Vec3f result = {};
+  result.x = CLAMP(x, min, max);
+  result.y = CLAMP(y, min, max);
+  result.z = CLAMP(z, min, max);
+
+  return result;
 }
 
 inline Vec3f operator*(Vec3f v, Mat44 mat)
