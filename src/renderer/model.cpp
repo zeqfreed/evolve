@@ -133,7 +133,7 @@ void Model::parse(void *bytes, size_t size, bool dry_run = false)
   center = acc * (1.0 / vcount);
 }
 
-void Model::normalize(bool move_to_center)
+void Model::normalize(bool move_to_center = false)
 {
   Vec3f d = max - min;
   float scale = 1.0 / MAX(MAX(d.x, d.y), d.z);

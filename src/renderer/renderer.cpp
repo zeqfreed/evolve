@@ -477,9 +477,19 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->floorShader = new FloorShader();
   state->modelShader = new ModelShader();
 
-  state->model = load_model(state, (char *) "data/rabbit/rabbit.obj");
-  ctx->diffuse = load_texture(state, (char *) "data/rabbit/diffuse.tga");
-  ctx->normal = load_texture(state, (char *) "data/rabbit/normal.tga");
+  char *basename = "rabbit/rabbit";
+  char model_filename[255];
+  char diffuse_filename[255];
+  char normal_filename[255];
+  snprintf(model_filename, 255, "data/%s.obj", basename);
+  snprintf(diffuse_filename, 255, "data/%s_D.tga", basename);
+  snprintf(normal_filename, 255, "data/%s_N.tga", basename);
+
+  state->model = load_model(state, model_filename);
+  state->model->normalize();
+
+  ctx->diffuse = load_texture(state, diffuse_filename);
+  ctx->normal = load_texture(state, normal_filename);
 }
 
 static void render_floor(State *state, RenderingContext *ctx)
