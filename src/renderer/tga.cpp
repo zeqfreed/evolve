@@ -118,7 +118,7 @@ Vec3f TgaPixelIter::next()
       bool isRLE = packet & (1 << 7);
 
       if (isRLE) {
-        rleCount = packet & 127;
+        rleCount = (packet & 127) + 1;
 
         uint8_t b = pixelData[0];
         uint8_t g = pixelData[1];
@@ -127,13 +127,17 @@ Vec3f TgaPixelIter::next()
 
         rleValue = (Vec3f){r / 255.0, g / 255.0, b / 255.0};
       } else {
-        rawCount = packet & 127;
+        rawCount = (packet & 127) + 1;
       }
     }
 
-    if (rleCount--) {
+    if (rleCount > 0) {
+      rleCount--;
       result = rleValue;
-    } else if (rawCount--) {
+
+    } else if (rawCount > 0) {
+      rawCount--;
+
       uint8_t b = pixelData[0];
       uint8_t g = pixelData[1];
       uint8_t r = pixelData[2];
@@ -179,7 +183,6 @@ void TgaImage::read_into_texture(void *bytes, size_t size, Texture *texture)
 
   while (iter.hasMore()) {
     Vec3f pixel = iter.next();
-    //printf("(%d, %d): %.3f %.3f %.3f\n", iter.x, iter.y, pixel.r, pixel.g, pixel.b);
     texture->pixels[iter.y * header.width + iter.x] = pixel;
   }
 }
