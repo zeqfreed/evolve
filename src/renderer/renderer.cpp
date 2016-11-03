@@ -305,6 +305,11 @@ static void draw_triangle(RenderingContext *ctx, IShader *shader)
   int target_width = ctx->target->width;
   int target_height = ctx->target->height;
 
+  if (maxx < 0 || maxy < 0 ||
+      minx >= target_width || miny >= target_height) {
+    return;
+  }
+
   // Clip bounding rect to target rect
   minx = MAX(0, minx);
   miny = MAX(0, miny);
