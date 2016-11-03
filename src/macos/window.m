@@ -151,6 +151,7 @@ void MacOS_CreateWindow()
     
     window = [[MacOSWindow alloc] initWithWidth:800 height:600];
     [window setDelegate: appDelegate];
+    [window center];
     
     [window setTitle:@"Evolve -.-"];
 
