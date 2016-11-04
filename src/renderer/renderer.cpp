@@ -28,6 +28,7 @@ typedef struct RenderingContext {
 
   Texture *diffuse;
   Texture *normal;
+  Texture *shadowmap;
 
   Vec3f clear_color;
   Vec3f light;
@@ -36,9 +37,11 @@ typedef struct RenderingContext {
   Mat44 view_mat;
   Mat44 projection_mat;
   Mat44 viewport_mat;
+  Mat44 shadow_mvp_mat;
 
   Mat44 modelview_mat;
   Mat44 normal_mat;
+  Mat44 shadow_mat;
 } RenderingContext;
 
 struct IShader {
@@ -259,10 +262,6 @@ struct FloorShader : public IShader {
     Vec3f normal = normals[0];
     float intensity = 1.0; //normal.dot(ctx->light);
 
-    Vec3f vcolor = (Vec3f){colors[0].r * t0 + colors[1].r * t1 + colors[2].r * t2,
-                           colors[0].g * t0 + colors[1].g * t1 + colors[2].g * t2,
-                           colors[0].b * t0 + colors[1].b * t1 + colors[2].b * t2};
-
     Vec3f uvz = uvzs[0] * t0 + uvzs[1] * t1 + uvzs[2] * t2;
     float z = 1 / uvz.z;
     int texX = uvz.x * z * 5;
@@ -272,11 +271,29 @@ struct FloorShader : public IShader {
     if (texX % 2 == texY % 2) {
       tcolor = (Vec3f){1, 1, 1};
     } else {
-      tcolor = (Vec3f){0, 0, 0};
+      tcolor = (Vec3f){0.5, 0.5, 0.5};
     }
 
-    vcolor = vcolor * z;
-    *color = ((Vec3f){vcolor.r * tcolor.r, vcolor.g * tcolor.g, vcolor.b * tcolor.b} * intensity).clamped();
+    Vec3f vcolor = (Vec3f){colors[0].r * t0 + colors[1].r * t1 + colors[2].r * t2,
+                           colors[0].g * t0 + colors[1].g * t1 + colors[2].g * t2,
+                           colors[0].b * t0 + colors[1].b * t1 + colors[2].b * t2} * z;
+
+    Vec3f pos = positions[0] * t0 + positions[1] * t1 + positions[2] * t2;
+    Vec3f shadow = pos * ctx->shadow_mat;
+    int shx = shadow.x;
+    int shy = shadow.y;
+
+    if (shadow.x >= 0 && shadow.y >= 0 &&
+        shadow.x < ctx->shadowmap->width && shadow.y < ctx->shadowmap->height) {
+      float shz = 1 - shadow.z;
+      Vec3f shval = ctx->shadowmap->pixels[shy * ctx->shadowmap->width + shx];
+
+      if (shz < shval.x) {
+        intensity = 0.2;
+      }
+    }
+
+    *color = ((Vec3f){vcolor.r * tcolor.r, vcolor.g * tcolor.g, vcolor.b * tcolor.b}).clamped() * intensity;
 
     return true;
   }
@@ -286,6 +303,7 @@ static void precalculate_matrices(RenderingContext *ctx)
 {
   ctx->normal_mat = ctx->model_mat.inverse().transposed();
   ctx->modelview_mat = ctx->model_mat * ctx->view_mat;
+  ctx->shadow_mat = (ctx->modelview_mat * ctx->projection_mat).inverse() * ctx->shadow_mvp_mat;
 }
 
 inline static float edge_func(float x0, float y0, float x1, float y1)
@@ -293,7 +311,7 @@ inline static float edge_func(float x0, float y0, float x1, float y1)
   return (x0 * y1) - (x1 * y0);
 }
 
-static void draw_triangle(RenderingContext *ctx, IShader *shader)
+static void draw_triangle(RenderingContext *ctx, IShader *shader, bool only_z = false)
 {
   Vec3f p0 = shader->positions[0] * ctx->viewport_mat;
   Vec3f p1 = shader->positions[1] * ctx->viewport_mat;
@@ -342,7 +360,7 @@ static void draw_triangle(RenderingContext *ctx, IShader *shader)
           ctx->zbuffer[j*target_width+i] = zvalue;
 
           Vec3f color;
-          if (shader->fragment(ctx, t0, t1, t2, &color)) {
+          if (!only_z && shader->fragment(ctx, t0, t1, t2, &color)) {
             set_pixel(ctx->target, i, j, color);
           }
         }
@@ -431,7 +449,24 @@ static void clear_zbuffer(RenderingContext *ctx)
   }
 }
 
-static Mat44 projection_matrix(float near, float far, float fov)
+static Mat44 orthographic_matrix(float near, float far, float left, float bottom, float right, float top)
+{
+  float w = right - left;
+  float h = top - bottom;
+  float z = -1.0;
+  
+  Mat44 result = Mat44::identity();
+  result.a = 2 / w;
+  result.f = 2 / h;
+  result.k = (z - near) / (far - near);
+
+  result.m = -(right + left) / w;
+  result.n = -(top + bottom) / h;
+
+  return result;
+}
+
+static Mat44 perspective_matrix(float near, float far, float fov)
 {
   Mat44 result = Mat44::identity();
   result.k = (-far / (far - near));
@@ -475,7 +510,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
   ctx->model_mat = Mat44::identity();
   ctx->viewport_mat = viewport_matrix(buffer->width, buffer->height);
-  ctx->projection_mat = projection_matrix(0.1, 10, 90);
+  ctx->projection_mat = perspective_matrix(0.1, 10, 90);
   ctx->light = ((Vec3f){0, -1, 0}).normalized();
 
   ctx->zbuffer = (zval_t *) state->main_arena->allocate(buffer->width * buffer->height * sizeof(zval_t));
@@ -488,9 +523,9 @@ static void initialize(State *state, DrawingBuffer *buffer)
   char model_filename[255];
   char diffuse_filename[255];
   char normal_filename[255];
-  snprintf(model_filename, 255, "data/%s.obj", basename);
-  snprintf(diffuse_filename, 255, "data/%s_D.tga", basename);
-  snprintf(normal_filename, 255, "data/%s_N.tga", basename);
+  snprintf(model_filename, 255, (char *) "data/%s.obj", basename);
+  snprintf(diffuse_filename, 255, (char *) "data/%s_D.tga", basename);
+  snprintf(normal_filename, 255, (char *) "data/%s_N.tga", basename);
 
   state->model = load_model(state, model_filename);
   state->model->normalize();
@@ -585,6 +620,56 @@ Mat44 look_at_matrix(Vec3f from, Vec3f to, Vec3f up)
   return result;
 }
 
+static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, Texture *shadowmap)
+{
+  Vec3f color = {1, 1, 1};
+
+  ModelShader shader;
+  RenderingContext subctx = {};
+
+  ASSERT(shadowmap->width == ctx->target->width);
+  ASSERT(shadowmap->height == ctx->target->height);
+
+  subctx.target = ctx->target;
+  subctx.clear_color = BLACK;
+
+  subctx.model_mat = Mat44::identity();
+  subctx.viewport_mat = viewport_matrix(shadowmap->width, shadowmap->height);
+  subctx.projection_mat = orthographic_matrix(0.1, 10, -1, -1, 1, 1);
+
+  subctx.zbuffer = ctx->zbuffer;
+
+  Mat44 view_mat = look_at_matrix(ctx->light, (Vec3f){0, 0, 0}, (Vec3f){0, 1, 0});
+  subctx.view_mat = view_mat;
+
+  precalculate_matrices(&subctx);
+  ctx->shadow_mvp_mat = subctx.modelview_mat * subctx.projection_mat * subctx.viewport_mat;
+
+  clear_zbuffer(&subctx);
+
+  for (int fi = 0; fi < model->fcount; fi++) {
+    ModelFace face = model->faces[fi];
+
+    for (int vi = 0; vi < 3; vi++) {
+      Vec3f position = model->vertices[face.vi[vi]];
+      Vec3f texture = model->texture_coords[face.ti[vi]];
+      Vec3f normal = model->normals[face.ni[vi]];
+
+      shader.vertex(&subctx, vi, position, normal, texture, color);
+    }
+
+    draw_triangle(&subctx, &shader, true);
+  }
+
+  for  (int i = 0; i < shadowmap->width; i++) {
+    for (int j = 0; j < shadowmap->height; j++) {
+      zval_t zval = subctx.zbuffer[j * shadowmap->width + i];
+      float v = (float) zval / ZBUFFER_MAX;
+      shadowmap->pixels[j * shadowmap->width + i] = (Vec3f){v, v, v};
+    }
+  }
+}
+
 C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer)
 {
   State *state = (State *) global_state->state;
@@ -604,16 +689,23 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
 
   RenderingContext *ctx = &state->rendering_context;
 
-  state->angle += 0.001; // TODO: Use frame dt
+  if (!ctx->shadowmap) {
+    ctx->shadowmap = (Texture *) state->main_arena->allocate(sizeof(Texture));
+    ctx->shadowmap->pixels = (Vec3f *) state->main_arena->allocate(ctx->target->width * ctx->target->height * sizeof(Vec3f));
+    ctx->shadowmap->width = drawing_buffer->width;
+    ctx->shadowmap->height = drawing_buffer->height;
+
+    ctx->light = ((Vec3f){0.5, 1, 0.5}).normalized();
+
+    render_shadowmap(state, ctx, state->model, ctx->shadowmap);
+  }
+
+  state->angle += 0.01; // TODO: Use frame dt
   if (state->angle > 2*PI) {
     state->angle -= 2*PI;
   }
 
-  Mat44 light_mat = Mat44::rotate_y(0);
-  Vec3f light = ((Vec3f){1, 1, 1} * light_mat).normalized();
-  ctx->light = light;
-
-  Mat44 view_mat = look_at_matrix((Vec3f){0.2, 0.65, 0.9}, (Vec3f){0, 0.4, 0}, (Vec3f){0, 1, 0});
+  Mat44 view_mat = look_at_matrix((Vec3f){0.2, 0.65, 0.9}, (Vec3f){0, 0.2, 0}, (Vec3f){0, 1, 0});
   ctx->view_mat = Mat44::rotate_y(-state->angle) * view_mat;
 
   clear_buffer(ctx);
