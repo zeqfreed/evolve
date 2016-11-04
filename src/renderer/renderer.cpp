@@ -501,7 +501,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
 static void render_floor(State *state, RenderingContext *ctx)
 {
-  ctx->model_mat = Mat44::translate(0, -0.4, 0);
+  ctx->model_mat = Mat44::translate(0, 0, 0);
 
   Vec3f vertices[4][2] = {
     {{-0.5, 0, 0.5}, {0, 0, 0}},
@@ -528,7 +528,7 @@ static void render_model(State *state, RenderingContext *ctx, Model *model, bool
 {
   Vec3f color = {1, 1, 1};
 
-  ctx->model_mat = Mat44::translate(0, -0.4, 0);
+  ctx->model_mat = Mat44::translate(0, 0, 0);
 
   precalculate_matrices(ctx);
 
@@ -613,7 +613,7 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
   Vec3f light = ((Vec3f){1, 1, 1} * light_mat).normalized();
   ctx->light = light;
 
-  Mat44 view_mat = look_at_matrix((Vec3f){0.2, 0.15, 0.9}, (Vec3f){0, 0, 0}, (Vec3f){0, 1, 0});
+  Mat44 view_mat = look_at_matrix((Vec3f){0.2, 0.65, 0.9}, (Vec3f){0, 0.4, 0}, (Vec3f){0, 1, 0});
   ctx->view_mat = Mat44::rotate_y(-state->angle) * view_mat;
 
   clear_buffer(ctx);

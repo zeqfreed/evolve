@@ -140,10 +140,10 @@ void Model::normalize(bool move_to_center = false)
 
   Vec3f offset = {0, 0, 0};
   if (move_to_center) {
-    offset = -center;
+    offset = offset - center;
   }
 
   for (int i = 0; i < vcount; i++) {
-    vertices[i] = vertices[i] * scale - offset * scale;
+    vertices[i] = vertices[i] * scale + offset * scale;
   }  
 }
