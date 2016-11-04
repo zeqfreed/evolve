@@ -6,7 +6,9 @@
 
 #define ASSERT(x) if (!(x)) { printf("Assertion at %s, line %d failed: %s\n", __FILE__, __LINE__, #x); *((uint32_t *)1) = 0xDEADCAFE; }
 
-#define ZBUFFER_MAX 0xFFFFFFFF
+typedef uint16_t zval_t;
+#define ZBUFFER_MIN 0
+#define ZBUFFER_MAX 0xFFFF
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MIN3(a, b, c) (MIN(MIN(a, b), c))
@@ -22,7 +24,7 @@
 
 typedef struct RenderingContext {
   DrawingBuffer *target;
-  uint32_t *zbuffer;
+  zval_t *zbuffer;
 
   Texture *diffuse;
   Texture *normal;
@@ -198,12 +200,12 @@ struct ModelShader : public IShader {
     Vec3f tcolor = ctx->diffuse->pixels[texY*ctx->diffuse->width+texX];
     *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b};
 
-    int nx = uv.x * ctx->normal->width;
-    int ny = uv.y * ctx->normal->height;
-    Vec3f ncolor = ctx->normal->pixels[ny*ctx->normal->width+nx];
-    Vec3f tnormal = (Vec3f){2 * ncolor.r - 1, 2 * ncolor.g - 1, ncolor.b};
+    if (1 && ctx->normal) {
+      int nx = uv.x * ctx->normal->width;
+      int ny = uv.y * ctx->normal->height;
+      Vec3f ncolor = ctx->normal->pixels[ny*ctx->normal->width+nx];
+      Vec3f tnormal = (Vec3f){2 * ncolor.r - 1, 2 * ncolor.g - 1, ncolor.b};
 
-    if (1) {
       Vec3f dp1 = pos[1] - pos[0];
       Vec3f dp2 = pos[2] - pos[1];
       Vec3f duv1 = uvs[1] - uvs[0];
@@ -222,7 +224,7 @@ struct ModelShader : public IShader {
       normal = (tnormal * invTBN).normalized();
     }
 
-    Vec3f ambient = tcolor * 0.15;
+    Vec3f ambient = tcolor * 0.3;
     intensity = normal.dot(-ctx->light);
     if (intensity < 0.0) {
       intensity = 0.0;
@@ -335,7 +337,7 @@ static void draw_triangle(RenderingContext *ctx, IShader *shader)
         t1 /= area;
         t2 /= area;
 
-        uint32_t zvalue = (1 - (p0.z * t0 + p1.z * t1 + p2.z * t2)) * ZBUFFER_MAX;
+        zval_t zvalue = (1 - (p0.z * t0 + p1.z * t1 + p2.z * t2)) * ZBUFFER_MAX;
         if (zvalue > ctx->zbuffer[j*target_width+i]) {
           ctx->zbuffer[j*target_width+i] = zvalue;
 
@@ -424,7 +426,7 @@ static void clear_zbuffer(RenderingContext *ctx)
 {
   for (int i = 0; i < 800; i++) {
     for (int j = 0; j < 600; j++) {
-      ctx->zbuffer[j*800+i] = 0;
+      ctx->zbuffer[j*800+i] = ZBUFFER_MIN;
     }
   }
 }
@@ -476,7 +478,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
   ctx->projection_mat = projection_matrix(0.1, 10, 90);
   ctx->light = ((Vec3f){0, -1, 0}).normalized();
 
-  ctx->zbuffer = (uint32_t *) state->main_arena->allocate(buffer->width * buffer->height * sizeof(uint32_t));
+  ctx->zbuffer = (zval_t *) state->main_arena->allocate(buffer->width * buffer->height * sizeof(zval_t));
 
   // TODO: DON'T ALLOCATE IN DYLIB !!!
   state->floorShader = new FloorShader();
