@@ -12,11 +12,23 @@ Possibly outdated list of implemented features includes:
    * Fixed frame rate game loop
    * Hot reloading of frame rendering module (courtesy of handmadehero.org)
 
-2. Zero dependency (bar a few standard C++ headers) 3d renderer:
-   * Implemented as hot-reloadable dylib
-   * Ad hoc TGA loader
-   * Ad hoc OBJ loader
-   * Rendering of loaded 3d model with diffuse texture, basic lighting, and smooth shading
+2. Renderer hot reloadable module
+   * Ad hoc loader of TGA textures and OBJ models
+
+# Renderer
+
+Features
+
+   * "Programmable pipeline" with vertex and fragment shaders
+   * Half-space triangle rasterization
+   * Diffuse texturing
+   * Normal mapping
+   * Basic lighting
+   * Shadow mapping
+
+Example output
+
+![Screenshot](screenshot.png?raw=true)
 
 # License
 
