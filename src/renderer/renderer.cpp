@@ -33,12 +33,15 @@ typedef struct RenderingContext {
   Vec3f clear_color;
   Vec3f light;
 
+  Vec4f near_clip_plane;
+
   Mat44 model_mat;
   Mat44 view_mat;
   Mat44 projection_mat;
   Mat44 viewport_mat;
   Mat44 shadow_mvp_mat;
 
+  Mat44 mvp_mat;
   Mat44 modelview_mat;
   Mat44 normal_mat;
   Mat44 shadow_mat;
@@ -303,7 +306,14 @@ static void precalculate_matrices(RenderingContext *ctx)
 {
   ctx->normal_mat = ctx->model_mat.inverse().transposed();
   ctx->modelview_mat = ctx->model_mat * ctx->view_mat;
-  ctx->shadow_mat = (ctx->modelview_mat * ctx->projection_mat).inverse() * ctx->shadow_mvp_mat;
+
+  Mat44 mvp = ctx->modelview_mat * ctx->projection_mat;
+  ctx->mvp_mat = mvp;
+
+  ctx->shadow_mat = ctx->mvp_mat.inverse() * ctx->shadow_mvp_mat;
+  Vec4f p = (Vec4f){mvp.c, mvp.g, mvp.k, mvp.o};
+  float mag = sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+  ctx->near_clip_plane = p * (1 / mag);
 }
 
 inline static float edge_func(float x0, float y0, float x1, float y1)
@@ -582,19 +592,40 @@ static void render_model(State *state, RenderingContext *ctx, Model *model, bool
   }
 }
 
+static inline void render_line(RenderingContext *ctx, Vec3f start, Vec3f end, Vec3f color)
+{
+  float d0 = (Vec4f){start.x, start.y, start.z, 1}.dot(ctx->near_clip_plane);
+  float d1 = (Vec4f){end.x, end.y, end.z, 1}.dot(ctx->near_clip_plane);
+
+  if (d0 < 0 && d1 < 0) {
+    return;
+  }
+  
+  float c;
+  if (d1 < 0) {
+    c = d0 / (d0 - d1);
+    end = start + (end - start) * c;
+  } else if (d0 < 0) {
+    c = d0 / (d1 - d0);
+    start = start + (start - end) * c;
+  }
+
+  start = start * ctx->mvp_mat * ctx->viewport_mat;
+  end = end * ctx->mvp_mat * ctx->viewport_mat;
+
+  draw_line(ctx->target, start.x, start.y, end.x, end.y, color);
+}
+
 static void render_unit_axes(RenderingContext *ctx)
 {
-  Mat44 mat = ctx->view_mat * ctx->projection_mat * ctx->viewport_mat;
-  Vec3f c = (Vec3f){0, 0, 0} * mat;
-  Vec3f x = (Vec3f){1, 0, 0} * mat;
-  Vec3f y = (Vec3f){0, 1, 0} * mat;
-  Vec3f z = (Vec3f){0, 0, 1} * mat;
-  Vec3f l = ctx->light * mat;
+  ctx->model_mat = Mat44::identity();
+  precalculate_matrices(ctx);
 
-  draw_line(ctx->target, c.x, c.y, x.x, x.y, RED);
-  draw_line(ctx->target, c.x, c.y, y.x, y.y, GREEN);
-  draw_line(ctx->target, c.x, c.y, z.x, z.y, BLUE);
-  draw_line(ctx->target, c.x, c.y, l.x, l.y, WHITE);
+  Vec3f origin = {0, 0, 0};
+  render_line(ctx, origin, (Vec3f){1, 0, 0}, RED);
+  render_line(ctx, origin, (Vec3f){0, 1, 0}, GREEN);
+  render_line(ctx, origin, (Vec3f){0, 0, 1}, BLUE);
+  render_line(ctx, origin, ctx->light, WHITE);
 }
 
 Mat44 look_at_matrix(Vec3f from, Vec3f to, Vec3f up)
@@ -705,7 +736,7 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
     state->angle -= 2*PI;
   }
 
-  Mat44 view_mat = look_at_matrix((Vec3f){0.2, 0.65, 0.9}, (Vec3f){0, 0.2, 0}, (Vec3f){0, 1, 0});
+  Mat44 view_mat = look_at_matrix((Vec3f){0.2, 0.03, 0.9}, (Vec3f){0, 0, 0}, (Vec3f){0, 1, 0});
   ctx->view_mat = Mat44::rotate_y(-state->angle) * view_mat;
 
   clear_buffer(ctx);
@@ -713,5 +744,5 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
 
   render_floor(state, ctx);
   render_model(state, ctx, state->model);
-  // render_unit_axes(&rendering_context);
+  render_unit_axes(ctx);
 }

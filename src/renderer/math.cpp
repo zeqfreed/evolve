@@ -42,7 +42,32 @@ typedef union Vec3f {
   float length();
   Vec3f normalized();
   Vec3f clamped(float min = 0.0, float max = 1.0);
+  Vec3f transform(Mat44 mat, float *w);
 } Vec3f;
+
+typedef union Vec4f {
+  struct {
+    float x;
+    float y;
+    float z;
+    float w;
+  };
+
+  struct {
+    float a;
+    float b;
+    float c;
+    float d;
+  };
+
+  float length();
+  Vec4f normalized();
+  float dot(Vec4f v);
+} Vec4f;
+
+//
+// Vec3f
+//
 
 inline Vec3f operator+(Vec3f a, Vec3f b)
 {
@@ -116,8 +141,80 @@ inline Vec3f operator*(Vec3f v, Mat44 mat)
   return result;
 }
 
+inline Vec3f Vec3f::transform(Mat44 mat, float *w)
+{
+  Vec3f result = {};
+
+  result.x = x * mat.a + y * mat.e + z * mat.i + mat.m;
+  result.y = x * mat.b + y * mat.f + z * mat.j + mat.n;
+  result.z = x * mat.c + y * mat.g + z * mat.k + mat.o;
+  *w  = x * mat.d + y * mat.h + z * mat.l + mat.p;
+
+  return result;
+}
+
 //
-// Matrices
+// Vec4f
+//
+
+inline Vec4f operator+(Vec4f a, Vec4f b)
+{
+  return (Vec4f){a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w};
+}
+
+inline Vec4f operator-(Vec4f a, Vec4f b)
+{
+  return (Vec4f){a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w};
+}
+
+inline Vec4f operator*(Vec4f v, float scalar)
+{
+  return (Vec4f){v.x * scalar, v.y * scalar, v.z * scalar, v.w * scalar};
+}
+
+inline float Vec4f::dot(Vec4f v)
+{
+  return x * v.x + y * v.y + z * v.z + w * v.w;
+}
+
+inline float Vec4f::length()
+{
+  return sqrt(x * x + y * y + z * z + w * w);
+}
+
+inline Vec4f Vec4f::normalized()
+{
+  float factor = 1.0 / this->length();
+  return *this * factor;
+}
+
+inline void print(const char *tag, Vec4f v)
+{
+  printf("%s:\tx: %.3f; y: %.3f; z: %.3f; w: %.3f\n", tag, v.x, v.y, v.z, v.w);
+}
+
+inline Vec4f operator*(Vec4f v, Mat44 mat)
+{
+  Vec4f result = {};
+
+  result.x = v.x * mat.a + v.y * mat.e + v.z * mat.i + v.w * mat.m;
+  result.y = v.x * mat.b + v.y * mat.f + v.z * mat.j + v.w * mat.n;
+  result.z = v.x * mat.c + v.y * mat.g + v.z * mat.k + v.w * mat.o;
+  result.w = v.x * mat.d + v.y * mat.h + v.z * mat.l + v.w * mat.p;
+
+  if (result.w != 1.0) {
+    float rw = 1.0 / result.w;
+    result.x *= rw;
+    result.y *= rw;
+    result.z *= rw;
+    result.w = 1.0;
+  }
+
+  return result;
+}
+
+//
+// Mat44
 //
 
 Mat44 Mat44::identity()
@@ -302,4 +399,3 @@ void Mat44::print()
     printf("%.5f %.5f %.5f %.5f\n", el[row][0], el[row][1], el[row][2], el[row][3]);
   }
 }
-
