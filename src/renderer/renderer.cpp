@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <math.h>
+#include <string.h>
 
 #include "game.h"
 
@@ -111,15 +112,24 @@ static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b)
   }
 }
 
-static inline void set_pixel(DrawingBuffer *buffer, int32_t x, int32_t y, Vec3f color)
+static inline uint32_t rgba_color(Vec3f color)
 {
   uint8_t r = (uint8_t) (255.0 * color.r);
   uint8_t g = (uint8_t) (255.0 * color.g);
   uint8_t b = (uint8_t) (255.0 * color.b);
-  uint32_t c = 0xFF000000 | (b << 16) | (g << 8) | r;
+  return (0xFF000000 | (b << 16) | (g << 8) | r);
+}
 
+static inline void set_pixel(DrawingBuffer *buffer, int32_t x, int32_t y, Vec3f color)
+{
   int idx = (y * buffer->pitch + x) * buffer->bits_per_pixel;
-  *((uint32_t *) &((uint8_t *)buffer->pixels)[idx]) = c;
+  *((uint32_t *) &((uint8_t *)buffer->pixels)[idx]) = rgba_color(color);
+}
+
+static inline void set_pixel(DrawingBuffer *buffer, int32_t x, int32_t y, uint32_t rgba)
+{
+  int idx = (y * buffer->pitch + x) * buffer->bits_per_pixel;
+  *((uint32_t *) &((uint8_t *)buffer->pixels)[idx]) = rgba;
 }
 
 static inline void set_pixel_safe(DrawingBuffer *buffer, int32_t x, int32_t y, Vec3f color)
@@ -452,20 +462,32 @@ static Texture *load_texture(State *state, char *filename)
 
 static void clear_buffer(RenderingContext *ctx)
 {
+  int width = ctx->target->width;
+  int height = ctx->target->height;
+  uint32_t color = rgba_color(ctx->clear_color);
+
   for (int j = 0; j <= ctx->target->height; j++) {
     for (int i = 0; i <= ctx->target->width; i++) {
-      set_pixel(ctx->target, i, j, ctx->clear_color);
+      set_pixel(ctx->target, i, j, color);
     }
   }  
 }
 
 static void clear_zbuffer(RenderingContext *ctx)
 {
-  for (int i = 0; i < 800; i++) {
-    for (int j = 0; j < 600; j++) {
-      ctx->zbuffer[j*800+i] = ZBUFFER_MIN;
+  int width = ctx->target->width;
+  int height = ctx->target->height;
+
+#if 0
+  for (int j = 0; j < height; j++) {
+    int jw = j*width;
+    for (int i = 0; i < width; i++) {
+      ctx->zbuffer[j*width+i] = ZBUFFER_MIN;
     }
   }
+#else
+  memset(ctx->zbuffer, ZBUFFER_MIN, width*height*sizeof(zval_t));
+#endif
 }
 
 static Mat44 orthographic_matrix(float near, float far, float left, float bottom, float right, float top)

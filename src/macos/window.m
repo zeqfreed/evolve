@@ -31,6 +31,13 @@
 
 @end
 
+#define WIDTH 1600
+#define HEIGHT 900
+#define TEX_WIDTH 2048
+#define TEX_HEIGHT 1024
+#define TEX_U ((float) WIDTH / (float) TEX_WIDTH)
+#define TEX_V ((float) HEIGHT / (float) TEX_HEIGHT)
+
 static BOOL gameRunning = false;
 static MacOSWindow *window = nil;
 static MacOSWindowView *view = nil;
@@ -50,9 +57,14 @@ static NSOpenGLContext* openGLContext = nil;
   [openGLContext update];
 
   glDisable(GL_DEPTH_TEST);
+  glViewport(0, 0, WIDTH, HEIGHT);
+
+  glMatrixMode(GL_PROJECTION);
   glLoadIdentity();
-  glViewport(0, 0, 800, 600);
-  //glOrtho(-1, 1, -1, 1, -1, 1);
+  glOrtho(-1, 1, -1, 1, -1, 1);
+
+  glMatrixMode(GL_MODELVIEW);
+  glLoadIdentity();
 }
 
 - (void) windowWillClose: (id)sender
@@ -147,7 +159,7 @@ static NSOpenGLContext* openGLContext = nil;
     return nil;
   }
 
-  NSRect frameRect = NSMakeRect(0, 0, 800, 600);
+  NSRect frameRect = NSMakeRect(0, 0, WIDTH, HEIGHT);
   view = [[MacOSWindowView alloc] initWithFrame:frameRect];
 
   [self setContentView:view];
@@ -216,7 +228,7 @@ void MacOS_CreateWindow()
     [NSApp setActivationPolicy: NSApplicationActivationPolicyRegular];
     [NSApp finishLaunching];
     
-    window = [[MacOSWindow alloc] initWithWidth:800 height:600];
+    window = [[MacOSWindow alloc] initWithWidth:WIDTH height:HEIGHT];
     [window setDelegate: appDelegate];
     [window center];
     
@@ -263,16 +275,16 @@ static GLuint texId = 0;
 
 static void DEBUG_DrawScene() {
   const static Vertex vertices[] = {
-      {{0.78125, 0}, {1, -1}},
-      {{0.78125, 0.5859375}, {1, 1}},
-      {{0, 0.5859375}, {-1, 1}},
+      {{TEX_U, 0}, {1, -1}},
+      {{TEX_U, TEX_V}, {1, 1}},
+      {{0, TEX_V}, {-1, 1}},
       {{0, 0}, {-1, -1}}
   };
   const static int indices[] = {0, 1, 2, 2, 3, 0};
 
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-  glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
@@ -364,13 +376,13 @@ int main(int argc, char *argv[])
 
   srand(123);
 
-  void *framePixelData = calloc(800*600, 4); // width * height * RGBA
+  void *framePixelData = calloc(WIDTH*HEIGHT, 4); // width * height * RGBA
 
   glActiveTexture(GL_TEXTURE0);
   glEnable(GL_TEXTURE_2D);
   glGenTextures(1, &texId);
   glBindTexture(GL_TEXTURE_2D, texId);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1024, 1024, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, TEX_WIDTH, TEX_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
   uint64_t start;
   uint64_t end;
@@ -384,9 +396,9 @@ int main(int argc, char *argv[])
 
   DrawingBuffer drawing_buffer;
   drawing_buffer.pixels = framePixelData;
-  drawing_buffer.width = 800;
-  drawing_buffer.height = 600;
-  drawing_buffer.pitch = 800;
+  drawing_buffer.width = WIDTH;
+  drawing_buffer.height = HEIGHT;
+  drawing_buffer.pitch = WIDTH;
   drawing_buffer.bits_per_pixel = 4;
 
   GlobalState state = {};
@@ -428,7 +440,7 @@ int main(int argc, char *argv[])
 
     if (draw_frame) {
       draw_frame(&state, &drawing_buffer, lastFrameTime / 1000.0);
-      glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 800, 600, GL_RGBA, GL_UNSIGNED_BYTE, framePixelData);
+      glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, WIDTH, HEIGHT, GL_RGBA, GL_UNSIGNED_BYTE, framePixelData);
     }
 
     DEBUG_DrawScene();
