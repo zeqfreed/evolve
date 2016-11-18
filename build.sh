@@ -5,8 +5,8 @@ BINDIR="bin"
 DATASYMLINK="${BINDIR}/data"
 
 CC="g++"
-CFLAGS="-c -Wall -Wno-missing-braces -g -gmodules -O0 -DMACOSX -Isrc"
-#CFLAGS="-c -Wall -Wno-missing-braces -O2 -fomit-frame-pointer -ffast-math -DMACOSX -Isrc"
+#CFLAGS="-c -Wall -Wno-missing-braces -g -gmodules -O0 -DMACOSX -Isrc -DDEBUG"
+CFLAGS="-c -Wall -Wno-missing-braces -O2 -fomit-frame-pointer -ffast-math -DMACOSX -Isrc"
 LIBS="-framework Cocoa -framework OpenGL"
 
 function prepare() {

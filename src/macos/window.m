@@ -399,7 +399,27 @@ int main(int argc, char *argv[])
   gameRunning = true;
   start = mach_absolute_time();  
 
+  float targetMsPerFrame = 1.0 / 60.0;
+  double lastFrameTime = targetMsPerFrame;
+
+  int frames = 0;
+  float averageFps = 0;
+  float acc = 0;
+
   while(gameRunning) {
+    if (frames >= 100) {
+      averageFps = (100.0 / acc) * 1000.0;
+      printf("%.3f ms; %.2f FPS\n", acc / 100.0, averageFps);
+      acc = 0;
+      frames = 0;
+
+      if (averageFps >= 60.0) {
+        targetMsPerFrame = 1.0 / 60.0;
+      } else {
+        targetMsPerFrame = 1.0 / 30.0;
+      }
+    }
+
     if (shouldReloadDylib) {
       load_dylib();
     }
@@ -407,32 +427,27 @@ int main(int argc, char *argv[])
     MacOS_HandleEvents();
 
     if (draw_frame) {
-      draw_frame(&state, &drawing_buffer);
+      draw_frame(&state, &drawing_buffer, lastFrameTime / 1000.0);
       glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 800, 600, GL_RGBA, GL_UNSIGNED_BYTE, framePixelData);
     }
 
     DEBUG_DrawScene();
 
-    teststart = mach_absolute_time();
     uint64_t now = mach_absolute_time();
-    double targetMsPerFrame = 33.333333333;
     while ((targetMsPerFrame - (mach_time_in_seconds(now - start) * 1000.0)) > 0.0) {
       now = mach_absolute_time();
     }
 
-    // This code needs to be directly below busy loop / sleep to account for the entire frame worth of computations
+    // This code needs to be directly below busy loop / sleep to account for the entire frame's worth of computations
     end = mach_absolute_time();
     elapsed = end - start;
     start = end;
 
-    testend = mach_absolute_time();
-    double waitMs = mach_time_in_seconds(testend - teststart) * 1000.0;
-    //printf("waited %2.6g\n", waitMs);
-
     [openGLContext flushBuffer];
 
-    double frameTime = mach_time_in_seconds(elapsed) * 1000.0;
-    //printf("%.6g ms\n", frameTime);
+    lastFrameTime = mach_time_in_seconds(elapsed) * 1000.0;
+    acc += lastFrameTime;
+    frames++;
   }
 
   return 0;

@@ -4,7 +4,11 @@
 
 #include "game.h"
 
+#ifdef DEBUG
 #define ASSERT(x) if (!(x)) { printf("Assertion at %s, line %d failed: %s\n", __FILE__, __LINE__, #x); *((uint32_t *)1) = 0xDEADCAFE; }
+#else
+#define ASSERT(...)
+#endif
 
 typedef uint16_t zval_t;
 #define ZBUFFER_MIN 0
@@ -16,6 +20,8 @@ typedef uint16_t zval_t;
 #define MAX3(a, b, c) (MAX(MAX(a, b), c))
 
 #define CLAMP(val, min, max) (MAX(min, MIN(max, val)))
+
+#define RAD(x) ((x) * (PI / 180.0))
 
 #include "memory.cpp"
 #include "math.cpp"
@@ -66,7 +72,9 @@ typedef struct State {
   IShader *modelShader;
   IShader *floorShader;
 
-  float angle;
+  float xRot;
+  float yRot;
+  float fov;
 } State;
 
 static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b)
@@ -521,7 +529,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
   ctx->model_mat = Mat44::identity();
   ctx->viewport_mat = viewport_matrix(buffer->width, buffer->height);
-  ctx->projection_mat = perspective_matrix(0.1, 10, 90);
+  ctx->projection_mat = perspective_matrix(0.1, 10, 60);
   ctx->light = ((Vec3f){0, -1, 0}).normalized();
 
   ctx->zbuffer = (zval_t *) state->main_arena->allocate(buffer->width * buffer->height * sizeof(zval_t));
@@ -543,6 +551,10 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
   ctx->diffuse = load_texture(state, diffuse_filename);
   ctx->normal = load_texture(state, normal_filename);
+
+  state->xRot = RAD(15.0);
+  state->yRot = 0.0;
+  state->fov = 60.0;
 }
 
 static void render_floor(State *state, RenderingContext *ctx)
@@ -702,7 +714,55 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
   }
 }
 
-C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer)
+#define Y_RAD_PER_SEC RAD(120.0)
+#define X_RAD_PER_SEC RAD(120.0)
+#define FOV_DEG_PER_SEC 30.0
+
+void update_camera(State *state, float dt)
+{
+  float da = 0.0;
+  if (state->keyboard->downedKeys[KB_LEFT_ARROW]) {
+    da -= Y_RAD_PER_SEC * dt;
+  }
+  if (state->keyboard->downedKeys[KB_RIGHT_ARROW]) {
+    da += Y_RAD_PER_SEC * dt;
+  }
+
+  if (state->keyboard->downedKeys[KB_LEFT_SHIFT]) {
+    da *= 3.0;
+  }
+
+  state->yRot += da;
+  if (state->yRot > 2*PI) {
+    state->yRot -= 2*PI;
+  }
+
+  da = 0.0;
+  if (state->keyboard->downedKeys[KB_UP_ARROW]) {
+    da += X_RAD_PER_SEC * dt;
+  }
+
+  if (state->keyboard->downedKeys[KB_DOWN_ARROW]) {
+    da -= X_RAD_PER_SEC * dt;
+  }
+
+  state->xRot += da;
+  state->xRot = CLAMP(state->xRot, -PI / 2.0, PI / 2.0);
+
+  da = 0.0;
+  if (state->keyboard->downedKeys[KB_PLUS]) {
+    da -= FOV_DEG_PER_SEC * dt;
+  }
+
+  if (state->keyboard->downedKeys[KB_MINUS]) {
+    da += FOV_DEG_PER_SEC * dt;
+  }
+
+  state->fov += da;
+  state->fov = CLAMP(state->fov, 3.0, 170.0);
+}
+
+C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer, float dt)
 {
   State *state = (State *) global_state->state;
 
@@ -738,24 +798,14 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
     render_shadowmap(state, ctx, state->model, ctx->shadowmap);
   }
 
-  float da = 0.0;
-  if (state->keyboard->downedKeys[KB_LEFT_ARROW]) {
-    da = 0.01;
-  } else if (state->keyboard->downedKeys[KB_RIGHT_ARROW]) {
-    da = -0.01;
-  }
+  update_camera(state, dt);
+  ctx->projection_mat = perspective_matrix(0.1, 10, state->fov);
 
-  if (state->keyboard->downedKeys[KB_LEFT_SHIFT]) {
-    da *= 5.0;
-  }
-
-  state->angle += da; // TODO: Use frame dt
-  if (state->angle > 2*PI) {
-    state->angle -= 2*PI;
-  }
-
-  Mat44 view_mat = look_at_matrix((Vec3f){0.2, 0.9, 0.9}, (Vec3f){0, 0.35, 0}, (Vec3f){0, 1, 0});
-  ctx->view_mat = Mat44::rotate_y(-state->angle) * view_mat;
+  //Mat44 view_mat = look_at_matrix((Vec3f){0, 0, 1}, (Vec3f){0, 0.35, 0}, (Vec3f){0, 1, 0});
+  Mat44 view_mat = Mat44::translate(0, 0, -1);
+  ctx->view_mat = Mat44::rotate_y(-state->yRot) *
+                  Mat44::translate(0, -0.5, 0) *
+                  Mat44::rotate_x(-state->xRot) * view_mat;
 
   clear_buffer(ctx);
   clear_zbuffer(ctx);

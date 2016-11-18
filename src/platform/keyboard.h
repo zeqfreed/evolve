@@ -6,6 +6,8 @@ enum {
   KB_A = 0x04,
   KB_S = 0x16,
   KB_D = 0x07,
+  KB_MINUS = 0x2D,
+  KB_PLUS = 0x2E,
   KB_ESCAPE = 0x29,
   KB_SPACEBAR = 0x2C,
   KB_UP_ARROW = 0x52,

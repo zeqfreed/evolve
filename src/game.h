@@ -37,4 +37,4 @@ typedef struct GlobalState {
   void *state;
 } GlobalState;
 
-typedef void (* DrawFrameFunc)(GlobalState *state, DrawingBuffer *buffer);
+typedef void (* DrawFrameFunc)(GlobalState *state, DrawingBuffer *buffer, float dt);
