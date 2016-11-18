@@ -1,5 +1,6 @@
 
 #include <stdint.h>
+#include "platform/keyboard.h"
 
 #ifdef __cplusplus
     #define C_LINKAGE extern "C"
@@ -22,14 +23,17 @@ typedef struct FileContents {
 
 typedef FileContents (* ReadFileContentsFunc)(char *);
 typedef void *(* AllocateMemoryFunc)(size_t size);
+typedef void ( *TerminateFunc)();
 
 typedef struct PlatformAPI {
   ReadFileContentsFunc read_file_contents;
   AllocateMemoryFunc allocate_memory;
+  TerminateFunc terminate;
 } PlatformAPI;
 
 typedef struct GlobalState {
   PlatformAPI platform_api;
+  KeyboardState *keyboard;
   void *state;
 } GlobalState;
 

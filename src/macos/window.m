@@ -12,6 +12,8 @@
 #include "game.h"
 #include "assets.h"
 
+#include "keyboard.cpp"
+
 @interface MacOSAppDelegate : NSObject<NSApplicationDelegate, NSWindowDelegate>
 {
 }
@@ -63,6 +65,71 @@ static NSOpenGLContext* openGLContext = nil;
 -(void) drawRect: (NSRect) bounds
 {
   //printf("%s\n",__FUNCTION__);
+}
+
+- (void)keyDown:(NSEvent *)theEvent {
+  keyboard_state_key_down(&keyboardState, KEY_CODE_MAP[[theEvent keyCode]]);
+}
+
+- (void)keyUp:(NSEvent *)theEvent {
+  keyboard_state_key_up(&keyboardState, KEY_CODE_MAP[[theEvent keyCode]]);
+}
+
+#define MASK_RSHIFT 0x04
+#define MASK_RALT 0x40
+#define MASK_RCMD 0x08
+
+- (void)flagsChanged:(NSEvent *)theEvent
+{
+  NSUInteger flags = [theEvent modifierFlags];
+
+  if (flags & NSCommandKeyMask) {
+    if (flags & MASK_RCMD) {
+      keyboard_state_key_down(&keyboardState, KB_RIGHT_GUI);
+    } else {
+      keyboard_state_key_down(&keyboardState, KB_LEFT_GUI);
+    }
+  } else {
+    keyboard_state_key_up(&keyboardState, KB_LEFT_GUI);
+    keyboard_state_key_up(&keyboardState, KB_RIGHT_GUI);
+  }
+
+  if (flags & NSShiftKeyMask) {
+    if (flags & MASK_RSHIFT) {
+      keyboard_state_key_down(&keyboardState, KB_RIGHT_SHIFT);
+    } else {
+      keyboard_state_key_down(&keyboardState, KB_LEFT_SHIFT);
+    }
+  } else {
+    keyboard_state_key_up(&keyboardState, KB_LEFT_SHIFT);
+    keyboard_state_key_up(&keyboardState, KB_RIGHT_SHIFT);
+  }
+
+  if (flags & NSAlternateKeyMask) {
+    if (flags & MASK_RALT) {
+      keyboard_state_key_down(&keyboardState, KB_RIGHT_ALT);
+    } else {
+      keyboard_state_key_down(&keyboardState, KB_LEFT_ALT);
+    }
+  } else {
+    keyboard_state_key_up(&keyboardState, KB_LEFT_ALT);
+    keyboard_state_key_up(&keyboardState, KB_RIGHT_ALT);
+  }
+
+  // TODO: Right control!
+  if (flags & NSControlKeyMask) {
+    keyboard_state_key_down(&keyboardState, KB_LEFT_CONTROL);
+  } else {
+    keyboard_state_key_up(&keyboardState, KB_LEFT_CONTROL);
+  }
+
+  if (flags & NSFunctionKeyMask) {
+    keyboard_state_key_down(&keyboardState, KB_FUNCTION);
+  } else {
+    keyboard_state_key_up(&keyboardState, KB_FUNCTION);
+  }
+
+  // TODO: Update modifier flags
 }
 @end
 
@@ -282,6 +349,11 @@ C_LINKAGE void *macos_allocate_memory(size_t size)
   return result;
 }
 
+C_LINKAGE void macos_terminate()
+{
+  gameRunning = false;
+}
+
 int main(int argc, char *argv[])
 {
   setup_signal_handlers();
@@ -320,6 +392,9 @@ int main(int argc, char *argv[])
   GlobalState state = {};
   state.platform_api.read_file_contents = macos_read_file_contents;
   state.platform_api.allocate_memory = macos_allocate_memory;
+  state.platform_api.terminate = macos_terminate;
+  
+  state.keyboard = &keyboardState;
 
   gameRunning = true;
   start = mach_absolute_time();  

@@ -57,6 +57,7 @@ struct IShader {
 
 typedef struct State {
   PlatformAPI *platform_api;
+  KeyboardState *keyboard;
   MemoryArena *main_arena;
 
   Model *model;
@@ -714,8 +715,14 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
 
     state->main_arena = arena;
     state->platform_api = &global_state->platform_api;
+    state->keyboard = global_state->keyboard;
 
     initialize(state, drawing_buffer);
+  }
+
+  if (state->keyboard->downedKeys[KB_ESCAPE]) {
+    state->platform_api->terminate();
+    return;
   }
 
   RenderingContext *ctx = &state->rendering_context;
@@ -731,12 +738,23 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
     render_shadowmap(state, ctx, state->model, ctx->shadowmap);
   }
 
-  state->angle += 0.01; // TODO: Use frame dt
+  float da = 0.0;
+  if (state->keyboard->downedKeys[KB_LEFT_ARROW]) {
+    da = 0.01;
+  } else if (state->keyboard->downedKeys[KB_RIGHT_ARROW]) {
+    da = -0.01;
+  }
+
+  if (state->keyboard->downedKeys[KB_LEFT_SHIFT]) {
+    da *= 5.0;
+  }
+
+  state->angle += da; // TODO: Use frame dt
   if (state->angle > 2*PI) {
     state->angle -= 2*PI;
   }
 
-  Mat44 view_mat = look_at_matrix((Vec3f){0.2, 0.03, 0.9}, (Vec3f){0, 0, 0}, (Vec3f){0, 1, 0});
+  Mat44 view_mat = look_at_matrix((Vec3f){0.2, 0.9, 0.9}, (Vec3f){0, 0.35, 0}, (Vec3f){0, 1, 0});
   ctx->view_mat = Mat44::rotate_y(-state->angle) * view_mat;
 
   clear_buffer(ctx);
@@ -744,5 +762,5 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
 
   render_floor(state, ctx);
   render_model(state, ctx, state->model);
-  render_unit_axes(ctx);
+  // render_unit_axes(ctx);
 }

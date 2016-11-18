@@ -50,7 +50,7 @@ function build_exe() {
   $CC src/macos/assets.cpp $CFLAGS -o $OBJDIR/assets.o
   $CC -o $BINDIR/$EXE $OBJS $LIBS
 
-  return $?
+  result=$?
 }
 
 function build_all() {
