@@ -366,6 +366,15 @@ C_LINKAGE void macos_terminate()
   gameRunning = false;
 }
 
+static void update_fps(float frameMs, float fps)
+{
+  char buf[255];
+  snprintf(buf, 255, "Evolve - %.2f ms / %.1f FPS", frameMs, fps);
+
+  NSString *title = [[NSString alloc] initWithUTF8String:buf];
+  [window setTitle:title];
+}
+
 int main(int argc, char *argv[])
 {
   setup_signal_handlers();
@@ -421,7 +430,7 @@ int main(int argc, char *argv[])
   while(gameRunning) {
     if (frames >= 100) {
       averageFps = (100.0 / acc) * 1000.0;
-      printf("%.3f ms; %.2f FPS\n", acc / 100.0, averageFps);
+      update_fps(acc / 100.0, averageFps);
       acc = 0;
       frames = 0;
 

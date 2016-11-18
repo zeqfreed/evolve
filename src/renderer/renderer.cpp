@@ -560,7 +560,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->floorShader = new FloorShader();
   state->modelShader = new ModelShader();
 
-  char *basename = "rabbit/rabbit";
+  char *basename = (char *) "rabbit/rabbit";
   char model_filename[255];
   char diffuse_filename[255];
   char normal_filename[255];
