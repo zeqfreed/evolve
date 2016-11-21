@@ -3,9 +3,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include "game.h"
+#include "assets.h"
 
-C_LINKAGE FileContents macos_read_file_contents(char *filename)
+FileContents macos_read_file_contents(char *filename)
 {
     FileContents result = {0};
 

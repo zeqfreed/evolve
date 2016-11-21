@@ -24,16 +24,16 @@ function prepare() {
   fi
 }
 
-function build_renderer() {
+function build_viewer() {
   prepare
 
-  $CC src/renderer/renderer.cpp $CFLAGS -o $OBJDIR/renderer.o
+  $CC src/viewer/main.cpp $CFLAGS -o $OBJDIR/viewer.o
   result=$?
 
   if [ $result -eq 0 ]; then
-    libtool -macosx_version_min 10.11 -dynamic $OBJDIR/renderer.o -lstdc++ -lSystem -o $OBJDIR/renderer.dylib
+    libtool -macosx_version_min 10.11 -dynamic $OBJDIR/viewer.o -lstdc++ -lSystem -o $OBJDIR/viewer.dylib
     result=$?
-    cp $OBJDIR/renderer.dylib $BINDIR/renderer.dylib
+    cp $OBJDIR/viewer.dylib $BINDIR/viewer.dylib
   fi
 
   if [ $result -eq 0 ]; then
@@ -45,24 +45,24 @@ function build_exe() {
   prepare
 
   EXE="evolve"
-  OBJS="$OBJDIR/window.o $OBJDIR/assets.o"
+  OBJS="$OBJDIR/platform.o $OBJDIR/main.o"
 
-  $CC src/macos/window.m $CFLAGS -o $OBJDIR/window.o
-  $CC src/macos/assets.cpp $CFLAGS -o $OBJDIR/assets.o
+  $CC src/macos/main.m $CFLAGS -o $OBJDIR/main.o
+  $CC src/macos/platform.cpp $CFLAGS -o $OBJDIR/platform.o
   $CC -o $BINDIR/$EXE $OBJS $LIBS
 
   result=$?
 }
 
 function build_all() {
-    build_renderer
+    build_viewer
     build_exe
 }
 
 case "$1" in 
     "") build_all;;
     "all") build_all;;
-    "renderer") build_renderer;;
+    "viewer") build_viewer;;
     *) echo "Unknown target: $1";;
 esac
 

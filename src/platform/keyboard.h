@@ -1,3 +1,4 @@
+#include <stdint.h>
 
 typedef uint8_t kb_t;
 enum {
@@ -32,4 +33,3 @@ typedef struct KeyboardState {
   uint8_t modifiers;
 } KeyboardState;
 
-static KeyboardState keyboardState;

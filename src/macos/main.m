@@ -9,10 +9,12 @@
 #include <dlfcn.h>
 #include <signal.h>
 
-#include "game.h"
+#include "platform/platform.h"
 #include "assets.h"
 
 #include "keyboard.cpp"
+
+static KeyboardState keyboardState;
 
 @interface MacOSAppDelegate : NSObject<NSApplicationDelegate, NSWindowDelegate>
 {
@@ -80,11 +82,11 @@ static NSOpenGLContext* openGLContext = nil;
 }
 
 - (void)keyDown:(NSEvent *)theEvent {
-  keyboard_state_key_down(&keyboardState, KEY_CODE_MAP[[theEvent keyCode]]);
+  keyboard_state_key_down(&keyboardState, KEYBOARD_CODE([theEvent keyCode]));
 }
 
 - (void)keyUp:(NSEvent *)theEvent {
-  keyboard_state_key_up(&keyboardState, KEY_CODE_MAP[[theEvent keyCode]]);
+  keyboard_state_key_up(&keyboardState, KEYBOARD_CODE([theEvent keyCode]));
 }
 
 #define MASK_RSHIFT 0x04
@@ -322,7 +324,7 @@ static void load_dylib()
     draw_frame = NULL;
   }
 
-  dylibHandle = dlopen("bin/renderer.dylib", RTLD_LOCAL | RTLD_LAZY);
+  dylibHandle = dlopen("bin/viewer.dylib", RTLD_LOCAL | RTLD_LAZY);
   if (!dylibHandle) {
     printf("[%s] Unable to load library: %s\n", __FILE__, dlerror());
     exit(1);

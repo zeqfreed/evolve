@@ -1,11 +1,20 @@
+#pragma once
 
+#include <stddef.h>
 #include <stdint.h>
-#include "platform/keyboard.h"
+
+#include "keyboard.h"
 
 #ifdef __cplusplus
     #define C_LINKAGE extern "C"
 #else
     #define C_LINKAGE extern
+#endif
+
+#ifdef DEBUG
+#define ASSERT(x) if (!(x)) { printf("Assertion at %s, line %d failed: %s\n", __FILE__, __LINE__, #x); *((uint32_t *)1) = 0xDEADCAFE; }
+#else
+#define ASSERT(...)
 #endif
 
 typedef struct DrawingBuffer {

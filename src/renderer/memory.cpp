@@ -1,15 +1,7 @@
-#define KB(v) (1024 * v)
-#define MB(v) (1024 * KB(v))
-#define GB(v) (1024 * MB(v))
+#include <cstdint>
 
-typedef struct MemoryArena {
-  size_t total_size;
-  size_t taken;
-  void *memory;
-
-  void *allocate(size_t size);
-  static MemoryArena *initialize(void *memory, size_t size);
-} MemoryArena;
+#include "platform/platform.h"
+#include "memory.h"
 
 MemoryArena *MemoryArena::initialize(void *memory, size_t size)
 {

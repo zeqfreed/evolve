@@ -1,5 +1,6 @@
+#include <stdint.h>
 
-static kb_t KEY_CODE_MAP[255] = {
+static kb_t keyCodesMap[255] = {
   KB_A,			// kVK_ANSI_A (0x0)
   KB_S,			// kVK_ANSI_S (0x1)
   KB_D,			// kVK_ANSI_D (0x2)
@@ -129,7 +130,9 @@ static kb_t KEY_CODE_MAP[255] = {
   KB_UP_ARROW	// kVK_UpArrow (0x7E)
 };
 
-void keyboard_state_key_down(KeyboardState *state, kb_t kbCode)
+#define KEYBOARD_CODE(code) (keyCodesMap[code])
+
+inline void keyboard_state_key_down(KeyboardState *state, kb_t kbCode)
 {
   if (kbCode) {
     state->keysDowned++;
@@ -137,7 +140,7 @@ void keyboard_state_key_down(KeyboardState *state, kb_t kbCode)
   }
 }
 
-void keyboard_state_key_up(KeyboardState *state, kb_t kbCode)
+inline void keyboard_state_key_up(KeyboardState *state, kb_t kbCode)
 {
   if (kbCode) {
     state->keysDowned--;

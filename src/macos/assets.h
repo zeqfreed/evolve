@@ -1,2 +1,5 @@
+#pragma once
 
-FileContents macos_read_file_contents(char *filename);
+#include "platform/platform.h"
+
+C_LINKAGE FileContents macos_read_file_contents(char *filename);
