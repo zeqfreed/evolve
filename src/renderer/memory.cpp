@@ -24,3 +24,14 @@ void *MemoryArena::allocate(size_t size)
   taken += size;
   return result;
 }
+
+MemoryArena *MemoryArena::subarena(size_t size)
+{
+  ASSERT(size > 0);
+
+  size_t required_size = size + sizeof(MemoryArena);
+  ASSERT(taken + required_size <= total_size);
+
+  void *mem = this->allocate(required_size);
+  return MemoryArena::initialize(mem, required_size);
+}

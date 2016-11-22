@@ -317,14 +317,14 @@ static DrawFrameFunc draw_frame = NULL;
 static bool shouldReloadDylib = false;
 static void *dylibHandle = NULL;
 
-static void load_dylib()
+static void load_dylib(char *path)
 {
   if (dylibHandle) {
     dlclose(dylibHandle);
     draw_frame = NULL;
   }
 
-  dylibHandle = dlopen("bin/viewer.dylib", RTLD_LOCAL | RTLD_LAZY);
+  dylibHandle = dlopen(path, RTLD_LOCAL | RTLD_LAZY);
   if (!dylibHandle) {
     printf("[%s] Unable to load library: %s\n", __FILE__, dlerror());
     exit(1);
@@ -379,8 +379,16 @@ static void update_fps(float frameMs, float fps)
 
 int main(int argc, char *argv[])
 {
+  char dylib_path[255];
+  if (argc > 1) {
+    snprintf(dylib_path, 255, "bin/%s.dylib", argv[1]);
+  } else {
+    printf("Usage: %s MODULE\n", argv[0]);
+    exit(1);
+  };
+  
   setup_signal_handlers();
-  load_dylib();
+  load_dylib(dylib_path);
 
   //DebugApplicationPath();
   MacOS_CreateWindow();
@@ -444,7 +452,7 @@ int main(int argc, char *argv[])
     }
 
     if (shouldReloadDylib) {
-      load_dylib();
+      load_dylib(dylib_path);
     }
 
     MacOS_HandleEvents();

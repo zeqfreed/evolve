@@ -9,6 +9,7 @@ typedef struct MemoryArena {
   size_t taken;
   void *memory;
 
-  void *allocate(size_t size);
   static MemoryArena *initialize(void *memory, size_t size);
+  void *allocate(size_t size);
+  MemoryArena *subarena(size_t size);
 } MemoryArena;

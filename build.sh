@@ -35,9 +35,18 @@ function build_viewer() {
     result=$?
     cp $OBJDIR/viewer.dylib $BINDIR/viewer.dylib
   fi
+}
+
+function build_cubes() {
+  prepare
+
+  $CC src/cubes/main.cpp $CFLAGS -o $OBJDIR/cubes.o
+  result=$?
 
   if [ $result -eq 0 ]; then
-    killall -USR1 evolve
+    libtool -macosx_version_min 10.11 -dynamic $OBJDIR/cubes.o -lstdc++ -lSystem -o $OBJDIR/cubes.dylib
+    result=$?
+    cp $OBJDIR/cubes.dylib $BINDIR/cubes.dylib
   fi
 }
 
@@ -54,15 +63,25 @@ function build_exe() {
   result=$?
 }
 
+function force_reload() {
+  if [ $result -eq 0 ]; then
+    killall -USR1 evolve
+  fi
+}
+
 function build_all() {
     build_viewer
+    build_cubes
     build_exe
+
+    force_reload
 }
 
 case "$1" in 
     "") build_all;;
     "all") build_all;;
     "viewer") build_viewer;;
+    "cubes") build_cubes;;
     *) echo "Unknown target: $1";;
 esac
 

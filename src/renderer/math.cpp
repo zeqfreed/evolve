@@ -68,6 +68,8 @@ inline Vec3f operator*(Vec3f v, Mat44 mat)
   result.z = v.x * mat.c + v.y * mat.g + v.z * mat.k + mat.o;
   float w  = v.x * mat.d + v.y * mat.h + v.z * mat.l + mat.p;
 
+  ASSERT(w != 0);
+
   if (w != 1.0) {
     result.x /= w;
     result.y /= w;

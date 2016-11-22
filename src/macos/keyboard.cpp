@@ -132,7 +132,7 @@ static kb_t keyCodesMap[255] = {
 
 #define KEYBOARD_CODE(code) (keyCodesMap[code])
 
-inline void keyboard_state_key_down(KeyboardState *state, kb_t kbCode)
+static inline void keyboard_state_key_down(KeyboardState *state, kb_t kbCode)
 {
   if (kbCode) {
     state->keysDowned++;
@@ -140,7 +140,7 @@ inline void keyboard_state_key_down(KeyboardState *state, kb_t kbCode)
   }
 }
 
-inline void keyboard_state_key_up(KeyboardState *state, kb_t kbCode)
+static inline void keyboard_state_key_up(KeyboardState *state, kb_t kbCode)
 {
   if (kbCode) {
     state->keysDowned--;
