@@ -174,28 +174,18 @@ static void clear_buffer(RenderingContext *ctx)
   int height = ctx->target->height;
   uint32_t color = rgba_color(ctx->clear_color);
 
-  for (int j = 0; j <= ctx->target->height; j++) {
-    for (int i = 0; i <= ctx->target->width; i++) {
+  for (int j = 0; j < ctx->target->height; j++) {
+    for (int i = 0; i < ctx->target->width; i++) {
       set_pixel(ctx->target, i, j, color);
     }
-  }  
+  }
 }
 
 static void clear_zbuffer(RenderingContext *ctx)
 {
   int width = ctx->target->width;
   int height = ctx->target->height;
-
-#if 0
-  for (int j = 0; j < height; j++) {
-    int jw = j*width;
-    for (int i = 0; i < width; i++) {
-      ctx->zbuffer[j*width+i] = ZBUFFER_MIN;
-    }
-  }
-#else
   memset(ctx->zbuffer, ZBUFFER_MIN, width*height*sizeof(zval_t));
-#endif
 }
 
 static Mat44 orthographic_matrix(float near, float far, float left, float bottom, float right, float top)
