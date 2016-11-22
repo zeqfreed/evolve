@@ -339,7 +339,6 @@ static void load_dylib(char *path)
   shouldReloadDylib = false;
 }
 
-
 static void handle_signal(int signal) {
   if (signal == SIGUSR1) {
     shouldReloadDylib = true;
@@ -430,8 +429,8 @@ int main(int argc, char *argv[])
   gameRunning = true;
   start = mach_absolute_time();  
 
-  float targetMsPerFrame = 1.0 / 60.0;
-  double lastFrameTime = targetMsPerFrame;
+  float targetMsPerFrame = 1000 / 60.0;
+  double lastFrameTotal = targetMsPerFrame;
 
   int frames = 0;
   float averageFps = 0;
@@ -439,15 +438,15 @@ int main(int argc, char *argv[])
 
   while(gameRunning) {
     if (frames >= 100) {
-      averageFps = (100.0 / acc) * 1000.0;
-      update_fps(acc / 100.0, averageFps);
+      averageFps = 100.0 / acc;
+      update_fps((acc / 100.0) * 1000.0, averageFps);
       acc = 0;
       frames = 0;
 
       if (averageFps >= 60.0) {
-        targetMsPerFrame = 1.0 / 60.0;
+        targetMsPerFrame = 1000 / 60.0;
       } else {
-        targetMsPerFrame = 1.0 / 30.0;
+        targetMsPerFrame = 1000 / 30.0;
       }
     }
 
@@ -458,11 +457,14 @@ int main(int argc, char *argv[])
     MacOS_HandleEvents();
 
     if (draw_frame) {
-      draw_frame(&state, &drawing_buffer, lastFrameTime / 1000.0);
+      draw_frame(&state, &drawing_buffer, lastFrameTotal);
       glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, WIDTH, HEIGHT, GL_RGBA, GL_UNSIGNED_BYTE, framePixelData);
     }
 
     DEBUG_DrawScene();
+
+    acc += mach_time_in_seconds(mach_absolute_time() - start);
+    frames++;
 
     uint64_t now = mach_absolute_time();
     while ((targetMsPerFrame - (mach_time_in_seconds(now - start) * 1000.0)) > 0.0) {
@@ -471,14 +473,10 @@ int main(int argc, char *argv[])
 
     // This code needs to be directly below busy loop / sleep to account for the entire frame's worth of computations
     end = mach_absolute_time();
-    elapsed = end - start;
+    lastFrameTotal = mach_time_in_seconds(end - start);
     start = end;
 
     [openGLContext flushBuffer];
-
-    lastFrameTime = mach_time_in_seconds(elapsed) * 1000.0;
-    acc += lastFrameTime;
-    frames++;
   }
 
   return 0;
