@@ -131,31 +131,47 @@ static void draw_triangle(RenderingContext *ctx, IShader *shader, bool only_z = 
   maxx = MIN(maxx, target_width - 1);
   maxy = MIN(maxy, target_height - 1);
 
+  float area = edge_func(p1.x - p0.x, p1.y - p0.y, p2.x - p1.x, p2.y - p1.y);
+  if (area <= 0) {
+    return;
+  }
+
+  float rarea = 1.0 / area;
+
+  float dz1 = p1.z - p0.z;
+  float dz2 = p2.z - p0.z;
+  
+  float w0_xinc = (p1.y - p2.y) * rarea;
+  float w0_yinc = (p2.x - p1.x) * rarea;
+  float w0_row = ((p1.x * p2.y) - (p1.y * p2.x)) * rarea + (minx + 0.5) * w0_xinc + (miny + 0.5) * w0_yinc;
+
+  float w1_xinc = (p2.y - p0.y) * rarea;
+  float w1_yinc = (p0.x - p2.x) * rarea;
+  float w1_row = ((p2.x * p0.y) - (p2.y * p0.x)) * rarea + (minx + 0.5) * w1_xinc + (miny + 0.5) * w1_yinc;
+
   for (int j = miny; j <= maxy; j++) {
     bool inside = false;
+    int joffset = j * target_width;
+
+    float w0 = w0_row;
+    float w1 = w1_row;
 
     for (int i = minx; i <= maxx; i++) {
       float tx = i + 0.5;
       float ty = j + 0.5;
 
-      float area = edge_func(p1.x - p0.x, p1.y - p0.y, p2.x - p1.x, p2.y - p1.y);
-      float t0 = edge_func(p2.x - p1.x, p2.y - p1.y, tx - p1.x, ty - p1.y);
-      float t1 = edge_func(p0.x - p2.x, p0.y - p2.y, tx - p2.x, ty - p2.y);
-      float t2 = edge_func(p1.x - p0.x, p1.y - p0.y, tx - p0.x, ty - p0.y);
+      float w2 = 1 - w1 - w0; // Temporary hack to avoid invalid interpolated values in fragment shader
 
-      if (t0 >= 0.0 && t1 >= 0.0 && t2 >= 0.0) {
+      if (w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0) {
         inside = true;
 
-        t0 /= area;
-        t1 /= area;
-        t2 /= area;
-
-        zval_t zvalue = (1 - (p0.z * t0 + p1.z * t1 + p2.z * t2)) * ZBUFFER_MAX;
-        if (zvalue > ctx->zbuffer[j*target_width+i]) {
-          ctx->zbuffer[j*target_width+i] = zvalue;
+        zval_t zvalue = (1 - (p0.z + w1 * dz1 + w2 * dz2)) * ZBUFFER_MAX;
+        int zoffset = joffset + i;
+        if (zvalue >= ctx->zbuffer[zoffset]) {
+          ctx->zbuffer[zoffset] = zvalue;
 
           Vec3f color;
-          if (!only_z && shader->fragment(ctx, t0, t1, t2, &color)) {
+          if (!only_z && shader->fragment(ctx, w0, w1, w2, &color)) {
             set_pixel(ctx->target, i, j, color);
           }
         }
@@ -164,7 +180,13 @@ static void draw_triangle(RenderingContext *ctx, IShader *shader, bool only_z = 
           break;
         }
       }
+
+      w0 += w0_xinc;
+      w1 += w1_xinc;
     }
+
+    w0_row += w0_yinc;
+    w1_row += w1_yinc;
   }
 }
 

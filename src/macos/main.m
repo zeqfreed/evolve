@@ -466,10 +466,12 @@ int main(int argc, char *argv[])
     acc += mach_time_in_seconds(mach_absolute_time() - start);
     frames++;
 
+#if 0
     uint64_t now = mach_absolute_time();
     while ((targetMsPerFrame - (mach_time_in_seconds(now - start) * 1000.0)) > 0.0) {
       now = mach_absolute_time();
     }
+#endif
 
     // This code needs to be directly below busy loop / sleep to account for the entire frame's worth of computations
     end = mach_absolute_time();
