@@ -77,8 +77,8 @@ struct ModelShader : public IShader {
     Vec3f normal = normals[0] * t0 + normals[1] * t1 + normals[2] * t2;
 
     Vec3f uv = uvs[0] * t0 + uvs[1] * t1 + uvs[2] * t2;
-    int texX = uv.x * ctx->diffuse->width;
-    int texY = uv.y * ctx->diffuse->height;
+    int texX = (int)((uv.x * ctx->diffuse->width)) & (512 - 1);
+    int texY = (int)((uv.y * ctx->diffuse->height)) & (512 - 1);
 
     Vec3f tcolor = ctx->diffuse->pixels[texY*ctx->diffuse->width+texX];
     *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b};

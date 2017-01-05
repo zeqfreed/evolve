@@ -8,7 +8,7 @@
 #include "renderer/renderer.cpp"
 
 #ifndef CUBES_GRID_SIZE
-#define CUBES_GRID_SIZE 6
+#define CUBES_GRID_SIZE 1
 #endif
 
 #define CUBES_CORRECT_PERSPECTIVE 1
@@ -71,6 +71,9 @@ struct CubeShader : public IShader {
     int u = uv0.x + t1 * duv[0].x + t2 * duv[1].x;
     int v = uv0.y + t1 * duv[0].y + t2 * duv[1].y;
 #endif
+
+    u = u & ((1 << 7) - 1);
+    v = v & ((1 << 4) - 1);
 
     Vec3f tcolor = ctx->diffuse->pixels[v * ctx->diffuse->width + u];
     *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b};

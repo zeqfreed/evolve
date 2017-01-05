@@ -7,7 +7,7 @@ DATASYMLINK="${BINDIR}/data"
 CC="g++"
 WFLAGS="-Wall -Wno-missing-braces -Wno-unused-variable -Wno-unused-function"
 #CFLAGS="-c ${WFLAGS} -g -gmodules -O0 -DMACOSX -Isrc -DDEBUG"
-CFLAGS="-c ${WFLAGS} -O2 -mssse3 -mtune=core2 -march=native -fomit-frame-pointer -ffast-math -DMACOSX -Isrc"
+CFLAGS="-c ${WFLAGS} -O2 -mssse3 -mtune=core2 -march=native -fomit-frame-pointer -DMACOSX -Isrc"
 LIBS="-framework Cocoa -framework OpenGL"
 
 function prepare() {
