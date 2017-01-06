@@ -184,6 +184,7 @@ static void draw_triangle(RenderingContext *ctx, IShader *shader, bool only_z = 
   int blockY = 0;
 
 #define INSIDE_TRIANGLE(w) (w.x >= 0.0 && w.y >= 0.0 && w.z >= 0.0)
+#define INOUT(w) (((w.x >= 0) << 0) | ((w.y >= 0) << 1) | ((w.z >= 0) << 2))
 
   for (; blockY < blkcounty; blockY++) {
     blockX = 0;
@@ -192,9 +193,9 @@ static void draw_triangle(RenderingContext *ctx, IShader *shader, bool only_z = 
     blockW[1] = basew + blk_xinc * blockX + blk_yinc * blockY;
     blockW[3] = blockW[1] + blk_yinc;
     
-    bool inside[4];
-    inside[1] = INSIDE_TRIANGLE(blockW[1]);
-    inside[3] = INSIDE_TRIANGLE(blockW[3]);
+    int inout[4] = {0, 0, 0, 0};
+    inout[1] = INOUT(blockW[1]);
+    inout[3] = INOUT(blockW[3]);
 
     for (; blockX < blkcountx; blockX++) {
       blockW[0] = blockW[1];
@@ -207,17 +208,25 @@ static void draw_triangle(RenderingContext *ctx, IShader *shader, bool only_z = 
       //blockW[2] = blockW[0] + blk_yinc;
       //blockW[3] = blockW[2] + blk_xinc;
 
-      inside[0] = inside[1];
-      inside[2] = inside[3];
-      inside[1] = INSIDE_TRIANGLE(blockW[1]);
-      inside[3] = INSIDE_TRIANGLE(blockW[3]);
+      inout[0] = inout[1];
+      inout[2] = inout[3];
+      inout[1] = INOUT(blockW[1]);
+      inout[3] = INOUT(blockW[3]);
 
       //inside[0] = INSIDE_TRIANGLE(blockW[0]);
       //inside[1] = INSIDE_TRIANGLE(blockW[1]);
       //inside[2] = INSIDE_TRIANGLE(blockW[2]);
       //inside[3] = INSIDE_TRIANGLE(blockW[3]);
 
-      if (inside[0] && inside[1] && inside[2] && inside[3]) {
+      bool allSame = (inout[0] == inout[1]) && (inout[0] == inout[2]) && (inout[0] == inout[3]);
+      bool allInside = allSame && (inout[0] == 7);
+      bool allOutside = allSame && !allInside;
+
+      if (allOutside) {
+        // Block is outside of the triangle
+        continue;
+
+      } else if (allInside) {
         // Block is fully inside the triangle
 
         int bx = blockX * BLOCK_SIZE;
@@ -244,7 +253,7 @@ static void draw_triangle(RenderingContext *ctx, IShader *shader, bool only_z = 
 
           wrow = wrow + w_yinc;
         }
-      } else if (inside[0] || inside[1] || inside[2] || inside[3]) {
+      } else {
         // Block is partially inside the triangle
         
         Vec3f wrow = blockW[0];
@@ -272,10 +281,11 @@ static void draw_triangle(RenderingContext *ctx, IShader *shader, bool only_z = 
 
           wrow = wrow + w_yinc;
         }
-      } else { /* Block is outside of the triangle */ }
+      }
     }
   }
 
+#undef INOUT
 #undef IROUND
 #undef INSIDE_TRIANGLE
 #undef BLOCK_SIZE

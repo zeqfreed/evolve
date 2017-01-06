@@ -8,7 +8,7 @@
 #include "renderer/renderer.cpp"
 
 #ifndef CUBES_GRID_SIZE
-#define CUBES_GRID_SIZE 1
+#define CUBES_GRID_SIZE 6
 #endif
 
 #define CUBES_CORRECT_PERSPECTIVE 1
