@@ -12,6 +12,7 @@
 #endif
 
 #define CUBES_CORRECT_PERSPECTIVE 1
+#define DRAW_BLOCK_GRID 0
 
 typedef struct Vertex {
   Vec3f position;
@@ -325,6 +326,32 @@ static void update_camera(State *state, float dt)
   state->fov = CLAMP(state->fov, 3.0, 170.0);
 }
 
+static void render_test_tri(State *state, RenderingContext *ctx)
+{
+  ctx->model_mat = Mat44::identity();
+  const static Vec3f normal = {0, 0, 0};
+
+  precalculate_matrices(ctx);
+
+  ctx->viewport_mat = Mat44::identity();
+
+  float x = 100;
+  float y = 100;
+
+  Vec3f tex = {};
+  Vec3f pos[3] = {
+    {x, y, 0},
+    {x + 50, y + 50, 0},
+    {x, y + 50, 0}
+  };
+
+  for (int i = 0; i < 3; i++) {
+    state->shader->positions[i] = pos[i];
+  }
+  draw_triangle(ctx, state->shader);
+  set_pixel(ctx->target, x, y, (Vec3f){0, 1, 0});
+}
+
 C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer, float dt)
 {
   State *state = (State *) global_state->state;
@@ -370,4 +397,15 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
   clear_zbuffer(ctx);
 
   render_cubes(state, ctx);
+//  render_test_tri(state, ctx);
+
+#if DRAW_BLOCK_GRID
+  for (int j = 0; j < ctx->target->height; j++) {
+    for (int i = 0; i < ctx->target->width; i++) {
+      if ((i % 8 == 0) && (j % 8 == 0)) {
+        set_pixel(ctx->target, i, j, (Vec3f){0, 1, 0});
+      }
+    }
+  }
+#endif
 }

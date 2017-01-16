@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #define PI 3.14159265358979323846
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
@@ -10,6 +12,22 @@
 #define CLAMP(val, min, max) (MAX(min, MIN(max, val)))
 
 #define RAD(x) ((x) * (PI / 180.0))
+
+#define Q_BITS 8
+#define Q_SCALE (1 << Q_BITS)
+#define Q_ONE Q_SCALE
+#define Q_FMASK ((1 << Q_BITS) - 1)
+#define qadd(a, b) ((q8) a + (q8) b)
+#define qsub(a, b) ((q8) a - (q8) b)
+#define qint(v) ((v) >> Q_BITS)
+
+typedef int32_t q8;
+
+typedef union Vec3q {
+  struct { q8 x, y, z; };
+  struct { q8 a, b, c; };
+  q8 i[3];
+} Vec3q;
 
 typedef struct Mat44 {
   union {
@@ -74,3 +92,4 @@ typedef union Vec4f {
   Vec4f normalized();
   float dot(Vec4f v);
 } Vec4f;
+

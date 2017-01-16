@@ -324,3 +324,71 @@ Mat44 Mat44::transposed()
 
   return result;
 }
+
+
+//
+// Fixed point
+//
+
+inline q8 to_q8(int32_t i) {
+  return (q8) (i * Q_SCALE);
+}
+
+inline q8 to_q8(float f) {
+  return (q8) ((f * Q_SCALE) + 0.5);
+}
+
+inline q8 qmul(q8 a, q8 b) {
+  int64_t tmp = (int64_t) a * (int64_t) b;
+  return (q8) (tmp >> Q_BITS);
+}
+
+inline q8 qdiv(q8 a, q8 b) {
+  return (q8) (((int64_t) (a) << Q_BITS) / b);
+}
+
+inline float to_float(q8 v) {
+  return (float) (v * (1.0 / Q_SCALE));
+}
+
+//
+// Vec3q
+//
+
+inline Vec3q operator+(Vec3q a, Vec3q b)
+{
+  return (Vec3q){a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+inline Vec3q operator-(Vec3q a, Vec3q b)
+{
+  return (Vec3q){a.x - b.x, a.y - b.y, a.z - b.z};
+}
+
+inline Vec3q operator-(Vec3q a)
+{
+  return (Vec3q){-a.x, -a.y, -a.z};
+}
+
+inline Vec3q operator*(Vec3q v, q8 q)
+{
+  return (Vec3q){qmul(v.x, q) , qmul(v.y, q), qmul(v.z, q)};
+}
+
+inline Vec3q operator*(q8 q, Vec3q v)
+{
+  return v * q;
+}
+
+inline Vec3q &operator*=(Vec3q &self, q8 q)
+{
+  self.x = qmul(self.x, q);
+  self.y = qmul(self.y, q);
+  self.z = qmul(self.z, q);
+  return self;
+}
+
+void print(char *name, Vec3q v)
+{
+  printf("%s: %d %d %d\n", name, v.x, v.y, v.z);
+}

@@ -13,6 +13,7 @@
 typedef uint16_t zval_t;
 #define ZBUFFER_MIN 0
 #define ZBUFFER_MAX 0xFFFF
+#define ZTEST(new, old) ((new > old))
 
 #define WHITE (Vec3f){1, 1, 1}
 #define BLACK (Vec3f){0, 0, 0}

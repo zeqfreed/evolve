@@ -84,8 +84,8 @@ struct ModelShader : public IShader {
     *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b};
 
     if (1 && ctx->normal) {
-      int nx = uv.x * ctx->normal->width;
-      int ny = uv.y * ctx->normal->height;
+      int nx = (int)(uv.x * ctx->normal->width) & (512 - 1);
+      int ny = (int)(uv.y * ctx->normal->height) & (512 - 1);
       Vec3f ncolor = ctx->normal->pixels[ny*ctx->normal->width+nx];
       Vec3f tnormal = (Vec3f){2 * ncolor.r - 1, 2 * ncolor.g - 1, ncolor.b};
 

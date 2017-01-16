@@ -101,67 +101,64 @@ static void precalculate_matrices(RenderingContext *ctx)
   ctx->near_clip_plane = p * (1 / mag);
 }
 
-inline static float edge_func(float x0, float y0, float x1, float y1)
+inline static q8 edge_funcq(q8 x0, q8 y0, q8 x1, q8 y1)
 {
-  return (x0 * y1) - (x1 * y0);
-}
-
-inline static int32_t edge_func(int32_t x0, int32_t y0, int32_t x1, int32_t y1)
-{
-  return (x0 * y1) - (x1 * y0);
+  return qmul(x0, y1) - qmul(x1, y0);
 }
 
 static void draw_triangle(RenderingContext *ctx, IShader *shader, bool only_z = false)
 {
 #define BLOCK_SIZE 8
-#define IROUND(v) ((int32_t) (v + 0.5))
+#define IROUND(v) (to_q8((float) (v)))
 
   Vec3f p0 = shader->positions[0] * ctx->viewport_mat;
   Vec3f p1 = shader->positions[1] * ctx->viewport_mat;
   Vec3f p2 = shader->positions[2] * ctx->viewport_mat;
 
-  int32_t px[3] = {IROUND(p0.x), IROUND(p1.x), IROUND(p2.x)};
-  int32_t py[3] = {IROUND(p0.y), IROUND(p1.y), IROUND(p2.y)};
+  q8 px[3] = {IROUND(p0.x), IROUND(p1.x), IROUND(p2.x)};
+  q8 py[3] = {IROUND(p0.y), IROUND(p1.y), IROUND(p2.y)};
 
-  int32_t minx = MIN3(px[0], px[1], px[2]);
-  int32_t miny = MIN3(py[0], py[1], py[2]);
-  int32_t maxx = MAX3(px[0], px[1], px[2]);
-  int32_t maxy = MAX3(py[0], py[1], py[2]);
+  q8 area = edge_funcq(px[1] - px[0], py[1] - py[0], px[2] - px[1], py[2] - py[1]);
+  if (area <= 0) {
+    return;
+  }
+
+  int32_t minx = qint(MIN3(px[0], px[1], px[2]));
+  int32_t miny = qint(MIN3(py[0], py[1], py[2]));
+  int32_t maxx = qint(MAX3(px[0], px[1], px[2]));
+  int32_t maxy = qint(MAX3(py[0], py[1], py[2]));
 
   int32_t target_width = ctx->target->width;
   int32_t target_height = ctx->target->height;
 
   if (maxx < 0 || maxy < 0 ||
-      minx >= target_width || miny >= target_height) {
+      minx >= (target_width) || miny >= (target_height)) {
     return;
   }
 
   // Clip bounding rect to target rect
   minx = MAX(0, minx);
   miny = MAX(0, miny);
-  maxx = MIN(maxx, target_width - 1);
-  maxy = MIN(maxy, target_height - 1);
+  maxx = MIN(maxx, (target_width - 1));
+  maxy = MIN(maxy, (target_height - 1));
 
-  float area = edge_func(px[1] - px[0], py[1] - py[0], px[2] - px[1], py[2] - py[1]);
-  if (area <= 0) {
-    return;
-  }
+  float rarea = 1.0 / to_float(area);
 
-  float rarea = 1.0 / area;
-
-  float dz1 = p1.z - p0.z;
-  float dz2 = p2.z - p0.z;
+  float z0 = p0.z;
+  float dz1 = p1.z - z0;
+  float dz2 = p2.z - z0;
   
-  Vec3f w_xinc = {(py[1] - py[2]) * rarea,
-                  (py[2] - py[0]) * rarea,
-                  (py[0] - py[1]) * rarea};
-  Vec3f w_yinc = {(px[2] - px[1]) * rarea,
-                  (px[0] - px[2]) * rarea,
-                  (px[1] - px[0]) * rarea};
+  Vec3q w_xinc = (Vec3q){(py[1] - py[2]),
+                         (py[2] - py[0]),
+                         (py[0] - py[1])}; // * rarea;
+  Vec3q w_yinc = (Vec3q){(px[2] - px[1]),
+                         (px[0] - px[2]),
+                         (px[1] - px[0])}; // * rarea;
 
   int blkminx = minx & ~(BLOCK_SIZE - 1);
   int blkminy = miny & ~(BLOCK_SIZE - 1);
 
+  // TODO: Handle edge cases or maybe use 2^n sized targets always
   int blkmaxx = (maxx + BLOCK_SIZE) & ~(BLOCK_SIZE - 1);
   if (blkmaxx > target_width) blkmaxx -= BLOCK_SIZE;
 
@@ -171,123 +168,158 @@ static void draw_triangle(RenderingContext *ctx, IShader *shader, bool only_z = 
   int blkcountx = (blkmaxx - blkminx) / BLOCK_SIZE;
   int blkcounty = (blkmaxy - blkminy) / BLOCK_SIZE;
 
-  Vec3f blk_xinc = w_xinc * BLOCK_SIZE;
-  Vec3f blk_yinc = w_yinc * BLOCK_SIZE; 
+  Vec3q blk_xinc = w_xinc * to_q8((int32_t) BLOCK_SIZE);
+  Vec3q blk_yinc = w_yinc * to_q8((int32_t) BLOCK_SIZE);
 
-  Vec3f c = {((px[1] * py[2]) - (py[1] * px[2])) * rarea,
-             ((px[2] * py[0]) - (py[2] * px[0])) * rarea,
-             ((px[0] * py[1]) - (py[0] * px[1])) * rarea};
+  Vec3q c = (Vec3q){(qmul(px[1], py[2]) - qmul(py[1], px[2])),
+                    (qmul(px[2], py[0]) - qmul(py[2], px[0])),
+                    (qmul(px[0], py[1]) - qmul(py[0], px[1]))}; // + (Vec3q){1, 1, 1};
+  Vec3q basew = c + w_xinc * to_q8(blkminx) + w_yinc * to_q8(blkminy);
 
-  Vec3f basew = c + w_xinc * blkminx + w_yinc * blkminy;
+  float t1dx = to_float(w_xinc.y) * rarea;
+  float t1dy = to_float(w_yinc.y) * rarea;
+  float t2dx = to_float(w_xinc.z) * rarea;
+  float t2dy = to_float(w_yinc.z) * rarea;
 
-  int blockX = 0;
-  int blockY = 0;
+  q8 blockX = 0;
+  q8 blockY = 0;
+  q8 q_blockcntx = to_q8(blkcountx);
+  q8 q_blockcnty = to_q8(blkcounty);
 
-#define INSIDE_TRIANGLE(w) (w.x >= 0.0 && w.y >= 0.0 && w.z >= 0.0)
-#define INOUT(w) (((w.x >= 0) << 0) | ((w.y >= 0) << 1) | ((w.z >= 0) << 2))
-
-  for (; blockY < blkcounty; blockY++) {
+  for (; blockY < q_blockcnty; blockY += Q_ONE) {
     blockX = 0;
 
-    Vec3f blockW[4];
-    blockW[1] = basew + blk_xinc * blockX + blk_yinc * blockY;
+    Vec3q blockW[4];
+    blockW[1] = basew + blk_yinc * blockY;
     blockW[3] = blockW[1] + blk_yinc;
-    
+
+#define INOUT(w) (((w.x >= 0) << 0) | ((w.y >= 0) << 1) | ((w.z >= 0) << 2))
     int inout[4] = {0, 0, 0, 0};
     inout[1] = INOUT(blockW[1]);
     inout[3] = INOUT(blockW[3]);
 
-    for (; blockX < blkcountx; blockX++) {
+    for (; blockX < q_blockcntx; blockX += Q_ONE) {
       blockW[0] = blockW[1];
       blockW[2] = blockW[3];
       blockW[1] = blockW[0] + blk_xinc;
       blockW[3] = blockW[2] + blk_xinc;
-
-      //blockW[0] = basew + blk_xinc * blockX + blk_yinc * blockY;
-      //blockW[1] = blockW[0] + blk_xinc;
-      //blockW[2] = blockW[0] + blk_yinc;
-      //blockW[3] = blockW[2] + blk_xinc;
 
       inout[0] = inout[1];
       inout[2] = inout[3];
       inout[1] = INOUT(blockW[1]);
       inout[3] = INOUT(blockW[3]);
 
-      //inside[0] = INSIDE_TRIANGLE(blockW[0]);
-      //inside[1] = INSIDE_TRIANGLE(blockW[1]);
-      //inside[2] = INSIDE_TRIANGLE(blockW[2]);
-      //inside[3] = INSIDE_TRIANGLE(blockW[3]);
-
       bool allSame = (inout[0] == inout[1]) && (inout[0] == inout[2]) && (inout[0] == inout[3]);
       bool allInside = allSame && (inout[0] == 7);
       bool allOutside = allSame && !allInside;
 
       if (allOutside) {
-        // Block is outside of the triangle
-        continue;
+        continue; /* Block is outside of the triangle */
+      }
 
-      } else if (allInside) {
+      int bx = qint(blockX) * BLOCK_SIZE;
+      int by = qint(blockY) * BLOCK_SIZE;
+
+      int starty = blkminy + by;
+      int endy = starty + BLOCK_SIZE;
+      int startx = blkminx + bx;
+      int endx = blkminx + bx + BLOCK_SIZE;
+
+      float t1row = to_float(blockW[0].y) * rarea;
+      float t2row = to_float(blockW[0].z) * rarea;
+
+      float zrow = 1 - (z0 + t1row * dz1 + to_float(blockW[0].z) * rarea * dz2);
+      float zmaxx = 1 - (z0 + to_float(blockW[1].y) * rarea * dz1 + to_float(blockW[1].z) * rarea * dz2);
+      float zmaxy = 1 - (z0 + to_float(blockW[2].y) * rarea * dz1 + to_float(blockW[2].z) * rarea * dz2);
+      float zdx = (zmaxx - zrow) / BLOCK_SIZE;
+      float zdy = (zmaxy - zrow) / BLOCK_SIZE;
+
+      zval_t *zp_row = &ctx->zbuffer[starty * target_width + startx];
+      uint32_t *bufferp_row = &((uint32_t *) ctx->target->pixels)[starty * ctx->target->pitch + startx];
+
+      if (allInside) {
         // Block is fully inside the triangle
 
-        int bx = blockX * BLOCK_SIZE;
-        int by = blockY * BLOCK_SIZE;
+        for (int j = 0; j < BLOCK_SIZE; j++) {
+          float t1 = t1row;
+          float t2 = t2row;
+          float z = zrow;
 
-        Vec3f wrow = blockW[0];
+          zval_t *zp = zp_row;
+          uint32_t *bufferp = bufferp_row;
 
-        for (int j = blkminy + by; j < blkminy + by + BLOCK_SIZE; j++) {
-          Vec3f w = wrow;
-
-          for (int i = blkminx + bx; i < blkminx + bx + BLOCK_SIZE; i++) {
-            zval_t zvalue = (1 - (p0.z + w.y * dz1 + w.z * dz2)) * ZBUFFER_MAX;
-            int zoffset = j * target_width + i;
-            if (zvalue >= ctx->zbuffer[zoffset]) {
-              ctx->zbuffer[zoffset] = zvalue;
-              Vec3f color;
-              if (!only_z && shader->fragment(ctx, w.x, w.y, w.z, &color)) {
-                set_pixel(ctx->target, i, j, color);
+          for (int i = 0; i < BLOCK_SIZE; i++) {
+            zval_t zvalue = z * ZBUFFER_MAX;
+            if (ZTEST(zvalue, *zp)) {
+              *zp = zvalue;
+              Vec3f color = (Vec3f){1, 0, 1};
+              if (!only_z && shader->fragment(ctx, 1 - t1 - t2, t1, t2, &color)) {
+                *bufferp = rgba_color(color);
               }
             }
 
-            w = w + w_xinc;
+            t1 += t1dx;
+            t2 += t2dx;
+            z += zdx;
+            zp++;
+            bufferp++;
           }
 
-          wrow = wrow + w_yinc;
+          t1row += t1dy;
+          t2row += t2dy;
+          zrow += zdy;
+          zp_row += target_width;
+          bufferp_row += ctx->target->pitch;
         }
       } else {
         // Block is partially inside the triangle
-        
-        Vec3f wrow = blockW[0];
-      
-        int bx = blockX * BLOCK_SIZE;
-        int by = blockY * BLOCK_SIZE;
-        for (int j = blkminy + by; j < blkminy + by + BLOCK_SIZE; j++) {
-          Vec3f w = wrow;
 
-          for (int i = blkminx + bx; i < blkminx + bx + BLOCK_SIZE; i++) {
+        Vec3q wrow = blockW[0];
+
+        for (int j = 0; j < BLOCK_SIZE; j++) {
+          Vec3q w = wrow;
+          float t1 = t1row;
+          float t2 = t2row;
+          float z = zrow;
+
+          zval_t *zp = zp_row;
+          uint32_t *bufferp = bufferp_row;
+
+#define INSIDE_TRIANGLE(w) ((w.x | w.y | w.z) >= 0)
+          for (int i = 0; i < BLOCK_SIZE; i++) {
             if (INSIDE_TRIANGLE(w)) {
-              zval_t zvalue = (1 - (p0.z + w.y * dz1 + w.z * dz2)) * ZBUFFER_MAX;
-              int zoffset = j * target_width + i;
-              if (zvalue >= ctx->zbuffer[zoffset]) {
-                ctx->zbuffer[zoffset] = zvalue;
-                Vec3f color;
-                if (!only_z && shader->fragment(ctx, w.x, w.y, w.z, &color)) {
-                  set_pixel(ctx->target, i, j, color);
+              zval_t zvalue = z * ZBUFFER_MAX;
+              if (ZTEST(zvalue, *zp)) {
+                *zp = zvalue;
+                Vec3f color = (Vec3f){0.2, 0.2, 0.2};
+                if (!only_z && shader->fragment(ctx, 1 - t1 - t2, t1, t2, &color)) {
+                  *bufferp = rgba_color(color);
                 }
               }
             }
 
+            t1 += t1dx;
+            t2 += t2dx;
+            z += zdx;
             w = w + w_xinc;
+            zp++;
+            bufferp++;
           }
 
+          t1row += t1dy;
+          t2row += t2dy;
+          zrow += zdy;
           wrow = wrow + w_yinc;
+          zp_row += target_width;
+          bufferp_row += ctx->target->pitch;
         }
       }
     }
   }
 
+#undef INSIDE_TRIANGLE
 #undef INOUT
 #undef IROUND
-#undef INSIDE_TRIANGLE
 #undef BLOCK_SIZE
 }
 
@@ -297,10 +329,16 @@ static void clear_buffer(RenderingContext *ctx)
   int height = ctx->target->height;
   uint32_t color = rgba_color(ctx->clear_color);
 
+  uint32_t *rowp = (uint32_t *) ctx->target->pixels;
+
   for (int j = 0; j < ctx->target->height; j++) {
+    uint32_t *p = rowp;
+
     for (int i = 0; i < ctx->target->width; i++) {
-      set_pixel(ctx->target, i, j, color);
+      *p++ = color;
     }
+
+    rowp += ctx->target->pitch;
   }
 }
 
