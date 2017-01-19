@@ -106,14 +106,15 @@ inline static q8 edge_funcq(q8 x0, q8 y0, q8 x1, q8 y1)
   return qmul(x0, y1) - qmul(x1, y0);
 }
 
-static void draw_triangle(RenderingContext *ctx, IShader *shader, bool only_z = false)
+static void draw_triangle(RenderingContext *ctx, FragmentFunc *fragment, void *shader_data,
+                          Vec3f p0, Vec3f p1, Vec3f p2, bool only_z = false)
 {
 #define BLOCK_SIZE 8
 #define IROUND(v) (to_q8((float) (v)))
 
-  Vec3f p0 = shader->positions[0] * ctx->viewport_mat;
-  Vec3f p1 = shader->positions[1] * ctx->viewport_mat;
-  Vec3f p2 = shader->positions[2] * ctx->viewport_mat;
+  p0 = p0 * ctx->viewport_mat;
+  p1 = p1 * ctx->viewport_mat;
+  p2 = p2 * ctx->viewport_mat;
 
   q8 px[3] = {IROUND(p0.x), IROUND(p1.x), IROUND(p2.x)};
   q8 py[3] = {IROUND(p0.y), IROUND(p1.y), IROUND(p2.y)};
@@ -253,7 +254,7 @@ static void draw_triangle(RenderingContext *ctx, IShader *shader, bool only_z = 
             if (ZTEST(zvalue, *zp)) {
               *zp = zvalue;
               Vec3f color = (Vec3f){1, 0, 1};
-              if (!only_z && shader->fragment(ctx, 1 - t1 - t2, t1, t2, &color)) {
+              if (!only_z && fragment(ctx, shader_data, startx + i, starty + j, 1 - t1 - t2, t1, t2, &color)) {
                 *bufferp = rgba_color(color);
               }
             }
@@ -292,7 +293,7 @@ static void draw_triangle(RenderingContext *ctx, IShader *shader, bool only_z = 
               if (ZTEST(zvalue, *zp)) {
                 *zp = zvalue;
                 Vec3f color = (Vec3f){0.2, 0.2, 0.2};
-                if (!only_z && shader->fragment(ctx, 1 - t1 - t2, t1, t2, &color)) {
+                if (!only_z && fragment(ctx, shader_data, startx + i, starty + j, 1 - t1 - t2, t1, t2, &color)) {
                   *bufferp = rgba_color(color);
                 }
               }

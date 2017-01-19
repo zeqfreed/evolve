@@ -10,6 +10,8 @@ WFLAGS="-Wall -Wno-missing-braces -Wno-unused-variable -Wno-unused-function"
 CFLAGS="-c ${WFLAGS} -O2 -mssse3 -mtune=core2 -march=native -fomit-frame-pointer -DMACOSX -Isrc"
 LIBS="-framework Cocoa -framework OpenGL"
 
+exitcode=0
+
 function prepare() {
   if [ ! -d $OBJDIR ]; then
     mkdir -p $OBJDIR;
@@ -28,11 +30,11 @@ function build_viewer() {
   prepare
 
   $CC src/viewer/main.cpp $CFLAGS -o $OBJDIR/viewer.o
-  result=$?
+  exitcode=$?
 
-  if [ $result -eq 0 ]; then
+  if [ $exitcode -eq 0 ]; then
     libtool -macosx_version_min 10.11 -dynamic $OBJDIR/viewer.o -lstdc++ -lSystem -o $OBJDIR/viewer.dylib
-    result=$?
+    exitcode=$?
     cp $OBJDIR/viewer.dylib $BINDIR/viewer.dylib
   fi
 }
@@ -41,11 +43,11 @@ function build_cubes() {
   prepare
 
   $CC src/cubes/main.cpp $CFLAGS -o $OBJDIR/cubes.o
-  result=$?
+  exitcode=$?
 
-  if [ $result -eq 0 ]; then
+  if [ $exitcode -eq 0 ]; then
     libtool -macosx_version_min 10.11 -dynamic $OBJDIR/cubes.o -lstdc++ -lSystem -o $OBJDIR/cubes.dylib
-    result=$?
+    exitcode=$?
     cp $OBJDIR/cubes.dylib $BINDIR/cubes.dylib
   fi
 }
@@ -60,29 +62,35 @@ function build_exe() {
   $CC src/macos/platform.cpp $CFLAGS -o $OBJDIR/platform.o
   $CC -o $BINDIR/$EXE $OBJS $LIBS
 
-  result=$?
+  exitcode=$?
 }
 
 function force_reload() {
-  if [ $result -eq 0 ]; then
+  if [ $exitcode -eq 0 ]; then
     killall -USR1 evolve
   fi
 }
 
-function build_all() {
-    build_viewer
-    build_cubes
-    build_exe
+function and_then() {
+  if [ $exitcode -eq 0 ]; then
+    eval $1
+  fi
+}
 
-    force_reload
+function build_all() {
+  # build_viewer
+  and_then build_cubes
+  and_then build_exe
+
+  force_reload
 }
 
 case "$1" in 
-    "") build_all;;
-    "all") build_all;;
-    "viewer") build_viewer;;
-    "cubes") build_cubes;;
-    *) echo "Unknown target: $1";;
+  "") build_all;;
+  "all") build_all;;
+  "viewer") build_viewer;;
+  "cubes") build_cubes;;
+  *) echo "Unknown target: $1";;
 esac
 
-exit $result
+exit $exitcode

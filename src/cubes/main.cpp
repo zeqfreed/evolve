@@ -11,8 +11,9 @@
 #define CUBES_GRID_SIZE 6
 #endif
 
+#define CUBES_TEXTURE_DITHERING 0
 #define CUBES_CORRECT_PERSPECTIVE 1
-#define DRAW_BLOCK_GRID 0
+#define CUBES_DEBUG_GRID 0
 
 typedef struct Vertex {
   Vec3f position;
@@ -29,7 +30,6 @@ typedef struct State {
   Vertex *vertices;
 
   RenderingContext rendering_context;
-  IShader *shader;
 
   uint32_t seed;
   float xRot;
@@ -37,51 +37,44 @@ typedef struct State {
   float fov;
 } State;
 
-struct CubeShader : public IShader {
+typedef struct ShaderData {
   Vec3f pos[3];
   Vec3f uvs[3];
   Vec3f uv0;
   Vec3f duv[2];
+} ShaderData;
 
-  void vertex(RenderingContext *ctx, int idx, Vec3f position, Vec3f normal, Vec3f texture, Vec3f color)
-  {
-    positions[idx] = position * ctx->mvp_mat;
+FRAGMENT_FUNC(fragment)
+{
+  ShaderData *d = (ShaderData *) shader_data;
 
-#ifdef CUBES_CORRECT_PERSPECTIVE
-    Vec3f pos = position * ctx->modelview_mat;
-    float iz = 1 / pos.z;
-    uvs[idx] = (Vec3f){texture.x * iz, texture.y * iz, iz};
+#if CUBES_CORRECT_PERSPECTIVE
+  float z = 1.0 / (d->uv0.z + t1 * d->duv[0].z + t2 * d->duv[1].z);
+  float fu = (d->uv0.x + t1 * d->duv[0].x + t2 * d->duv[1].x) * z;
+  float fv = (d->uv0.y + t1 * d->duv[0].y + t2 * d->duv[1].y) * z;
 #else
-    uvs[idx] = (Vec3f){texture.x, texture.y, 0};
+  float fu = d->uv0.x + t1 * d->duv[0].x + t2 * d->duv[1].x;
+  float fv = d->uv0.y + t1 * d->duv[0].y + t2 * d->duv[1].y;
 #endif
 
-    if (idx == 2) {
-      uv0 = uvs[0];
-      duv[0] = uvs[1] - uvs[0];
-      duv[1] = uvs[2] - uvs[0];
-    }
+#if CUBES_TEXTURE_DITHERING
+  int ab = (x & 1) | ((y & 1) << 1);
+  switch (ab) {
+    case 0: fu -= 0.25; fv -= 0.25; break;
+    case 1: fu += 0.25; fv -= 0.25; break;
+    case 2: fu -= 0.25; fv += 0.25; break;
+    case 3: fu += 0.25; fv += 0.25; break;
   }
-
-  bool fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f *color)
-  {
-#ifdef CUBES_CORRECT_PERSPECTIVE
-    float z = 1 / (uv0.z + t1 * duv[0].z + t2 * duv[1].z);
-    int u = (uv0.x + t1 * duv[0].x + t2 * duv[1].x) * z;
-    int v = (uv0.y + t1 * duv[0].y + t2 * duv[1].y) * z;
-#else
-    int u = uv0.x + t1 * duv[0].x + t2 * duv[1].x;
-    int v = uv0.y + t1 * duv[0].y + t2 * duv[1].y;
 #endif
 
-    u = u & ((1 << 7) - 1);
-    v = v & ((1 << 4) - 1);
+  int u = ((int) fu) & (128 - 1);
+  int v = ((int) fv) & (16 - 1);
 
-    Vec3f tcolor = ctx->diffuse->pixels[v * ctx->diffuse->width + u];
-    *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b};
+  Vec3f tcolor = ctx->diffuse->pixels[v * ctx->diffuse->width + u];
+  *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b};
 
-    return true;
-  }
-};
+  return true;
+ }
 
 static Texture *load_texture(State *state, char *filename)
 {
@@ -124,9 +117,6 @@ static void initialize(State *state, DrawingBuffer *buffer)
   ctx->light = (Vec3f){0, 0, 0};
 
   ctx->zbuffer = (zval_t *) state->main_arena->allocate(buffer->width * buffer->height * sizeof(zval_t));
-
-  // TODO: DON'T ALLOCATE IN DYLIB !!!
-  state->shader = new CubeShader();
 
   ctx->diffuse = load_texture(state, (char *) "data/cubes.tga");
 
@@ -256,10 +246,22 @@ static void render_cubes(State *state, RenderingContext *ctx)
   precalculate_matrices(ctx);
 
   Vertex vertices[3];
+  Vec3f positions[3] = {};
+  ShaderData data = {};
 
   for (int i = 0; i < state->verticesCount; i++) {
     int idx = i % 3;
     vertices[idx] = state->vertices[i];
+    
+#if CUBES_CORRECT_PERSPECTIVE
+    Vec3f cam_pos = vertices[idx].position * ctx->modelview_mat;
+    positions[idx] = cam_pos * ctx->projection_mat;
+    float iz = 1.0 / cam_pos.z;
+    data.uvs[idx] = (Vec3f){vertices[idx].texture_coords.x * iz, vertices[idx].texture_coords.y * iz, iz};
+#else
+    data.uvs[idx] = (Vec3f){vertices[idx].texture_coords.x, vertices[idx].texture_coords.y, 0};
+    positions[idx] = vertices[idx].position * ctx->mvp_mat;
+#endif
 
     if (idx == 2) {
       #define VEC3_DOT_PLANE(vec3, p) (vec3.x*p.x + vec3.y*p.y + vec3.z*p.z + p.w)
@@ -270,10 +272,11 @@ static void render_cubes(State *state, RenderingContext *ctx)
       }
       #undef VEC3_DOT_PLANE
 
-      state->shader->vertex(ctx, 0, vertices[0].position, normal, vertices[0].texture_coords, WHITE);
-      state->shader->vertex(ctx, 1, vertices[1].position, normal, vertices[1].texture_coords, WHITE);
-      state->shader->vertex(ctx, 2, vertices[2].position, normal, vertices[2].texture_coords, WHITE);
-      draw_triangle(ctx, state->shader);
+      data.uv0 = data.uvs[0];
+      data.duv[0] = data.uvs[1] - data.uvs[0];
+      data.duv[1] = data.uvs[2] - data.uvs[0];
+
+      draw_triangle(ctx, &fragment, (void *) &data, positions[0], positions[1], positions[2]);
     }
   }
 }
@@ -326,32 +329,6 @@ static void update_camera(State *state, float dt)
   state->fov = CLAMP(state->fov, 3.0, 170.0);
 }
 
-static void render_test_tri(State *state, RenderingContext *ctx)
-{
-  ctx->model_mat = Mat44::identity();
-  const static Vec3f normal = {0, 0, 0};
-
-  precalculate_matrices(ctx);
-
-  ctx->viewport_mat = Mat44::identity();
-
-  float x = 100;
-  float y = 100;
-
-  Vec3f tex = {};
-  Vec3f pos[3] = {
-    {x, y, 0},
-    {x + 50, y + 50, 0},
-    {x, y + 50, 0}
-  };
-
-  for (int i = 0; i < 3; i++) {
-    state->shader->positions[i] = pos[i];
-  }
-  draw_triangle(ctx, state->shader);
-  set_pixel(ctx->target, x, y, (Vec3f){0, 1, 0});
-}
-
 C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer, float dt)
 {
   State *state = (State *) global_state->state;
@@ -397,9 +374,8 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
   clear_zbuffer(ctx);
 
   render_cubes(state, ctx);
-//  render_test_tri(state, ctx);
 
-#if DRAW_BLOCK_GRID
+#if CUBES_DEBUG_GRID
   for (int j = 0; j < ctx->target->height; j++) {
     for (int i = 0; i < ctx->target->width; i++) {
       if ((i % 8 == 0) && (j % 8 == 0)) {
