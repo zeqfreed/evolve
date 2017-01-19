@@ -324,22 +324,18 @@ static void draw_triangle(RenderingContext *ctx, FragmentFunc *fragment, void *s
 #undef BLOCK_SIZE
 }
 
+#include <emmintrin.h>
+
 static void clear_buffer(RenderingContext *ctx)
 {
-  int width = ctx->target->width;
-  int height = ctx->target->height;
   uint32_t color = rgba_color(ctx->clear_color);
+  uint32_t blocks = (ctx->target->width * ctx->target->height * 32) / 128;
 
-  uint32_t *rowp = (uint32_t *) ctx->target->pixels;
+  __m128 value = _mm_set_epi32(color, color, color, color);
+  __m128 *p = (__m128 *) ctx->target->pixels;
 
-  for (int j = 0; j < ctx->target->height; j++) {
-    uint32_t *p = rowp;
-
-    for (int i = 0; i < ctx->target->width; i++) {
-      *p++ = color;
-    }
-
-    rowp += ctx->target->pitch;
+  while (blocks--) {
+    *p++ = value;
   }
 }
 
