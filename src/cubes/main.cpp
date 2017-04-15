@@ -6,6 +6,7 @@
 #include "renderer/math.cpp"
 #include "renderer/tga.cpp"
 #include "renderer/renderer.cpp"
+#include "renderer/font.cpp"
 
 #ifndef CUBES_GRID_SIZE
 #define CUBES_GRID_SIZE 6
@@ -30,11 +31,14 @@ typedef struct State {
   Vertex *vertices;
 
   RenderingContext rendering_context;
+  Font font;
 
   uint32_t seed;
   float xRot;
   float yRot;
   float fov;
+  float screen_width;
+  float screen_height;
 } State;
 
 typedef struct ShaderData {
@@ -112,7 +116,6 @@ static void initialize(State *state, DrawingBuffer *buffer)
   ctx->clear_color = BLACK;
 
   ctx->model_mat = Mat44::identity();
-  ctx->viewport_mat = viewport_matrix(buffer->width, buffer->height);
   ctx->projection_mat = perspective_matrix(0.1, 10, 60);
   ctx->light = (Vec3f){0, 0, 0};
 
@@ -120,9 +123,16 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
   ctx->diffuse = load_texture(state, (char *) "data/cubes.tga");
 
+  state->font.texture = load_texture(state, (char *) "data/font.tga");
+  state->font.spec.char_width = 19;
+  state->font.spec.char_height = 31;
+  state->font.spec.chars_per_line = 13;
+
   state->xRot = 0.0;
   state->yRot = 0.0;
   state->fov = 60.0;
+  state->screen_width = buffer->width;
+  state->screen_height = buffer->height;
 }
 
 static void write_cube_vertices(Vertex *vertices, Vec3f offset, int textureIdx)
@@ -238,8 +248,26 @@ static void regenerate_cube_grid(State *state, uint8_t side)
   }
 }
 
+static void render_text(State *state, RenderingContext *ctx)
+{
+  ctx->viewport_mat = viewport_matrix(state->screen_width, state->screen_height, false);
+  ctx->projection_mat = orthographic_matrix(0.1, 100, 0, state->screen_height, state->screen_width, 0);
+  ctx->view_mat = Mat44::identity();
+  ctx->model_mat = Mat44::translate(0, 0, 0);
+  precalculate_matrices(ctx);
+
+  state->font.render_string(ctx, 10, 10, (char *) "Welcome to the wonderful world of software rendering :)");
+}
+
 static void render_cubes(State *state, RenderingContext *ctx)
 {
+  ctx->viewport_mat = viewport_matrix(state->screen_width, state->screen_height, true);
+  ctx->projection_mat = perspective_matrix(0.1, 1000, state->fov);
+
+  Mat44 view_mat = Mat44::translate(0, 0, -15);
+  ctx->view_mat = Mat44::rotate_y(-state->yRot) *
+                  Mat44::rotate_x(-state->xRot) * view_mat;
+
   ctx->model_mat = Mat44::translate(0, 0, 0);
   const static Vec3f normal = {0, 0, 0};
 
@@ -364,16 +392,12 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
   RenderingContext *ctx = &state->rendering_context;
 
   update_camera(state, dt);
-  ctx->projection_mat = perspective_matrix(0.1, 1000, state->fov);
-
-  Mat44 view_mat = Mat44::translate(0, 0, -15);
-  ctx->view_mat = Mat44::rotate_y(-state->yRot) *
-                  Mat44::rotate_x(-state->xRot) * view_mat;
 
   clear_buffer(ctx);
   clear_zbuffer(ctx);
 
   render_cubes(state, ctx);
+  render_text(state, ctx);
 
 #if CUBES_DEBUG_GRID
   for (int j = 0; j < ctx->target->height; j++) {
