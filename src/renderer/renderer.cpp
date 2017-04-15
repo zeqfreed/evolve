@@ -350,15 +350,16 @@ static Mat44 orthographic_matrix(float near, float far, float left, float bottom
 {
   float w = right - left;
   float h = top - bottom;
-  float z = -1.0;
-  
+  float d = far - near;
+
   Mat44 result = Mat44::identity();
   result.a = 2 / w;
   result.f = 2 / h;
-  result.k = (z - near) / (far - near);
+  result.k = -2 / d;
 
   result.m = -(right + left) / w;
   result.n = -(top + bottom) / h;
+  result.o = -(far + near) / d;
 
   return result;
 }
