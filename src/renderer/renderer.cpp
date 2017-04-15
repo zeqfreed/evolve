@@ -379,16 +379,27 @@ static Mat44 perspective_matrix(float near, float far, float fov)
   return result;
 }
 
-static Mat44 viewport_matrix(float width, float height)
+static Mat44 viewport_matrix(float width, float height, bool fix_aspect = false)
 {
   Mat44 result = Mat44::identity();
 
   float hw = width / 2.0;
   float hh = height / 2.0;
 
-  result.a = hw / (hw / hh);
+  if (fix_aspect) {
+    if (hw > hh) {
+      result.a = hw / (hw / hh);
+      result.f = hh;
+    } else {
+      result.a = hw;
+      result.f = hh / (hh / hw);
+    }
+  } else {
+    result.a = hw;
+    result.f = hh;
+  }
+  
   result.m = hw;
-  result.f = hh;
   result.n = hh;
 
   return result;
