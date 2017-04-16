@@ -15,8 +15,6 @@ typedef struct State {
   Model *model;
 
   RenderingContext rendering_context;
-  IShader *modelShader;
-  IShader *floorShader;
 
   float xRot;
   float yRot;
@@ -57,127 +55,111 @@ static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b)
   }
 }
 
-struct ModelShader : public IShader {
+typedef struct ModelShaderData {
+  Vec3f pos[3];
   Vec3f normals[3];
   Vec3f uvs[3];
+} ModelShaderData;
+
+FRAGMENT_FUNC(fragment_model)
+{
+  ModelShaderData *d = (ModelShaderData *) shader_data;
+
+  float intensity = 0.0;
+  //Vec3f normal = (pos[2] - pos[1]).cross(pos[1] - pos[0]).normalized();
+  Vec3f normal = d->normals[0] * t0 + d->normals[1] * t1 + d->normals[2] * t2;
+
+  Vec3f uv = d->uvs[0] * t0 + d->uvs[1] * t1 + d->uvs[2] * t2;
+  int texX = (int)((uv.x * ctx->diffuse->width)) & (512 - 1);
+  int texY = (int)((uv.y * ctx->diffuse->height)) & (512 - 1);
+
+  Vec3f tcolor = ctx->diffuse->pixels[texY*ctx->diffuse->width+texX];
+  *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b};
+
+  if (1 && ctx->normal) {
+    int nx = (int)(uv.x * ctx->normal->width) & (512 - 1);
+    int ny = (int)(uv.y * ctx->normal->height) & (512 - 1);
+    Vec3f ncolor = ctx->normal->pixels[ny*ctx->normal->width+nx];
+    Vec3f tnormal = (Vec3f){2 * ncolor.r - 1, 2 * ncolor.g - 1, ncolor.b};
+
+    Vec3f dp1 = d->pos[1] - d->pos[0];
+    Vec3f dp2 = d->pos[2] - d->pos[1];
+    Vec3f duv1 = d->uvs[1] - d->uvs[0];
+    Vec3f duv2 = d->uvs[2] - d->uvs[1];
+    float r = 1.0 / (duv1.x * duv2.y - duv1.y * duv2.x);
+    Vec3f tangent = -(dp1 * duv2.y - dp2 * duv1.y) * r;
+    tangent = (tangent - normal * normal.dot(tangent)).normalized();
+    Vec3f bitangent = -((dp2 * duv1.x - dp1 * duv2.x) * r).normalized();
+
+    Mat44 invTBN = {
+      tangent.x, tangent.y, tangent.z, 0,
+      bitangent.x, bitangent.y, bitangent.z, 0,
+      normal.x, normal.y, normal.z, 0,
+      0, 0, 0, 1
+    };
+    normal = (tnormal * invTBN).normalized();
+  }
+
+  Vec3f ambient = tcolor * 0.3;
+  intensity = normal.dot(-ctx->light);
+  if (intensity < 0.0) {
+    intensity = 0.0;
+  }
+
+  *color = (ambient + tcolor * intensity).clamped();
+
+  return true;
+}
+
+typedef struct FloorShaderData {
   Vec3f pos[3];
-
-  void vertex(RenderingContext *ctx, int idx, Vec3f position, Vec3f normal, Vec3f texture, Vec3f color)
-  {
-    pos[idx] = position;
-    positions[idx] = position * ctx->modelview_mat * ctx->projection_mat;
-    uvs[idx] = (Vec3f){texture.x, texture.y, 0};
-    normals[idx] = (normal * ctx->normal_mat).normalized();
-  }
-
-  bool fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f *color)
-  {
-    float intensity = 0.0;
-    //Vec3f normal = (pos[2] - pos[1]).cross(pos[1] - pos[0]).normalized();
-    Vec3f normal = normals[0] * t0 + normals[1] * t1 + normals[2] * t2;
-
-    Vec3f uv = uvs[0] * t0 + uvs[1] * t1 + uvs[2] * t2;
-    int texX = (int)((uv.x * ctx->diffuse->width)) & (512 - 1);
-    int texY = (int)((uv.y * ctx->diffuse->height)) & (512 - 1);
-
-    Vec3f tcolor = ctx->diffuse->pixels[texY*ctx->diffuse->width+texX];
-    *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b};
-
-    if (1 && ctx->normal) {
-      int nx = (int)(uv.x * ctx->normal->width) & (512 - 1);
-      int ny = (int)(uv.y * ctx->normal->height) & (512 - 1);
-      Vec3f ncolor = ctx->normal->pixels[ny*ctx->normal->width+nx];
-      Vec3f tnormal = (Vec3f){2 * ncolor.r - 1, 2 * ncolor.g - 1, ncolor.b};
-
-      Vec3f dp1 = pos[1] - pos[0];
-      Vec3f dp2 = pos[2] - pos[1];
-      Vec3f duv1 = uvs[1] - uvs[0];
-      Vec3f duv2 = uvs[2] - uvs[1];
-      float r = 1.0 / (duv1.x * duv2.y - duv1.y * duv2.x);
-      Vec3f tangent = -(dp1 * duv2.y - dp2 * duv1.y) * r;
-      tangent = (tangent - normal * normal.dot(tangent)).normalized();
-      Vec3f bitangent = -((dp2 * duv1.x - dp1 * duv2.x) * r).normalized();
-
-      Mat44 invTBN = {
-        tangent.x, tangent.y, tangent.z, 0,
-        bitangent.x, bitangent.y, bitangent.z, 0,
-        normal.x, normal.y, normal.z, 0,
-        0, 0, 0, 1
-      };
-      normal = (tnormal * invTBN).normalized();
-    }
-
-    Vec3f ambient = tcolor * 0.3;
-    intensity = normal.dot(-ctx->light);
-    if (intensity < 0.0) {
-      intensity = 0.0;
-    }
-
-    *color = (ambient + tcolor * intensity).clamped();
-
-    return true;
-  }
-};
-
-struct FloorShader : public IShader {
   Vec3f uvzs[3];
   Vec3f colors[3];
-  Vec3f normals[3];
+  Vec3f normal;
+} FloorShaderData;
 
-  void vertex(RenderingContext *ctx, int idx, Vec3f position, Vec3f normal, Vec3f texture, Vec3f color)
-  {
-    Vec3f cam_pos = position * ctx->modelview_mat;
-    positions[idx] = cam_pos * ctx->projection_mat;
+FRAGMENT_FUNC(fragment_floor)
+{
+  FloorShaderData *d = (FloorShaderData *) shader_data;
 
-    // Perspective correct attribute mapping
-    float iz = 1 / cam_pos.z;
-    uvzs[idx] = (Vec3f){texture.x * iz, texture.y * iz, iz};
-    colors[idx] = (Vec3f){color.r * iz, color.g * iz, color.b * iz};
+  Vec3f normal = d->normal;
+  float intensity = 1.0; //normal.dot(ctx->light);
 
-    normals[idx] = (normal * ctx->normal_mat).normalized();
+  Vec3f uvz = d->uvzs[0] * t0 + d->uvzs[1] * t1 + d->uvzs[2] * t2;
+  float z = 1 / uvz.z;
+  int texX = uvz.x * z * 5;
+  int texY = uvz.y * z * 5;
+
+  Vec3f tcolor;
+  if (texX % 2 == texY % 2) {
+    tcolor = (Vec3f){1, 1, 1};
+  } else {
+    tcolor = (Vec3f){0.5, 0.5, 0.5};
   }
 
-  bool fragment(RenderingContext *ctx, float t0, float t1, float t2, Vec3f *color)
-  {
-    Vec3f normal = normals[0];
-    float intensity = 1.0; //normal.dot(ctx->light);
+  Vec3f vcolor = (Vec3f){d->colors[0].r * t0 + d->colors[1].r * t1 + d->colors[2].r * t2,
+                         d->colors[0].g * t0 + d->colors[1].g * t1 + d->colors[2].g * t2,
+                         d->colors[0].b * t0 + d->colors[1].b * t1 + d->colors[2].b * t2} * z;
 
-    Vec3f uvz = uvzs[0] * t0 + uvzs[1] * t1 + uvzs[2] * t2;
-    float z = 1 / uvz.z;
-    int texX = uvz.x * z * 5;
-    int texY = uvz.y * z * 5;
+  Vec3f pos = d->pos[0] * t0 + d->pos[1] * t1 + d->pos[2] * t2;
+  Vec3f shadow = pos * ctx->shadow_mat;
+  int shx = shadow.x;
+  int shy = shadow.y;
 
-    Vec3f tcolor;
-    if (texX % 2 == texY % 2) {
-      tcolor = (Vec3f){1, 1, 1};
-    } else {
-      tcolor = (Vec3f){0.5, 0.5, 0.5};
+  if (shadow.x >= 0 && shadow.y >= 0 &&
+      shadow.x < ctx->shadowmap->width && shadow.y < ctx->shadowmap->height) {
+    float shz = 1 - shadow.z;
+    Vec3f shval = ctx->shadowmap->pixels[shy * ctx->shadowmap->width + shx];
+
+    if (shz < shval.x) {
+      intensity = 0.2;
     }
-
-    Vec3f vcolor = (Vec3f){colors[0].r * t0 + colors[1].r * t1 + colors[2].r * t2,
-                           colors[0].g * t0 + colors[1].g * t1 + colors[2].g * t2,
-                           colors[0].b * t0 + colors[1].b * t1 + colors[2].b * t2} * z;
-
-    Vec3f pos = positions[0] * t0 + positions[1] * t1 + positions[2] * t2;
-    Vec3f shadow = pos * ctx->shadow_mat;
-    int shx = shadow.x;
-    int shy = shadow.y;
-
-    if (shadow.x >= 0 && shadow.y >= 0 &&
-        shadow.x < ctx->shadowmap->width && shadow.y < ctx->shadowmap->height) {
-      float shz = 1 - shadow.z;
-      Vec3f shval = ctx->shadowmap->pixels[shy * ctx->shadowmap->width + shx];
-
-      if (shz < shval.x) {
-        intensity = 0.2;
-      }
-    }
-
-    *color = ((Vec3f){vcolor.r * tcolor.r, vcolor.g * tcolor.g, vcolor.b * tcolor.b}).clamped() * intensity;
-
-    return true;
   }
-};
+
+  *color = ((Vec3f){vcolor.r * tcolor.r, vcolor.g * tcolor.g, vcolor.b * tcolor.b}).clamped() * intensity;
+
+  return true;
+}
 
 static Model *load_model(State *state, char *filename)
 {
@@ -240,6 +222,7 @@ static Texture *load_texture(State *state, char *filename)
 static void render_floor(State *state, RenderingContext *ctx)
 {
   ctx->model_mat = Mat44::translate(0, 0, 0);
+  precalculate_matrices(ctx);
 
   Vec3f vertices[4][2] = {
     {{-0.5, 0, 0.5}, {0, 0, 0}},
@@ -247,28 +230,47 @@ static void render_floor(State *state, RenderingContext *ctx)
     {{0.5, 0, -0.5}, {1, 1, 0}},
     {{-0.5, 0, -0.5}, {0, 1, 0}}
   };
-  Vec3f normal = {0, 1, 0};
 
-  precalculate_matrices(ctx);
+  int triangles[2][3] = {
+    {0, 1, 2},
+    {0, 2, 3}
+  };
 
-  state->floorShader->vertex(ctx, 0, vertices[0][0], normal, vertices[0][1], RED);
-  state->floorShader->vertex(ctx, 1, vertices[1][0], normal, vertices[1][1], GREEN);
-  state->floorShader->vertex(ctx, 2, vertices[2][0], normal, vertices[2][1], BLUE);
-  draw_triangle(ctx, state->floorShader);
+  Vec3f colors[2][3] = {
+    {RED, GREEN, BLUE},
+    {RED, BLUE, WHITE}
+  };
 
-  state->floorShader->vertex(ctx, 0, vertices[0][0], normal, vertices[0][1], RED);
-  state->floorShader->vertex(ctx, 1, vertices[2][0], normal, vertices[2][1], BLUE);
-  state->floorShader->vertex(ctx, 2, vertices[3][0], normal, vertices[3][1], WHITE);
-  draw_triangle(ctx, state->floorShader);
+  FloorShaderData shader_data;
+  shader_data.normal = (Vec3f){0, 1, 0};
+
+  Vec3f positions[3];
+
+  for (int tri = 0; tri < 2; tri++) {
+    for (int i = 0; i < 3; i++) {
+      int idx = triangles[tri][i];
+
+      Vec3f cam_pos = vertices[idx][0] * ctx->modelview_mat;
+      shader_data.pos[i] = cam_pos * ctx->projection_mat;
+      positions[i] = vertices[idx][0] * ctx->mvp_mat;
+
+      float iz = 1 / cam_pos.z;
+      Vec3f tex = vertices[idx][1];
+      shader_data.uvzs[i] = (Vec3f){tex.x * iz, tex.y * iz, iz};
+      shader_data.colors[i] = colors[tri][i] * iz;
+    }
+
+    draw_triangle(ctx, &fragment_floor, (void *) &shader_data, positions[0], positions[1], positions[2]);
+  }
 }
 
 static void render_model(State *state, RenderingContext *ctx, Model *model, bool wireframe = false)
 {
-  Vec3f color = {1, 1, 1};
-
   ctx->model_mat = Mat44::translate(0, 0, 0);
-
   precalculate_matrices(ctx);
+
+  ModelShaderData shader_data;
+  Vec3f positions[3];
 
   for (int fi = 0; fi < model->fcount; fi++) {
     ModelFace face = model->faces[fi];
@@ -278,10 +280,14 @@ static void render_model(State *state, RenderingContext *ctx, Model *model, bool
       Vec3f texture = model->texture_coords[face.ti[vi]];
       Vec3f normal = model->normals[face.ni[vi]];
 
-      state->modelShader->vertex(ctx, vi, position, normal, texture, color);
+      shader_data.pos[vi] = position;
+      shader_data.uvs[vi] = (Vec3f){texture.x, texture.y, 0};
+      shader_data.normals[vi] = (normal * ctx->normal_mat).normalized();
+
+      positions[vi] = position * ctx->mvp_mat;
     }
 
-    draw_triangle(ctx, state->modelShader);
+    draw_triangle(ctx, &fragment_model, (void *) &shader_data, positions[0], positions[1], positions[2]);
   }
 }
 
@@ -328,15 +334,11 @@ static void initialize(State *state, DrawingBuffer *buffer)
   ctx->clear_color = BLACK;
 
   ctx->model_mat = Mat44::identity();
-  ctx->viewport_mat = viewport_matrix(buffer->width, buffer->height);
+  ctx->viewport_mat = viewport_matrix(buffer->width, buffer->height, true);
   ctx->projection_mat = perspective_matrix(0.1, 10, 60);
   ctx->light = ((Vec3f){0, -1, 0}).normalized();
 
   ctx->zbuffer = (zval_t *) state->main_arena->allocate(buffer->width * buffer->height * sizeof(zval_t));
-
-  // TODO: DON'T ALLOCATE IN DYLIB !!!
-  state->floorShader = new FloorShader();
-  state->modelShader = new ModelShader();
 
   char *basename = (char *) "misc/katarina";
   char model_filename[255];
@@ -361,7 +363,6 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
 {
   Vec3f color = {1, 1, 1};
 
-  ModelShader shader;
   RenderingContext subctx = {};
 
   ASSERT(shadowmap->width == ctx->target->width);
@@ -371,7 +372,7 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
   subctx.clear_color = BLACK;
 
   subctx.model_mat = Mat44::identity();
-  subctx.viewport_mat = viewport_matrix(shadowmap->width, shadowmap->height);
+  subctx.viewport_mat = viewport_matrix(shadowmap->width, shadowmap->height, true);
   subctx.projection_mat = orthographic_matrix(0.1, 10, -1, -1, 1, 1);
 
   subctx.zbuffer = ctx->zbuffer;
@@ -384,6 +385,9 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
 
   clear_zbuffer(&subctx);
 
+  ModelShaderData shader_data;
+  Vec3f positions[3];
+
   for (int fi = 0; fi < model->fcount; fi++) {
     ModelFace face = model->faces[fi];
 
@@ -392,10 +396,14 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
       Vec3f texture = model->texture_coords[face.ti[vi]];
       Vec3f normal = model->normals[face.ni[vi]];
 
-      shader.vertex(&subctx, vi, position, normal, texture, color);
+      shader_data.pos[vi] = position;
+      shader_data.uvs[vi] = (Vec3f){texture.x, texture.y, 0};
+      shader_data.normals[vi] = (normal * subctx.normal_mat).normalized();
+
+      positions[vi] = position * subctx.mvp_mat;
     }
 
-    draw_triangle(&subctx, &shader, true);
+    draw_triangle(&subctx, &fragment_model, (void *) &shader_data, positions[0], positions[1], positions[2], true);
   }
 
   for  (int i = 0; i < shadowmap->width; i++) {
@@ -482,7 +490,7 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
 
   if (!ctx->shadowmap) {
     ctx->shadowmap = (Texture *) state->main_arena->allocate(sizeof(Texture));
-    ctx->shadowmap->pixels = (Vec3f *) state->main_arena->allocate(ctx->target->width * ctx->target->height * sizeof(Vec3f));
+    ctx->shadowmap->pixels = (Vec3f *) state->main_arena->allocate(drawing_buffer->width * drawing_buffer->height * sizeof(Vec3f));
     ctx->shadowmap->width = drawing_buffer->width;
     ctx->shadowmap->height = drawing_buffer->height;
 
