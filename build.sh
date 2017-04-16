@@ -71,25 +71,26 @@ function force_reload() {
   fi
 }
 
-function and_then() {
-  if [ $exitcode -eq 0 ]; then
-    eval $1
-  fi
+function build_targets() {
+  for target in $1
+  do
+    if [ $exitcode -eq 0 ]; then
+      eval "build_$target"
+    fi
+  done
+
+  force_reload
 }
 
 function build_all() {
-  # build_viewer
-  and_then build_cubes
-  and_then build_exe
-
-  force_reload
+  build_targets "viewer cubes exe"
 }
 
 case "$1" in 
   "") build_all;;
   "all") build_all;;
-  "viewer") build_viewer;;
-  "cubes") build_cubes;;
+  "viewer") build_targets "viewer exe";;
+  "cubes") build_targets "cubes exe";;
   *) echo "Unknown target: $1";;
 esac
 
