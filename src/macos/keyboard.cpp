@@ -132,10 +132,16 @@ static kb_t keyCodesMap[255] = {
 
 #define KEYBOARD_CODE(code) (keyCodesMap[code])
 
+static inline void keyboard_clear_state_changes(KeyboardState *state)
+{
+  memset(&state->frameStateChanges, 0, sizeof(state->frameStateChanges));
+}
+
 static inline void keyboard_state_key_down(KeyboardState *state, kb_t kbCode)
 {
   if (kbCode) {
     state->keysDowned++;
+    state->frameStateChanges[kbCode]++;
     state->downedKeys[kbCode] = true;
   }
 }
@@ -144,6 +150,7 @@ static inline void keyboard_state_key_up(KeyboardState *state, kb_t kbCode)
 {
   if (kbCode) {
     state->keysDowned--;
+    state->frameStateChanges[kbCode]++;
     state->downedKeys[kbCode] = false;
   }
 }

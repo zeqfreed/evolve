@@ -65,6 +65,13 @@ enum {
 typedef struct KeyboardState {
   uint8_t keysDowned;
   bool downedKeys[MAX_KEYBOARD_STATE_KEYS]; // TODO: More compact storage?
+  uint8_t frameStateChanges[MAX_KEYBOARD_STATE_KEYS];
   uint8_t modifiers;
 } KeyboardState;
 
+#define KEY_STATE_CHANGED(ST, KEY) (!!ST->frameStateChanges[KEY])
+#define KEY_STATE_UNCHANGED(ST, KEY) (!ST->frameStateChanges[KEY])
+#define KEY_IS_DOWN(ST, KEY) (ST->downedKeys[KEY])
+#define KEY_IS_UP(ST, KEY) (!KEY_IS_DOWN(ST, KEY))
+#define KEY_WAS_PRESSED(ST, KEY) (KEY_IS_DOWN(ST, KEY) && KEY_STATE_CHANGED(ST, KEY))
+#define KEY_WAS_RELEASED(ST, KEY) (KEY_IS_UP(ST, KEY) && KEY_STATE_CHANGED(ST, KEY))

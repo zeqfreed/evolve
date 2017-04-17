@@ -82,10 +82,18 @@ static NSOpenGLContext* openGLContext = nil;
 }
 
 - (void)keyDown:(NSEvent *)theEvent {
+  if ([theEvent isARepeat]) {
+    return;
+  }
+
   keyboard_state_key_down(&keyboardState, KEYBOARD_CODE([theEvent keyCode]));
 }
 
 - (void)keyUp:(NSEvent *)theEvent {
+  if ([theEvent isARepeat]) {
+    return;
+  }
+
   keyboard_state_key_up(&keyboardState, KEYBOARD_CODE([theEvent keyCode]));
 }
 
@@ -245,6 +253,8 @@ void MacOS_CreateWindow()
 
 void MacOS_HandleEvents(void)
 {
+  keyboard_clear_state_changes(&keyboardState);
+
   @autoreleasepool {
     while(true) { 
       NSEvent *event = [NSApp nextEventMatchingMask:NSAnyEventMask
