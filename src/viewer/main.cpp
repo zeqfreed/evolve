@@ -27,10 +27,16 @@ typedef struct State {
   float fov;
 
   RenderFlags render_flags;
+  Vec3f hsv;
+  float sat_deg;
 } State;
 
-static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b)
+static Vec3f hsv_to_rgb(Vec3f hsv)
 {
+  float h = hsv.x;
+  float s = hsv.y;
+  float v = hsv.z;
+
   h = fmod(h / 60.0, 6);
   float c = v * s;
   float x = c * (1 - fabs(fmod(h, 2) - 1));  
@@ -38,29 +44,31 @@ static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b)
 
   int hh = (int) h;
 
-  *r = m;
-  *g = m;
-  *b = m;  
+  float r = m;
+  float g = m;
+  float b = m;  
   
   if (hh == 0) {
-    *r += c;
-    *g += x;
+    r += c;
+    g += x;
   } else if (hh == 1) {
-    *r += x;
-    *g += c;
+    r += x;
+    g += c;
   } else if (hh == 2) {
-    *g += c;
-    *b += x;
+    g += c;
+    b += x;
   } else if (hh == 3) {
-    *g += x;
-    *b += c;
+    g += x;
+    b += c;
   } else if (hh == 4) {
-    *r += x;
-    *b += c;
+    r += x;
+    b += c;
   } else if (hh == 5) {
-    *r += c;
-    *b += x;
+    r += c;
+    b += x;
   }
+
+  return (Vec3f){r, g, b};
 }
 
 typedef struct ModelShaderData {
@@ -295,7 +303,7 @@ static void render_model(State *state, RenderingContext *ctx, Model *model)
   precalculate_matrices(ctx);
 
   ModelShaderData shader_data;
-  shader_data.color = WHITE;
+  shader_data.color = hsv_to_rgb(state->hsv);
   shader_data.flags = &state->render_flags;
   Vec3f positions[3];
 
@@ -386,6 +394,8 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->fov = 60.0;
 
   memset(&state->render_flags, 1, sizeof(state->render_flags)); // Set all flags
+  state->hsv = (Vec3f){260.0, 0.33, 1.0};
+  state->sat_deg = RAD(109);
 }
 
 static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, Texture *shadowmap)
@@ -447,6 +457,8 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
 #define Y_RAD_PER_SEC RAD(120.0)
 #define X_RAD_PER_SEC RAD(120.0)
 #define FOV_DEG_PER_SEC 30.0
+#define HUE_PER_SEC 120.0
+#define SATURATION_PER_SEC RAD(120.0)
 
 static void update_camera(State *state, float dt)
 {
@@ -490,6 +502,24 @@ static void update_camera(State *state, float dt)
 
   state->fov += da;
   state->fov = CLAMP(state->fov, 3.0, 170.0);
+
+  if (KEY_IS_DOWN(state->keyboard, KB_H)) {
+    state->hsv.x += HUE_PER_SEC * dt;
+  }
+
+  if (state->hsv.x > 360.0) {
+    state->hsv.x -= 360.0;
+  }
+
+  if (KEY_IS_DOWN(state->keyboard, KB_C)) {
+    state->sat_deg += SATURATION_PER_SEC * dt;
+  }
+
+  if (state->sat_deg > RAD(360.0)) {
+    state->sat_deg -= RAD(360.0);
+  }
+
+  state->hsv.y = cos(state->sat_deg) * 0.5 + 0.5; // map to 0..1
 }
 
 static void handle_input(State *state)
