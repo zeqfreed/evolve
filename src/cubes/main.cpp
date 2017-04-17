@@ -316,14 +316,14 @@ static void render_cubes(State *state, RenderingContext *ctx)
 static void update_camera(State *state, float dt)
 {
   float da = 0.0;
-  if (state->keyboard->downedKeys[KB_LEFT_ARROW]) {
+  if (KEY_IS_DOWN(state->keyboard, KB_LEFT_ARROW)) {
     da -= Y_RAD_PER_SEC * dt;
   }
-  if (state->keyboard->downedKeys[KB_RIGHT_ARROW]) {
+  if (KEY_IS_DOWN(state->keyboard, KB_RIGHT_ARROW)) {
     da += Y_RAD_PER_SEC * dt;
   }
 
-  if (state->keyboard->downedKeys[KB_LEFT_SHIFT]) {
+  if (KEY_IS_DOWN(state->keyboard, KB_LEFT_SHIFT)) {
     da *= 3.0;
   }
 
@@ -333,11 +333,11 @@ static void update_camera(State *state, float dt)
   }
 
   da = 0.0;
-  if (state->keyboard->downedKeys[KB_UP_ARROW]) {
+  if (KEY_IS_DOWN(state->keyboard, KB_UP_ARROW)) {
     da += X_RAD_PER_SEC * dt;
   }
 
-  if (state->keyboard->downedKeys[KB_DOWN_ARROW]) {
+  if (KEY_IS_DOWN(state->keyboard, KB_DOWN_ARROW)) {
     da -= X_RAD_PER_SEC * dt;
   }
 
@@ -345,11 +345,11 @@ static void update_camera(State *state, float dt)
   state->xRot = CLAMP(state->xRot, -PI / 2.0, PI / 2.0);
 
   da = 0.0;
-  if (state->keyboard->downedKeys[KB_PLUS]) {
+  if (KEY_IS_DOWN(state->keyboard, KB_PLUS)) {
     da -= FOV_DEG_PER_SEC * dt;
   }
 
-  if (state->keyboard->downedKeys[KB_MINUS]) {
+  if (KEY_IS_DOWN(state->keyboard, KB_MINUS)) {
     da += FOV_DEG_PER_SEC * dt;
   }
 
@@ -379,12 +379,12 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
     regenerate_cube_grid(state, CUBES_GRID_SIZE);
   }
 
-  if (state->keyboard->downedKeys[KB_ESCAPE]) {
+  if (KEY_WAS_PRESSED(state->keyboard, KB_ESCAPE)) {
     state->platform_api->terminate();
     return;
   }
 
-  if (state->keyboard->downedKeys[KB_W]) {
+  if (KEY_WAS_PRESSED(state->keyboard, KB_W)) {
     state->seed = time(NULL) ^ (uint32_t) (dt * (state->seed));
     regenerate_cube_grid(state, CUBES_GRID_SIZE);
   }
