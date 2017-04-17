@@ -7,18 +7,26 @@
 
 #include "model.cpp"
 
+typedef struct RenderFlags {
+  bool gouraud_shading;
+  bool texture_mapping;
+  bool normal_mapping;
+  bool shadow_mapping;
+} RenderFlags;
+
 typedef struct State {
   PlatformAPI *platform_api;
   KeyboardState *keyboard;
   MemoryArena *main_arena;
 
   Model *model;
-
   RenderingContext rendering_context;
 
   float xRot;
   float yRot;
   float fov;
+
+  RenderFlags render_flags;
 } State;
 
 static void hsv_to_rgb(float h, float s, float v, float *r, float *g, float *b)
@@ -59,24 +67,36 @@ typedef struct ModelShaderData {
   Vec3f pos[3];
   Vec3f normals[3];
   Vec3f uvs[3];
+  Vec3f color;
+  RenderFlags *flags;
 } ModelShaderData;
 
 FRAGMENT_FUNC(fragment_model)
 {
   ModelShaderData *d = (ModelShaderData *) shader_data;
+  RenderFlags *f = d->flags;
 
   float intensity = 0.0;
-  //Vec3f normal = (pos[2] - pos[1]).cross(pos[1] - pos[0]).normalized();
-  Vec3f normal = d->normals[0] * t0 + d->normals[1] * t1 + d->normals[2] * t2;
+
+  Vec3f normal;
+  if (f->gouraud_shading) {
+    normal = d->normals[0] * t0 + d->normals[1] * t1 + d->normals[2] * t2;
+  } else {
+    normal = (d->pos[2] - d->pos[1]).cross(d->pos[1] - d->pos[0]).normalized();
+  }  
 
   Vec3f uv = d->uvs[0] * t0 + d->uvs[1] * t1 + d->uvs[2] * t2;
   int texX = (int)((uv.x * ctx->diffuse->width)) & (512 - 1);
   int texY = (int)((uv.y * ctx->diffuse->height)) & (512 - 1);
 
-  Vec3f tcolor = ctx->diffuse->pixels[texY*ctx->diffuse->width+texX];
-  *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b};
+  Vec3f tcolor;
+  if (f->texture_mapping) {
+    tcolor = ctx->diffuse->pixels[texY*ctx->diffuse->width+texX];
+  } else {
+    tcolor = d->color;
+  }
 
-  if (1 && ctx->normal) {
+  if (f->normal_mapping && ctx->normal) {
     int nx = (int)(uv.x * ctx->normal->width) & (512 - 1);
     int ny = (int)(uv.y * ctx->normal->height) & (512 - 1);
     Vec3f ncolor = ctx->normal->pixels[ny*ctx->normal->width+nx];
@@ -116,11 +136,13 @@ typedef struct FloorShaderData {
   Vec3f uvzs[3];
   Vec3f colors[3];
   Vec3f normal;
+  RenderFlags *flags;
 } FloorShaderData;
 
 FRAGMENT_FUNC(fragment_floor)
 {
   FloorShaderData *d = (FloorShaderData *) shader_data;
+  RenderFlags *f = d->flags;
 
   Vec3f normal = d->normal;
   float intensity = 1.0; //normal.dot(ctx->light);
@@ -141,18 +163,20 @@ FRAGMENT_FUNC(fragment_floor)
                          d->colors[0].g * t0 + d->colors[1].g * t1 + d->colors[2].g * t2,
                          d->colors[0].b * t0 + d->colors[1].b * t1 + d->colors[2].b * t2} * z;
 
-  Vec3f pos = d->pos[0] * t0 + d->pos[1] * t1 + d->pos[2] * t2;
-  Vec3f shadow = pos * ctx->shadow_mat;
-  int shx = shadow.x;
-  int shy = shadow.y;
+  if (f->shadow_mapping) {
+    Vec3f pos = d->pos[0] * t0 + d->pos[1] * t1 + d->pos[2] * t2;
+    Vec3f shadow = pos * ctx->shadow_mat;
+    int shx = shadow.x;
+    int shy = shadow.y;
 
-  if (shadow.x >= 0 && shadow.y >= 0 &&
-      shadow.x < ctx->shadowmap->width && shadow.y < ctx->shadowmap->height) {
-    float shz = 1 - shadow.z;
-    Vec3f shval = ctx->shadowmap->pixels[shy * ctx->shadowmap->width + shx];
+    if (shadow.x >= 0 && shadow.y >= 0 &&
+        shadow.x < ctx->shadowmap->width && shadow.y < ctx->shadowmap->height) {
+      float shz = 1 - shadow.z;
+      Vec3f shval = ctx->shadowmap->pixels[shy * ctx->shadowmap->width + shx];
 
-    if (shz < shval.x) {
-      intensity = 0.2;
+      if (shz < shval.x) {
+        intensity = 0.2;
+      }
     }
   }
 
@@ -242,6 +266,7 @@ static void render_floor(State *state, RenderingContext *ctx)
   };
 
   FloorShaderData shader_data;
+  shader_data.flags = &state->render_flags;
   shader_data.normal = (Vec3f){0, 1, 0};
 
   Vec3f positions[3];
@@ -264,12 +289,14 @@ static void render_floor(State *state, RenderingContext *ctx)
   }
 }
 
-static void render_model(State *state, RenderingContext *ctx, Model *model, bool wireframe = false)
+static void render_model(State *state, RenderingContext *ctx, Model *model)
 {
   ctx->model_mat = Mat44::translate(0, 0, 0);
   precalculate_matrices(ctx);
 
   ModelShaderData shader_data;
+  shader_data.color = WHITE;
+  shader_data.flags = &state->render_flags;
   Vec3f positions[3];
 
   for (int fi = 0; fi < model->fcount; fi++) {
@@ -357,6 +384,8 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->xRot = RAD(15.0);
   state->yRot = 0.0;
   state->fov = 60.0;
+
+  memset(&state->render_flags, 1, sizeof(state->render_flags)); // Set all flags
 }
 
 static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, Texture *shadowmap)
@@ -422,14 +451,14 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
 static void update_camera(State *state, float dt)
 {
   float da = 0.0;
-  if (state->keyboard->downedKeys[KB_LEFT_ARROW]) {
+  if (KEY_IS_DOWN(state->keyboard, KB_LEFT_ARROW)) {
     da -= Y_RAD_PER_SEC * dt;
   }
-  if (state->keyboard->downedKeys[KB_RIGHT_ARROW]) {
+  if (KEY_IS_DOWN(state->keyboard, KB_RIGHT_ARROW)) {
     da += Y_RAD_PER_SEC * dt;
   }
 
-  if (state->keyboard->downedKeys[KB_LEFT_SHIFT]) {
+  if (KEY_IS_DOWN(state->keyboard, KB_LEFT_SHIFT)) {
     da *= 3.0;
   }
 
@@ -439,11 +468,11 @@ static void update_camera(State *state, float dt)
   }
 
   da = 0.0;
-  if (state->keyboard->downedKeys[KB_UP_ARROW]) {
+  if (KEY_IS_DOWN(state->keyboard, KB_UP_ARROW)) {
     da += X_RAD_PER_SEC * dt;
   }
 
-  if (state->keyboard->downedKeys[KB_DOWN_ARROW]) {
+  if (KEY_IS_DOWN(state->keyboard, KB_DOWN_ARROW)) {
     da -= X_RAD_PER_SEC * dt;
   }
 
@@ -451,16 +480,35 @@ static void update_camera(State *state, float dt)
   state->xRot = CLAMP(state->xRot, -PI / 2.0, PI / 2.0);
 
   da = 0.0;
-  if (state->keyboard->downedKeys[KB_PLUS]) {
+  if (KEY_IS_DOWN(state->keyboard, KB_PLUS)) {
     da -= FOV_DEG_PER_SEC * dt;
   }
 
-  if (state->keyboard->downedKeys[KB_MINUS]) {
+  if (KEY_IS_DOWN(state->keyboard, KB_MINUS)) {
     da += FOV_DEG_PER_SEC * dt;
   }
 
   state->fov += da;
   state->fov = CLAMP(state->fov, 3.0, 170.0);
+}
+
+static void handle_input(State *state)
+{
+  if (KEY_WAS_PRESSED(state->keyboard, KB_T)) {
+    state->render_flags.texture_mapping = !state->render_flags.texture_mapping;
+  }
+
+  if (KEY_WAS_PRESSED(state->keyboard, KB_G)) {
+    state->render_flags.gouraud_shading = !state->render_flags.gouraud_shading;
+  }
+
+  if (KEY_WAS_PRESSED(state->keyboard, KB_S)) {
+    state->render_flags.shadow_mapping = !state->render_flags.shadow_mapping;
+  }
+
+  if (KEY_WAS_PRESSED(state->keyboard, KB_N)) {
+    state->render_flags.normal_mapping = !state->render_flags.normal_mapping;
+  }
 }
 
 C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer, float dt)
@@ -500,6 +548,7 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
   }
 
   update_camera(state, dt);
+  handle_input(state);
   ctx->projection_mat = perspective_matrix(0.1, 10, state->fov);
 
   //Mat44 view_mat = look_at_matrix((Vec3f){0, 0, 1}, (Vec3f){0, 0.35, 0}, (Vec3f){0, 1, 0});
