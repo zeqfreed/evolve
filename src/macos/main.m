@@ -10,7 +10,7 @@
 #include <signal.h>
 
 #include "platform/platform.h"
-#include "assets.h"
+#include "fs.h"
 
 #include "keyboard.cpp"
 
@@ -430,7 +430,8 @@ int main(int argc, char *argv[])
   drawing_buffer.bits_per_pixel = 4;
 
   GlobalState state = {};
-  state.platform_api.read_file_contents = macos_read_file_contents;
+  state.platform_api.get_file_size = macos_fs_size;
+  state.platform_api.read_file_contents = macos_fs_read;
   state.platform_api.allocate_memory = macos_allocate_memory;
   state.platform_api.terminate = macos_terminate;
   

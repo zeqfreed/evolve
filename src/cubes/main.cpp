@@ -2,11 +2,12 @@
 
 #include "platform/platform.h"
 
-#include "renderer/memory.cpp"
 #include "renderer/math.cpp"
 #include "renderer/tga.cpp"
 #include "renderer/renderer.cpp"
 #include "renderer/font.cpp"
+#include "utils/memory.cpp"
+#include "utils/assets.cpp"
 
 #ifndef CUBES_GRID_SIZE
 #define CUBES_GRID_SIZE 6
@@ -82,16 +83,14 @@ FRAGMENT_FUNC(fragment)
 
 static Texture *load_texture(State *state, char *filename)
 {
-  FileContents contents = state->platform_api->read_file_contents(filename);
-  if (contents.size <= 0) {
-    printf("Failed to load texture\n");
+  LoadedFile file = load_file(state->platform_api, state->main_arena, filename);
+  if (!file.size) {
+    printf("Failed to load texture: %s\n", filename);
     return NULL;
   }
 
-  printf("Read texture file of %d bytes\n", contents.size);
-
   TgaImage image;
-  image.read_header(contents.bytes, contents.size);
+  image.read_header(file.contents, file.size);
 
   TgaHeader *header = &image.header;
   printf("TGA Image width: %d; height: %d; type: %d; bpp: %d\n",
@@ -105,7 +104,7 @@ static Texture *load_texture(State *state, char *filename)
   texture->height = header->height;
   texture->pixels = (Vec3f *) state->main_arena->allocate(sizeof(Vec3f) * texture->width * texture->height);
 
-  image.read_into_texture(contents.bytes, contents.size, texture);
+  image.read_into_texture(file.contents, file.size, texture);
   return texture;
 }
 

@@ -18,6 +18,9 @@
 #define ASSERT(...)
 #endif
 
+#define PAPI_OK(x) (x >= 0)
+#define PAPI_ERROR(x) (x < 0)
+
 typedef struct DrawingBuffer {
   uint32_t width;
   uint32_t height;
@@ -31,11 +34,13 @@ typedef struct FileContents {
   void *bytes;
 } FileContents;
 
-typedef FileContents (* ReadFileContentsFunc)(char *);
+typedef int32_t (* GetFileSizeFunc)(char *);
+typedef int32_t (* ReadFileContentsFunc)(char *, void*, uint32_t);
 typedef void *(* AllocateMemoryFunc)(size_t size);
 typedef void ( *TerminateFunc)();
 
 typedef struct PlatformAPI {
+  GetFileSizeFunc get_file_size;
   ReadFileContentsFunc read_file_contents;
   AllocateMemoryFunc allocate_memory;
   TerminateFunc terminate;

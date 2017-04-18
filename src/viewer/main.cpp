@@ -1,9 +1,10 @@
 #include "platform/platform.h"
 
-#include "renderer/memory.cpp"
 #include "renderer/math.cpp"
 #include "renderer/tga.cpp"
 #include "renderer/renderer.cpp"
+#include "utils/memory.cpp"
+#include "utils/assets.cpp"
 
 #include "model.cpp"
 
@@ -18,6 +19,7 @@ typedef struct State {
   PlatformAPI *platform_api;
   KeyboardState *keyboard;
   MemoryArena *main_arena;
+  MemoryArena *temp_arena;
 
   Model *model;
   RenderingContext rendering_context;
@@ -195,16 +197,14 @@ FRAGMENT_FUNC(fragment_floor)
 
 static Model *load_model(State *state, char *filename)
 {
-  FileContents contents = state->platform_api->read_file_contents(filename);
-  if (contents.size <= 0) {
-    printf("Failed to load model\n");
+  LoadedFile file = load_file(state->platform_api, state->temp_arena, filename);
+  if (!file.size) {
+    printf("Failed to load model: %s\n", filename);
     return NULL;
   }
-
-  printf("Read model file of %d bytes\n", contents.size);
+  
   Model *model = (Model *) state->main_arena->allocate(sizeof(Model));
-
-  model->parse(contents.bytes, contents.size, true);
+  model->parse(file.contents, file.size, true);
 
   printf("Vertices: %d; Texture coords: %d; Normals: %d; Faces: %d\n",
          model->vcount, model->tcount, model->ncount, model->fcount);
@@ -217,23 +217,21 @@ static Model *load_model(State *state, char *filename)
   model->texture_coords = (Vec3f *) state->main_arena->allocate(sizeof(Vec3f) * model->tcount);
   model->faces = (ModelFace *) state->main_arena->allocate(sizeof(ModelFace) * model->fcount);
 
-  model->parse(contents.bytes, contents.size);
+  model->parse(file.contents, file.size);
 
   return model;
 }
 
 static Texture *load_texture(State *state, char *filename)
 {
-  FileContents contents = state->platform_api->read_file_contents(filename);
-  if (contents.size <= 0) {
-    printf("Failed to load texture\n");
+  LoadedFile file = load_file(state->platform_api, state->main_arena, filename);
+  if (!file.size) {
+    printf("Failed to load texture: %s\n", filename);
     return NULL;
   }
 
-  printf("Read texture file of %d bytes\n", contents.size);
-
   TgaImage image;
-  image.read_header(contents.bytes, contents.size);
+  image.read_header(file.contents, file.size);
 
   TgaHeader *header = &image.header;
   printf("TGA Image width: %d; height: %d; type: %d; bpp: %d\n",
@@ -247,7 +245,7 @@ static Texture *load_texture(State *state, char *filename)
   texture->height = header->height;
   texture->pixels = (Vec3f *) state->main_arena->allocate(sizeof(Vec3f) * texture->width * texture->height);
 
-  image.read_into_texture(contents.bytes, contents.size, texture);
+  image.read_into_texture(file.contents, file.size, texture);
   return texture;
 }
 
@@ -553,6 +551,7 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
     global_state->state = state;
 
     state->main_arena = arena;
+    state->temp_arena = arena->subarena(MB(32));
     state->platform_api = &global_state->platform_api;
     state->keyboard = global_state->keyboard;
 
