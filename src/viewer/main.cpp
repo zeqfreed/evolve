@@ -13,6 +13,7 @@ typedef struct RenderFlags {
   bool texture_mapping;
   bool normal_mapping;
   bool shadow_mapping;
+  bool lighting;
 } RenderFlags;
 
 typedef struct State {
@@ -130,12 +131,17 @@ FRAGMENT_FUNC(fragment_model)
     normal = (tnormal * invTBN).normalized();
   }
 
-  Vec3f ambient = tcolor * 0.3;
-  intensity = normal.dot(-ctx->light);
+  if (f->lighting) {
+    intensity = normal.dot(-ctx->light);
+  } else {
+    intensity = 1.0;
+  }
+
   if (intensity < 0.0) {
     intensity = 0.0;
   }
 
+  Vec3f ambient = tcolor * 0.3;
   *color = (ambient + tcolor * intensity).clamped();
 
   return true;
@@ -536,6 +542,10 @@ static void handle_input(State *state)
 
   if (KEY_WAS_PRESSED(state->keyboard, KB_N)) {
     state->render_flags.normal_mapping = !state->render_flags.normal_mapping;
+  }
+
+  if (KEY_WAS_PRESSED(state->keyboard, KB_L)) {
+    state->render_flags.lighting = !state->render_flags.lighting;
   }
 }
 
