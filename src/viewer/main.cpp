@@ -7,6 +7,7 @@
 #include "utils/assets.cpp"
 
 #include "model.cpp"
+#include "m2.cpp"
 
 typedef struct RenderFlags {
   bool gouraud_shading;
@@ -23,6 +24,8 @@ typedef struct State {
   MemoryArena *temp_arena;
 
   Model *model;
+  M2Model *m2model;
+  Texture *textures[5];
   RenderingContext rendering_context;
 
   float xRot;
@@ -32,6 +35,8 @@ typedef struct State {
   RenderFlags render_flags;
   Vec3f hsv;
   float sat_deg;
+  uint32_t hair;
+  float scale;
 } State;
 
 static Vec3f hsv_to_rgb(Vec3f hsv)
@@ -79,6 +84,7 @@ typedef struct ModelShaderData {
   Vec3f normals[3];
   Vec3f uvs[3];
   Vec3f color;
+  Texture *texture;
   RenderFlags *flags;
 } ModelShaderData;
 
@@ -86,6 +92,7 @@ FRAGMENT_FUNC(fragment_model)
 {
   ModelShaderData *d = (ModelShaderData *) shader_data;
   RenderFlags *f = d->flags;
+  Texture *texture = d->texture;
 
   float intensity = 0.0;
 
@@ -97,12 +104,12 @@ FRAGMENT_FUNC(fragment_model)
   }  
 
   Vec3f uv = d->uvs[0] * t0 + d->uvs[1] * t1 + d->uvs[2] * t2;
-  int texX = (int)((uv.x * ctx->diffuse->width)) & (512 - 1);
-  int texY = (int)((uv.y * ctx->diffuse->height)) & (512 - 1);
+  int texX = (int)((uv.x * texture->width)) & (texture->width - 1);
+  int texY = (int)((uv.y * texture->height)) & (texture->height - 1);
 
   Vec3f tcolor;
   if (f->texture_mapping) {
-    tcolor = ctx->diffuse->pixels[texY*ctx->diffuse->width+texX];
+    tcolor = texture->pixels[texY*texture->width+texX];
   } else {
     tcolor = d->color;
   }
@@ -228,6 +235,17 @@ static Model *load_model(State *state, char *filename)
   return model;
 }
 
+static void load_m2_model(State *state, char *filename)
+{
+  LoadedFile file = load_file(state->platform_api, state->temp_arena, filename);
+  if (!file.size) {
+    printf("Failed to load file: %s\n", filename);
+    return;
+  }
+  
+  state->m2model = m2_load(file.contents, file.size, state->main_arena);
+}
+
 static Texture *load_texture(State *state, char *filename)
 {
   LoadedFile file = load_file(state->platform_api, state->main_arena, filename);
@@ -330,6 +348,57 @@ static void render_model(State *state, RenderingContext *ctx, Model *model)
   }
 }
 
+static void render_m2_model(State *state, RenderingContext *ctx, M2Model *model)
+{
+  ctx->model_mat = Mat44::rotate_y(-RAD(90)) * Mat44::scale(state->scale, state->scale, state->scale);
+  precalculate_matrices(ctx);
+
+  ModelShaderData shader_data;
+  shader_data.color = hsv_to_rgb(state->hsv);
+  shader_data.flags = &state->render_flags;
+  Vec3f positions[3];
+
+  #if 1
+    uint32_t partsCount = 7;
+    uint32_t drawParts[][2] = {
+      {0, 0}, {6, 1}, {8, 1}, {9, 0}, {10, 0}, {22, 0}, {28, 0}
+    };
+    drawParts[1][0] = state->hair;
+  #else
+    uint32_t partsCount = 3;
+    uint32_t drawParts[][2] = {
+      {0, 0}, {1, 0}, {2, 0}
+    };  
+  #endif
+
+  //for (int pi = state->geoindex; pi == state->geoindex; pi++) {
+  for (int i = 0; i < partsCount; i++) {
+    ModelPart part = model->parts[drawParts[i][0]];
+    shader_data.texture = state->textures[drawParts[i][1]];
+
+    uint32_t faceStart = part.facesStart;
+    uint32_t faceEnd = faceStart + part.facesCount;
+
+    for (int fi = faceStart; fi < faceEnd; fi++) {
+      M2Face face = model->faces[fi];
+
+      for (int vi = 0; vi < 3; vi++) {
+        Vec3f position = model->positions[face.indices[vi]];
+        Vec3f texture = model->textureCoords[face.indices[vi]];
+        Vec3f normal = model->normals[face.indices[vi]];
+
+        shader_data.pos[vi] = position;
+        shader_data.uvs[vi] = (Vec3f){texture.x, texture.y, 0};
+        shader_data.normals[vi] = (normal * ctx->normal_mat).normalized();
+
+        positions[vi] = position * ctx->mvp_mat;
+      }
+
+      draw_triangle(ctx, &fragment_model, (void *) &shader_data, positions[0], positions[1], positions[2]);
+    }
+  }
+}
+
 static inline void render_line(RenderingContext *ctx, Vec3f start, Vec3f end, Vec3f color)
 {
   float d0 = (Vec4f){start.x, start.y, start.z, 1}.dot(ctx->near_clip_plane);
@@ -352,6 +421,28 @@ static inline void render_line(RenderingContext *ctx, Vec3f start, Vec3f end, Ve
   end = end * ctx->mvp_mat * ctx->viewport_mat;
 
   draw_line(ctx->target, start.x, start.y, end.x, end.y, color);
+}
+
+static void render_m2_model_bones(State *state, RenderingContext *ctx, M2Model *model)
+{
+  ctx->model_mat = Mat44::rotate_y(-RAD(90)) * Mat44::scale(state->scale, state->scale, state->scale);
+  precalculate_matrices(ctx);
+
+  Mat44 mat = ctx->mvp_mat * ctx->viewport_mat;
+
+  for (int i = 0; i < model->bonesCount; i++) {
+    ModelBone bone = model->bones[i];
+
+    if (bone.parent >= 0) {
+      ModelBone parentBone = model->bones[bone.parent];
+      Vec3f p1 = bone.pivot;
+      Vec3f p2 = parentBone.pivot;
+      render_line(ctx, p1, p2, GREEN);
+    } else {
+      Vec3f pos = bone.pivot * mat;
+      set_pixel(ctx->target, pos.x, pos.y, GREEN);
+    }
+  }
 }
 
 static void render_unit_axes(RenderingContext *ctx)
@@ -379,7 +470,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
   ctx->zbuffer = (zval_t *) state->main_arena->allocate(buffer->width * buffer->height * sizeof(zval_t));
 
-  char *basename = (char *) "misc/katarina";
+  char *basename = (char *) "misc/man";
   char model_filename[255];
   char diffuse_filename[255];
   char normal_filename[255];
@@ -393,6 +484,13 @@ static void initialize(State *state, DrawingBuffer *buffer)
   ctx->diffuse = load_texture(state, diffuse_filename);
   ctx->normal = load_texture(state, normal_filename);
 
+  state->textures[0] = load_texture(state, (char *) "data/misc/nelf_blue_body.tga");
+  state->textures[1] = load_texture(state, (char *) "data/misc/2_hair_D.tga");
+
+  // state->textures[0] = load_texture(state, (char *) "data/misc/diablo_D.tga");
+
+  load_m2_model(state, (char *) "data/misc/nelf.m2");
+
   state->xRot = RAD(15.0);
   state->yRot = 0.0;
   state->fov = 60.0;
@@ -400,6 +498,9 @@ static void initialize(State *state, DrawingBuffer *buffer)
   memset(&state->render_flags, 1, sizeof(state->render_flags)); // Set all flags
   state->hsv = (Vec3f){260.0, 0.33, 1.0};
   state->sat_deg = RAD(109);
+  
+  state->hair = 6;
+  state->scale = 0.4;
 }
 
 static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, Texture *shadowmap)
@@ -428,26 +529,7 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
 
   clear_zbuffer(&subctx);
 
-  ModelShaderData shader_data;
-  Vec3f positions[3];
-
-  for (int fi = 0; fi < model->fcount; fi++) {
-    ModelFace face = model->faces[fi];
-
-    for (int vi = 0; vi < 3; vi++) {
-      Vec3f position = model->vertices[face.vi[vi]];
-      Vec3f texture = model->texture_coords[face.ti[vi]];
-      Vec3f normal = model->normals[face.ni[vi]];
-
-      shader_data.pos[vi] = position;
-      shader_data.uvs[vi] = (Vec3f){texture.x, texture.y, 0};
-      shader_data.normals[vi] = (normal * subctx.normal_mat).normalized();
-
-      positions[vi] = position * subctx.mvp_mat;
-    }
-
-    draw_triangle(&subctx, &fragment_model, (void *) &shader_data, positions[0], positions[1], positions[2], true);
-  }
+  render_m2_model(state, &subctx, state->m2model);
 
   for  (int i = 0; i < shadowmap->width; i++) {
     for (int j = 0; j < shadowmap->height; j++) {
@@ -504,8 +586,13 @@ static void update_camera(State *state, float dt)
     da += FOV_DEG_PER_SEC * dt;
   }
 
-  state->fov += da;
-  state->fov = CLAMP(state->fov, 3.0, 170.0);
+  if (KEY_IS_DOWN(state->keyboard, KB_LEFT_ALT)) {
+    state->scale -= da*0.01;
+    state->scale = CLAMP(state->scale, 0.1, 5.0);
+  } else {
+    state->fov += da;
+    state->fov = CLAMP(state->fov, 3.0, 170.0);
+  }
 
   if (KEY_IS_DOWN(state->keyboard, KB_H)) {
     state->hsv.x += HUE_PER_SEC * dt;
@@ -547,6 +634,13 @@ static void handle_input(State *state)
   if (KEY_WAS_PRESSED(state->keyboard, KB_L)) {
     state->render_flags.lighting = !state->render_flags.lighting;
   }
+
+  if (KEY_WAS_PRESSED(state->keyboard, KB_SPACE)) {
+    state->hair++;
+    if (state->hair > 7) {
+      state->hair = 1;
+    }
+  }  
 }
 
 C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer, float dt)
@@ -580,7 +674,7 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
     ctx->shadowmap->pixels = (Vec3f *) state->main_arena->allocate(drawing_buffer->width * drawing_buffer->height * sizeof(Vec3f));
     ctx->shadowmap->width = drawing_buffer->width;
     ctx->shadowmap->height = drawing_buffer->height;
-
+  
     ctx->light = ((Vec3f){0.5, 1, 0.5}).normalized();
 
     render_shadowmap(state, ctx, state->model, ctx->shadowmap);
@@ -595,11 +689,15 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
   ctx->view_mat = Mat44::rotate_y(-state->yRot) *
                   Mat44::translate(0, -0.5, 0) *
                   Mat44::rotate_x(-state->xRot) * view_mat;
+  
 
   clear_buffer(ctx);
   clear_zbuffer(ctx);
 
   render_floor(state, ctx);
-  render_model(state, ctx, state->model);
+  //render_model(state, ctx, state->model);
+
+  render_m2_model(state, ctx, state->m2model);
+  render_m2_model_bones(state, ctx, state->m2model);
   // render_unit_axes(ctx);
 }
