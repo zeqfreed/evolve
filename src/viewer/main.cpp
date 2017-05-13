@@ -111,7 +111,7 @@ FRAGMENT_FUNC(fragment_model)
     int nx = (int)(uv.x * ctx->normal->width) & (512 - 1);
     int ny = (int)(uv.y * ctx->normal->height) & (512 - 1);
     Vec3f ncolor = ctx->normal->pixels[ny*ctx->normal->width+nx];
-    Vec3f tnormal = (Vec3f){2 * ncolor.r - 1, 2 * ncolor.g - 1, ncolor.b};
+    Vec3f tnormal = (Vec3f){2 * ncolor.r - 1, 2 * ncolor.g - 1, 2 * ncolor.b};
 
     Vec3f dp1 = d->pos[1] - d->pos[0];
     Vec3f dp2 = d->pos[2] - d->pos[1];
