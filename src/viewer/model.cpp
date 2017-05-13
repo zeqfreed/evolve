@@ -79,9 +79,16 @@ void Model::parse(void *bytes, size_t size, bool dry_run = false)
       int vi0, ti0, ni0, vi1, ti1, ni1, vi2, ti2, ni2;
       ModelFace face;
       int consumed = 0;
-      if (sscanf(p, "%d/%d/%d %d/%d/%d %d/%d/%d%n",
-                 &vi0, &ti0, &ni0, &vi1, &ti1, &ni1, &vi2, &ti2, &ni2, &consumed) != 9) {
-        continue;
+      if ((sscanf(p, "%d/%d/%d %d/%d/%d %d/%d/%d%n", &vi0, &ti0, &ni0, &vi1, &ti1, &ni1, &vi2, &ti2, &ni2, &consumed) != 9) &&
+          (sscanf(p, "%d/%d %d/%d %d/%d%n", &vi0, &ti0, &vi1, &ti1, &vi2, &ti2, &consumed) != 6)) {
+        if (sscanf(p, "%d %d %d%n", &vi0, &vi1, &vi2, &consumed) == 3) {
+          p += 3;
+          ti0 = vi0;
+          ti1 = vi1;
+          ti2 = vi2;
+        } else {
+          continue;
+        }
       }
       p += consumed;
 
