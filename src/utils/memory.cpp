@@ -35,3 +35,8 @@ MemoryArena *MemoryArena::subarena(size_t size)
   void *mem = this->allocate(required_size);
   return MemoryArena::initialize(mem, required_size);
 }
+
+void MemoryArena::discard()
+{
+  taken = 0;
+}

@@ -37,6 +37,11 @@ static inline int32_t abs(int32_t v)
 
 static void draw_line(DrawingBuffer *buffer, int32_t x0, int32_t y0, int32_t x1, int32_t y1, Vec3f color)
 {
+  x0 = CLAMP(x0, 0, buffer->width - 1);
+  x1 = CLAMP(x1, 0, buffer->height - 1);
+  y0 = CLAMP(y0, 0, buffer->width - 1);
+  y1 = CLAMP(y1, 0, buffer->height - 1);
+
   int32_t t;
   bool transposed = abs(y1-y0) > abs(x1-x0);
   if (transposed) {

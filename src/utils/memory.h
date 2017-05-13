@@ -12,4 +12,5 @@ typedef struct MemoryArena {
   static MemoryArena *initialize(void *memory, size_t size);
   void *allocate(size_t size);
   MemoryArena *subarena(size_t size);
+  void discard();
 } MemoryArena;

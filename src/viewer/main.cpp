@@ -37,6 +37,19 @@ typedef struct State {
   float sat_deg;
   uint32_t hair;
   float scale;
+
+  uint32_t animId;
+  uint32_t startFrame;
+  uint32_t endFrame;
+  uint32_t currentFrame;
+  double currentFracFrame;
+  double currentAnimFPS;
+  bool playing;
+  bool showBones;
+  bool modelChanged;
+  
+  Vec3f *m2vertices;
+  Vec3f *m2normals;
 } State;
 
 static Vec3f hsv_to_rgb(Vec3f hsv)
@@ -100,7 +113,7 @@ FRAGMENT_FUNC(fragment_model)
   if (f->gouraud_shading) {
     normal = d->normals[0] * t0 + d->normals[1] * t1 + d->normals[2] * t2;
   } else {
-    normal = (d->pos[2] - d->pos[1]).cross(d->pos[1] - d->pos[0]).normalized();
+    normal = (d->pos[2] - d->pos[1]).cross(d->pos[2] - d->pos[0]).normalized();
   }  
 
   Vec3f uv = d->uvs[0] * t0 + d->uvs[1] * t1 + d->uvs[2] * t2;
@@ -275,7 +288,7 @@ static Texture *load_texture(State *state, char *filename)
 
 static void render_floor(State *state, RenderingContext *ctx)
 {
-  ctx->model_mat = Mat44::translate(0, 0, 0);
+  ctx->model_mat = Mat44::identity();
   precalculate_matrices(ctx);
 
   Vec3f vertices[4][2] = {
@@ -383,11 +396,11 @@ static void render_m2_model(State *state, RenderingContext *ctx, M2Model *model)
       M2Face face = model->faces[fi];
 
       for (int vi = 0; vi < 3; vi++) {
-        Vec3f position = model->positions[face.indices[vi]];
+        Vec3f position = state->m2vertices[face.indices[vi]];
         Vec3f texture = model->textureCoords[face.indices[vi]];
-        Vec3f normal = model->normals[face.indices[vi]];
+        Vec3f normal = state->m2normals[face.indices[vi]];
 
-        shader_data.pos[vi] = position;
+        shader_data.pos[vi] = position * ctx->model_mat;
         shader_data.uvs[vi] = (Vec3f){texture.x, texture.y, 0};
         shader_data.normals[vi] = (normal * ctx->normal_mat).normalized();
 
@@ -432,15 +445,20 @@ static void render_m2_model_bones(State *state, RenderingContext *ctx, M2Model *
 
   for (int i = 0; i < model->bonesCount; i++) {
     ModelBone bone = model->bones[i];
+    if (!bone.calculated) {
+      continue;
+    }
+
+    Vec3f color = GREEN;
 
     if (bone.parent >= 0) {
       ModelBone parentBone = model->bones[bone.parent];
-      Vec3f p1 = bone.pivot;
-      Vec3f p2 = parentBone.pivot;
-      render_line(ctx, p1, p2, GREEN);
+      Vec3f p1 = bone.pivot * bone.matrix;
+      Vec3f p2 = parentBone.pivot * parentBone.matrix;
+      render_line(ctx, p1, p2, color);
     } else {
-      Vec3f pos = bone.pivot * mat;
-      set_pixel(ctx->target, pos.x, pos.y, GREEN);
+      Vec3f pos = bone.pivot * bone.matrix * mat;
+      set_pixel(ctx->target, pos.x, pos.y, color);
     }
   }
 }
@@ -455,6 +473,54 @@ static void render_unit_axes(RenderingContext *ctx)
   render_line(ctx, origin, (Vec3f){0, 1, 0}, GREEN);
   render_line(ctx, origin, (Vec3f){0, 0, 1}, BLUE);
   render_line(ctx, origin, ctx->light, WHITE);
+}
+
+static void animate_vertices(State *state)
+{
+  m2_calc_bones(state->m2model, state->animId, state->currentFrame);
+
+  for (int i = 0; i < state->m2model->verticesCount; i++) {
+    Vec3f pos = {};
+    Vec3f normal = {};
+    ModelVertexWeight *weights = &state->m2model->weights[i * 4];
+
+    for (int wi = 0; wi < state->m2model->weightsPerVertex; wi++) {
+      if (weights[wi].weight > 0) {
+        Vec3f v = state->m2model->positions[i] * state->m2model->bones[weights[wi].bone].matrix;
+        Vec3f n = state->m2model->normals[i] * state->m2model->bones[weights[wi].bone].normal_matrix;
+        pos = pos + v * weights[wi].weight; 
+        normal = normal + n * weights[wi].weight;
+      }
+    }
+
+    state->m2vertices[i] = pos;
+    state->m2normals[i] = normal;
+  }
+
+  state->modelChanged = true;
+}
+
+static void switch_animation(State *state, int32_t animId)
+{
+  if (animId < 0) {
+    animId = state->m2model->animationsCount - 1;
+  }
+  
+  if (animId >= state->m2model->animationsCount) {
+    animId = 0;
+  }
+
+  state->animId = animId;
+  ModelAnimation animation = state->m2model->animations[state->animId];
+  state->startFrame = animation.startFrame;
+  state->endFrame = animation.endFrame;
+  state->currentFrame = animation.startFrame;
+  state->currentFracFrame = (double) state->currentFrame;
+  state->currentAnimFPS = 1000.0;
+
+  animate_vertices(state);
+  
+  printf("Switched animation to: %d\n", state->animId);
 }
 
 static void initialize(State *state, DrawingBuffer *buffer)
@@ -486,10 +552,13 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
   state->textures[0] = load_texture(state, (char *) "data/misc/nelf_blue_body.tga");
   state->textures[1] = load_texture(state, (char *) "data/misc/2_hair_D.tga");
-
-  // state->textures[0] = load_texture(state, (char *) "data/misc/diablo_D.tga");
-
   load_m2_model(state, (char *) "data/misc/nelf.m2");
+
+  // load_m2_model(state, (char *) "data/misc/diablo.m2");
+  // state->textures[0] = load_texture(state, (char *) "data/misc/diablo_D.tga");
+  
+  state->m2vertices = (Vec3f *) state->main_arena->allocate(sizeof(Vec3f) * state->m2model->verticesCount);
+  state->m2normals = (Vec3f *) state->main_arena->allocate(sizeof(Vec3f) * state->m2model->verticesCount);
 
   state->xRot = RAD(15.0);
   state->yRot = 0.0;
@@ -501,6 +570,13 @@ static void initialize(State *state, DrawingBuffer *buffer)
   
   state->hair = 6;
   state->scale = 0.4;
+
+  state->playing = true;
+  state->showBones = false;
+  state->modelChanged = true;
+  switch_animation(state, 24);
+
+  state->temp_arena->discard();
 }
 
 static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, Texture *shadowmap)
@@ -546,6 +622,26 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
 #define HUE_PER_SEC 120.0
 #define SATURATION_PER_SEC RAD(120.0)
 
+static bool update_animation(State *state, float dt)
+{
+  state->currentFracFrame += dt * state->currentAnimFPS;
+
+  bool result = false;
+
+  uint32_t frame = (uint32_t) state->currentFracFrame;
+  if (frame != state->currentFrame) {
+    result = true;
+    state->currentFrame = frame;
+    animate_vertices(state);
+  }
+
+  if (state->currentFracFrame > state->endFrame) {
+    state->currentFracFrame = state->startFrame;
+  }
+
+  return result;
+}
+
 static void update_camera(State *state, float dt)
 {
   float da = 0.0;
@@ -575,7 +671,10 @@ static void update_camera(State *state, float dt)
   }
 
   state->xRot += da;
-  state->xRot = CLAMP(state->xRot, -PI / 2.0, PI / 2.0);
+  //state->xRot = CLAMP(state->xRot, -PI, PI);
+  if (state->xRot > 2*PI) {
+    state->xRot -= 2*PI;
+  }
 
   da = 0.0;
   if (KEY_IS_DOWN(state->keyboard, KB_PLUS)) {
@@ -610,6 +709,43 @@ static void update_camera(State *state, float dt)
     state->sat_deg -= RAD(360.0);
   }
 
+  bool update_anim = false;
+  int step = 1;
+  bool loop = false;
+
+  if (KEY_IS_DOWN(state->keyboard, KB_LEFT_SHIFT)) {
+    step = 15;
+    loop = true;
+  }
+
+  if (KEY_IS_DOWN(state->keyboard, KB_Z)) {
+    state->currentFrame -= step;
+    if (state->currentFrame < state->startFrame) {
+      if (loop) {
+        state->currentFrame = state->endFrame;
+      } else {
+        state->currentFrame = state->startFrame;
+      }
+    }
+    update_anim = true;
+  }
+
+  if (KEY_IS_DOWN(state->keyboard, KB_X)) {
+    state->currentFrame += step;
+    if (state->currentFrame > state->endFrame) {
+      if (loop) {
+        state->currentFrame = state->startFrame;
+      } else {
+        state->currentFrame = state->endFrame;
+      }
+    }
+    update_anim = true;
+  }  
+
+  if (update_anim) {
+    animate_vertices(state);
+  }
+
   state->hsv.y = cos(state->sat_deg) * 0.5 + 0.5; // map to 0..1
 }
 
@@ -640,7 +776,23 @@ static void handle_input(State *state)
     if (state->hair > 7) {
       state->hair = 1;
     }
-  }  
+  }
+
+  if (KEY_WAS_PRESSED(state->keyboard, KB_Q)) {
+    switch_animation(state, state->animId - 1);
+  }
+
+  if (KEY_WAS_PRESSED(state->keyboard, KB_W)) {
+    switch_animation(state, state->animId + 1);
+  }
+
+  if (KEY_WAS_PRESSED(state->keyboard, KB_P)) {
+    state->playing = !state->playing;
+  }
+
+  if (KEY_WAS_PRESSED(state->keyboard, KB_B)) {
+    state->showBones = !state->showBones;
+  }
 }
 
 C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer, float dt)
@@ -648,7 +800,7 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
   State *state = (State *) global_state->state;
 
   if (!state) {
-    MemoryArena *arena = MemoryArena::initialize(global_state->platform_api.allocate_memory(MB(64)), MB(64));
+    MemoryArena *arena = MemoryArena::initialize(global_state->platform_api.allocate_memory(MB(128)), MB(128));
     // memset(state, 0, MB(64));
 
     state = (State *) arena->allocate(MB(1));
@@ -660,6 +812,7 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
     state->keyboard = global_state->keyboard;
 
     initialize(state, drawing_buffer);
+    animate_vertices(state);
   }
 
   if (state->keyboard->downedKeys[KB_ESCAPE]) {
@@ -680,16 +833,37 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
     render_shadowmap(state, ctx, state->model, ctx->shadowmap);
   }
 
+  if (state->playing) {
+    update_animation(state, dt);
+  }
+
+  if (state->modelChanged) {
+    if (state->render_flags.shadow_mapping) {
+      render_shadowmap(state, ctx, state->model, ctx->shadowmap);
+    }
+
+    state->modelChanged = false;
+  }
+
   update_camera(state, dt);
   handle_input(state);
   ctx->projection_mat = perspective_matrix(0.1, 10, state->fov);
 
-  //Mat44 view_mat = look_at_matrix((Vec3f){0, 0, 1}, (Vec3f){0, 0.35, 0}, (Vec3f){0, 1, 0});
-  Mat44 view_mat = Mat44::translate(0, 0, -1);
+  //ctx->view_mat = look_at_matrix((Vec3f){0, 0, 1}, (Vec3f){0, 0.35, 0}, (Vec3f){0, 1, 0});
   ctx->view_mat = Mat44::rotate_y(-state->yRot) *
                   Mat44::translate(0, -0.5, 0) *
-                  Mat44::rotate_x(-state->xRot) * view_mat;
-  
+                  Mat44::rotate_x(-state->xRot) *
+                  Mat44::translate(0, 0, -1);
+
+  Quaternion q1 = Quaternion::axisAngle((Vec3f){0, 1, 0}, state->yRot);
+  //Vec3f newx = q1 * (Vec3f){1, 0, 0} * q1.conjugate();
+  Quaternion q2 = Quaternion::axisAngle((Vec3f){1, 0, 0}, state->xRot);
+  Quaternion q3 = q1 * q2;
+  Mat44 mat = Mat44::from_quaternion(q3);
+  Vec3f p1 = (Vec3f){0, 0, 1} * mat;
+  Vec3f p2 = (q2 * (Vec3f){0, 0, 1} * q2.conjugate());
+  Vec3f p3 = (q3 * (Vec3f){0, 0, 1} * q3.conjugate());
+  //ctx->view_mat = look_at_matrix((Vec3f){0, 1, 1}, (Vec3f){0, 0, 0}, (Vec3f){0, 1, 0});
 
   clear_buffer(ctx);
   clear_zbuffer(ctx);
@@ -698,6 +872,13 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
   //render_model(state, ctx, state->model);
 
   render_m2_model(state, ctx, state->m2model);
-  render_m2_model_bones(state, ctx, state->m2model);
+
+  if (state->showBones) {
+   render_m2_model_bones(state, ctx, state->m2model);
+  }
   // render_unit_axes(ctx);
+
+  //render_line(ctx, p1, (Vec3f){0, 0, 0}, BLUE);
+  // render_line(ctx, p2, (Vec3f){0, 0, 0}, RED);
+  // render_line(ctx, p3, (Vec3f){0, 0, 0}, WHITE);
 }

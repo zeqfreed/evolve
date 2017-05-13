@@ -75,7 +75,7 @@ typedef struct M2Geoset {
 typedef struct M2Animation {
 	uint32_t id;
 	uint32_t timeStart;
-	int32_t timeEnd;
+	uint32_t timeEnd;
 	float moveSpeed;
 	uint32_t flags;
 	int16_t probability;
@@ -93,12 +93,12 @@ typedef struct M2Animation {
 typedef struct M2AnimationBlock {
 	uint16_t interpolationType;
 	int16_t globalSequence;
+  uint32_t lookupsCount;
+  uint32_t lookupsOffset;
 	uint32_t timestampsCount;
 	uint32_t timestampsOffset;
 	uint32_t keyframesCount;
 	uint32_t keyframesOffset;
-  uint32_t _padding1;
-  uint32_t _padding2;
 } M2AnimationBlock;
 
 typedef struct M2Bone {
@@ -120,26 +120,69 @@ typedef struct ModelPart {
   uint32_t facesCount;
 } ModelPart;
 
+typedef struct ModelAnimationRange {
+  uint32_t start;
+  uint32_t end;
+} ModelAnimationRange;
+
+typedef enum ModelInterpolationType {
+  MODEL_INTERPOLATION_NONE = 0,
+  MODEL_INTERPOLATION_LINEAR,
+  MODEL_INTERPOLATION_HERMITE,
+  MODEL_INTERPOLATION_BEZIER
+} ModelInterpolationType;
+
+typedef struct ModelAnimationData {
+  ModelInterpolationType interpolationType;
+  uint32_t animationsCount;
+  ModelAnimationRange *animationRanges;
+  uint32_t keyframesCount;
+  uint32_t *timestamps;
+  void *data;
+} ModelAnimationData;
+
 typedef struct ModelBone {
   int32_t parent;
+  int16_t keybone;
   Vec3f pivot;
+  ModelAnimationData translations;
+  ModelAnimationData rotations;
+  ModelAnimationData scalings;
+  Mat44 matrix;
+  Mat44 normal_matrix;
+  bool calculated;
 } ModelBone;
 
 typedef struct M2Face {
   uint32_t indices[3];
 } M2Face;
 
+typedef struct ModelAnimation {
+  uint32_t startFrame;
+  uint32_t endFrame;
+  uint32_t speed;
+} ModelAnimation;
+
+typedef struct ModelVertexWeight {
+  uint32_t bone;
+  float weight;
+} ModelVertexWeight;
+
 typedef struct M2Model {
   uint32_t verticesCount;
+  uint32_t weightsPerVertex;
   Vec3f *positions;
   Vec3f *normals;
   Vec3f *textureCoords;
+  ModelVertexWeight *weights;
   uint32_t facesCount;
   M2Face *faces;
   uint32_t partsCount;
   ModelPart *parts;
   uint32_t bonesCount;
   ModelBone *bones;
+  uint32_t animationsCount;
+  ModelAnimation *animations;
 } M2Model;
 
 #pragma pack(pop)

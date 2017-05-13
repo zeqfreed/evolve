@@ -491,3 +491,34 @@ inline Vec3f operator*(Vec3f v, Quaternion b)
   
   return (a*b).v;
 }
+
+inline Vec3f lerp(Vec3f a, Vec3f b, float t)
+{
+  return a * (1 - t) + b * t;
+}
+
+inline Quaternion lerp(Quaternion a, Quaternion b, float t)
+{
+  Quaternion result;
+
+  Vec4f v0 = (Vec4f){a.x, a.y, a.z, a.w};
+  Vec4f v1 = (Vec4f){b.x, b.y, b.z, b.w};
+
+  float dot = v0.dot(v1);
+
+  if (fabs(dot) > 0.9995f) {
+    result.v = lerp(a.v, b.v, t);
+    result.w = a.w * (1 - t) + b.w * t;
+  } else {
+    float c = acos(dot) * t;
+    Vec4f v = (v1 - v0 * dot).normalized();
+    v = v0 * cos(c) + v * sin(c);
+
+    result.x = v.x;
+    result.y = v.y;
+    result.z = v.z;
+    result.w = v.w;
+  }
+  
+  return result;
+}
