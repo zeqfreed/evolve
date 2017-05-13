@@ -65,6 +65,19 @@ function build_exe() {
   exitcode=$?
 }
 
+function build_tools() {
+  OBJDIR="$OBJDIR/tools/dbcdump"
+  prepare
+
+  EXE="dbcdump"
+  OBJS="$OBJDIR/main.o"
+  
+  $CC src/tools/dbcdump/main.cpp $CFLAGS -o $OBJDIR/main.o
+  $CC -o $BINDIR/$EXE $OBJS
+
+  exitcode=$?
+}
+
 function force_reload() {
   if [ $exitcode -eq 0 ]; then
     killall -USR1 evolve
@@ -91,6 +104,7 @@ case "$1" in
   "all") build_all;;
   "viewer") build_targets "viewer exe";;
   "cubes") build_targets "cubes exe";;
+  "tools") build_targets "tools";;
   *) echo "Unknown target: $1";;
 esac
 
