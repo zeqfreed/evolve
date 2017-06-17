@@ -12,7 +12,7 @@ static kb_t keyCodesMap[255] = {
   KB_C,			// kVK_ANSI_C (0x8)
   KB_V,			// kVK_ANSI_V (0x9)
   0,			  // 0xA
-  KB_A,			// kVK_ANSI_B (0xB)
+  KB_B,			// kVK_ANSI_B (0xB)
   KB_Q,			// kVK_ANSI_Q (0xC)
   KB_W,			// kVK_ANSI_W (0xD)
   KB_E,			// kVK_ANSI_E (0xE)
