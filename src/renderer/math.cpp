@@ -25,6 +25,11 @@ inline Vec3f operator*(Vec3f v, float scalar)
   return (Vec3f){v.x * scalar, v.y * scalar, v.z * scalar};
 }
 
+inline Vec3f operator/(Vec3f v, float scalar)
+{
+  return v * (1.0 / scalar);
+}
+
 inline Vec3f Vec3f::cross(Vec3f v)
 {
   float nx = y * v.z - z * v.y;
@@ -325,6 +330,34 @@ Mat44 Mat44::transposed()
   return result;
 }
 
+Mat44 Mat44::from_quaternion(Quaternion q)
+{
+  Mat44 result = {};
+
+  float xx = q.x * q.x;
+  float yy = q.y * q.y;
+  float zz = q.z * q.z;
+  float xy = q.x * q.y;
+  float xz = q.x * q.z;
+  float xw = q.x * q.w;
+  float yz = q.y * q.z;
+  float yw = q.y * q.w;
+  float wz = q.z * q.w;
+  
+  result.a = 1.0f - 2.0f * yy - 2.0f * zz;
+  result.b = 2.0f * xy + 2.0f * wz;
+  result.c = 2.0f * xz - 2.0f * yw;
+  result.e = 2.0f * xy - 2.0f * wz;
+  result.f = 1.0f - 2.0f * xx - 2.0f * zz;
+  result.g = 2.0f * yz + 2.0f * xw;
+  result.i = 2.0f * xz + 2.0f * yw;
+  result.j = 2.0f * yz - 2.0f * xw;
+  result.k = 1.0f - 2.0f * xx - 2.0f * yy;
+  result.p = 1.0f;
+
+  return result;
+}
+
 
 //
 // Fixed point
@@ -391,4 +424,70 @@ inline Vec3q &operator*=(Vec3q &self, q8 q)
 void print(char *name, Vec3q v)
 {
   printf("%s: %d %d %d\n", name, v.x, v.y, v.z);
+}
+
+//
+// Quaternion
+//
+float Quaternion::length()
+{
+  return sqrt(x * x + y * y + z * z + w * w);
+}
+
+Quaternion Quaternion::normalized()
+{
+  Quaternion result = {};
+  result.v = v / length();
+  result.w = w;
+
+  return result;
+}
+
+Quaternion Quaternion::conjugate()
+{
+  Quaternion result = {};
+  result.v = -v;
+  result.w = w;
+
+  return result;
+}
+
+Quaternion Quaternion::axisAngle(Vec3f v, float angle)
+{
+  Quaternion result = {};
+  result.x = v.x * sin(angle / 2.0);
+  result.y = v.y * sin(angle / 2.0);
+  result.z = v.z * sin(angle / 2.0);
+  result.w = cos(angle / 2.0);
+
+  return result;
+}
+
+inline Quaternion operator*(Quaternion a, Quaternion b)
+{
+  Quaternion result = {};
+  result.x = a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y;
+  result.y = a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x;
+  result.z = a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w;
+  result.w = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z;
+
+  return result;
+}
+
+inline Vec3f operator*(Quaternion a, Vec3f v)
+{
+  Quaternion b;
+  b.v = v;
+  b.w = 0;
+
+  return (a*b).v;
+}
+
+inline Vec3f operator*(Vec3f v, Quaternion b)
+{
+  Quaternion a;
+  a.v = v;
+  a.w = 0;
+  
+  return (a*b).v;
 }

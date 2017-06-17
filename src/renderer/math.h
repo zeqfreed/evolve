@@ -29,6 +29,9 @@ typedef union Vec3q {
   q8 i[3];
 } Vec3q;
 
+union Quaternion;
+typedef Quaternion Quaternion;
+
 typedef struct Mat44 {
   union {
     float el[4][4];
@@ -46,6 +49,7 @@ typedef struct Mat44 {
   static inline Mat44 rotate_y(float angle);
   static inline Mat44 rotate_x(float angle);
   static inline Mat44 translate(float x, float y, float z);
+  static inline Mat44 from_quaternion(Quaternion q);
   
   void print();
   Mat44 inverse();
@@ -93,3 +97,17 @@ typedef union Vec4f {
   float dot(Vec4f v);
 } Vec4f;
 
+typedef union Quaternion {
+  Vec3f v;
+  struct {
+    float x;
+    float y;
+    float z;
+    float w;
+  };
+
+  float length();
+  Quaternion normalized();
+  Quaternion conjugate();
+  static Quaternion axisAngle(Vec3f v, float angle);
+} Quaternion;
