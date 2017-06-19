@@ -12,11 +12,13 @@ static void m2_dump_header(M2Header *header, void *bytes)
 
   const char *entries[] = {
     "GlobalSequences", "Animations", "AnimationLookups", "PlayableAnimLookups",
-    "Bones", "KeyBoneLookups", "Vertices", "Views", "Colors"
+    "Bones", "KeyBoneLookups", "Vertices", "Views", "Colors", "Textures", "Transparencies",
+    "TextureAnimations", "TextureReplacements", "TextureFlags", "BoneLookups", "TextureLookups",
+    "TextureUnitLookups"
   };
 
   uint32_t *h = (uint32_t *) &header->globalSequencesCount;
-  for (int i = 0; i < 9; i++) {
+  for (int i = 0; i < sizeof(entries) / sizeof(entries[0]); i++) {
     uint32_t count = h[i * 2];
     size_t offset = h[i * 2 + 1];
     printf("%s: %d entries at %p\n", entries[i], count, (void *) offset);
@@ -37,6 +39,29 @@ static void m2_dump_view(M2View *view)
     size_t offset = v[i * 2 + 1];
     printf("%s: %d entries at %p\n", entries[i], count, (void *) offset);
   }
+}
+
+static void m2_dump_texture(M2Texture *tex, void *bytes)
+{
+  printf("Texture %p\n", tex);
+  printf("Type: %d\n", tex->type);
+  printf("Flags: %x\n", tex->flags);
+  
+  char *filename = (char *) ((uint8_t *) bytes + tex->filenameOffset);
+  printf("Filename length: %d\n", tex->filenameLength);
+  printf("Filename: %s\n", filename);
+}
+
+static void m2_dump_render_pass(M2RenderPass *pass, void *bytes, M2Header *header)
+{
+  // uint16_t *textureLookups = (uint16_t *) ((uint8_t *) bytes + header->textureLookupsOffset);
+  // ASSERT(pass->textureId < header->texureLookupsCount);
+
+  printf("Render pass %p\n", pass);
+  printf("Flags: 0x%x; Shader flags: 0x%x\n", pass->flags, pass->shaderFlags);
+  printf("Submesh: %d\n", pass->submesh);
+  printf("Texture ID: %d\n", pass->textureId);
+  printf("Tex. unit: %d, transp.: %d, tex. anim: %d\n", pass->textureUnitIndex, pass->transparencyIndex, pass->textureAnimationIndex);
 }
 
 static void m2_dump_geoset(M2Geoset *geoset)
@@ -181,10 +206,22 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
   M2Header *header = (M2Header *) bytes;
   m2_dump_header(header, bytes);
 
+  // uint16_t *texLookups = (uint16_t *) ((uint8_t *) bytes + header->textureLookupsOffset);
+  // for (int ti = 0; ti < header->textureLookupsCount; ti++) {
+  //   printf("Texture lookup %d: %d\n", ti, texLookups[ti]);
+  // }
+
+  // uint16_t *texUnitLookups = (uint16_t *) ((uint8_t *) bytes + header->textureUnitLookupsOffset);
+  // for (int tui = 0; tui < header->textureUnitLookupsCount; tui++) {
+  //   printf("Texture unit lookup %d: %d\n", tui, texUnitLookups[tui]);
+  // }
+
   M2Model *model = (M2Model *) arena->allocate(sizeof(M2Model));
   model->verticesCount = header->verticesCount;
   model->positions = (Vec3f *) arena->allocate(sizeof(Vec3f) * header->verticesCount);
+  model->animatedPositions = (Vec3f *) arena->allocate(sizeof(Vec3f) * header->verticesCount);
   model->normals = (Vec3f *) arena->allocate(sizeof(Vec3f) * header->verticesCount);
+  model->animatedNormals = (Vec3f *) arena->allocate(sizeof(Vec3f) * header->verticesCount);
   model->textureCoords = (Vec3f *) arena->allocate(sizeof(Vec3f) * header->verticesCount);
 
   model->weightsPerVertex = 4;
@@ -195,7 +232,9 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
   M2Vertex *vertices = (M2Vertex *) ((uint8_t *) bytes + header->verticesOffset);
   for(int i = 0; i < header->verticesCount; i++) {
     model->positions[i] = vertices[i].pos * worldMat;
+    model->animatedPositions[i] = model->positions[i];
     model->normals[i] = -(vertices[i].normal * worldMat);
+    model->animatedNormals[i] = model->normals[i];
     model->textureCoords[i] = (Vec3f){vertices[i].texcoords[0], vertices[i].texcoords[1]};
 
     for (int wi = 0; wi < model->weightsPerVertex; wi++) {
@@ -209,16 +248,34 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
   M2View *view = (M2View *) ((uint8_t *) bytes + header->viewsOffset);
   m2_dump_view(view);
 
+  model->renderPassesCount = view->renderPassesCount;
+  model->renderPasses = (M2RenderPass *) arena->allocate(sizeof(M2RenderPass) * view->renderPassesCount);
+
+  M2RenderPass *renderPasses = (M2RenderPass *) ((uint8_t *) bytes + view->renderPassesOffset);
+  for (int rpi = 0; rpi < view->renderPassesCount; rpi++) {
+    //m2_dump_render_pass(&renderPasses[rpi], bytes, header);
+    model->renderPasses[rpi] = renderPasses[rpi];
+  }
+
+  // M2Texture *textures = (M2Texture *) ((uint8_t *) bytes + header->texturesOffset);
+  // for (int ti = 0; ti < header->texturesCount; ti++) {
+  //   m2_dump_texture(&textures[ti], bytes);
+  // }
+
   M2Geoset *geosets = (M2Geoset *) ((uint8_t *) bytes + view->submeshesOffset);
-  model->partsCount = view->submeshesCount;
-  model->parts = (ModelPart *) arena->allocate(sizeof(ModelPart) * view->submeshesCount);
+  model->submeshesCount = view->submeshesCount;
+  model->submeshes = (ModelSubmesh *) arena->allocate(sizeof(ModelSubmesh) * view->submeshesCount);
   for (int i = 0; i < view->submeshesCount; i++) {
-    //m2_dump_geoset(&geosets[i]);
-    ModelPart part;
-    part.id = geosets[i].id;
-    part.facesStart = geosets[i].indicesStart / 3;
-    part.facesCount = geosets[i].indicesCount / 3;
-    model->parts[i] = part;
+    m2_dump_geoset(&geosets[i]);
+    ModelSubmesh submesh;
+    submesh.id = geosets[i].id;
+    submesh.verticesStart = geosets[i].verticesStart;
+    submesh.verticesCount = geosets[i].verticesCount;
+    submesh.facesStart = geosets[i].indicesStart / 3;
+    submesh.facesCount = geosets[i].indicesCount / 3;
+    submesh.enabled = (submesh.id == 0); // By default enable only parts without alternatives
+
+    model->submeshes[i] = submesh;
   }
 
   uint16_t *indicesLookup = (uint16_t *) ((uint8_t *) bytes + view->indicesOffset);
@@ -229,6 +286,7 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
   model->faces = (M2Face *) arena->allocate(sizeof(M2Face) * facesCount);
   for (int i = 0; i < facesCount; i++) {
     M2Face face;
+
     face.indices[0] = indicesLookup[faces[i * 3]];
     face.indices[1] = indicesLookup[faces[i * 3 + 1]];
     face.indices[2] = indicesLookup[faces[i * 3 + 2]];
@@ -301,7 +359,7 @@ inline void m2_anim_get_frame(ModelAnimationData *data, ModelAnimationRange rang
   *t = 0;
 }
 
-inline void m2_calc_bone(M2Model *model, ModelBone *bone, uint32_t animId, uint32_t frame)
+void m2_calc_bone(M2Model *model, ModelBone *bone, uint32_t animId, uint32_t frame)
 {
   if (bone->calculated) {
     return;
@@ -416,5 +474,40 @@ void m2_calc_bones(M2Model *model, uint32_t animId, uint32_t frame)
 
   for (int i = 0; i < model->bonesCount; i++) {
     m2_calc_bone(model, &model->bones[i], animId, frame);
+  }
+}
+
+void m2_animate_vertices(M2Model *model, uint32_t animId, uint32_t frame)
+{
+  m2_calc_bones(model, animId, frame);
+
+  for (int rpi = 0; rpi < model->renderPassesCount; rpi++) {
+    M2RenderPass pass = model->renderPasses[rpi];
+    ModelSubmesh submesh = model->submeshes[pass.submesh];
+
+    if (!submesh.enabled) {
+      continue;
+    }
+
+    uint32_t vstart = submesh.verticesStart;
+    uint32_t vend = submesh.verticesStart + submesh.verticesCount;
+    
+    for (int vi = vstart; vi < vend; vi++) {
+      Vec3f pos = {};
+      Vec3f normal = {};
+      ModelVertexWeight *weights = &model->weights[vi * model->weightsPerVertex];
+
+      for (int wi = 0; wi < model->weightsPerVertex; wi++) {
+        if (weights[wi].weight > 0) {
+          Vec3f v = model->positions[vi] * model->bones[weights[wi].bone].matrix;
+          Vec3f n = model->normals[vi] * model->bones[weights[wi].bone].normal_matrix;
+          pos = pos + v * weights[wi].weight; 
+          normal = normal + n * weights[wi].weight;
+        }
+      }
+
+      model->animatedPositions[vi] = pos;
+      model->animatedNormals[vi] = normal;
+    }
   }
 }

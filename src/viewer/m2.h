@@ -30,6 +30,22 @@ typedef struct M2Header {
   uint32_t viewsOffset;
   uint32_t colorsCount;
   uint32_t colorsOffset;
+  uint32_t texturesCount;
+  uint32_t texturesOffset;
+  uint32_t transparenciesCount;
+  uint32_t transparenciesOffset;
+  uint32_t textureAnimationsCount;
+  uint32_t textureAnimationsOffset;
+  uint32_t textureReplacementsCount;
+  uint32_t textureReplacementsOffset;
+  uint32_t textureFlagsCount;
+  uint32_t textureFlagsOffset;
+  uint32_t boneLookupsCount;
+  uint32_t boneLookupsOffset;
+  uint32_t textureLookupsCount;
+  uint32_t textureLookupsOffset;
+  uint32_t textureUnitLookupsCount;
+  uint32_t textureUnitLookupsOffset;
 } M2Header;
 
 typedef struct M2Vertex {
@@ -42,6 +58,28 @@ typedef struct M2Vertex {
   uint32_t reserved2;
 } M2Vertex;
 
+typedef struct M2Texture {
+  uint32_t type;
+  uint32_t flags;
+  uint32_t filenameLength;
+  uint32_t filenameOffset;
+} M2Texture;
+
+typedef struct M2RenderPass {
+  uint16_t flags;
+  uint16_t shaderFlags;
+  uint16_t submesh;
+  uint16_t _unknown1;
+  uint16_t colorIndex;
+  uint16_t renderFlagIndex;
+  uint16_t textureUnitIndex;
+  uint16_t mode;
+  uint16_t textureId;
+  uint16_t _unknown2;
+  uint16_t transparencyIndex;
+  uint16_t textureAnimationIndex;
+} M2RenderPass;
+
 typedef struct M2View {
   uint32_t indicesCount;
   uint32_t indicesOffset;
@@ -51,8 +89,8 @@ typedef struct M2View {
   uint32_t propsOffset;
   uint32_t submeshesCount;
   uint32_t submeshesOffset;
-  uint32_t texturesCount;
-  uint32_t texturesOffset;
+  uint32_t renderPassesCount;
+  uint32_t renderPassesOffset;
 	int32_t lod;
 } M2View;
 
@@ -114,10 +152,13 @@ typedef struct M2Bone {
 	Vec3f pivot;
 } M2Bone;
 
-typedef struct ModelPart {
+typedef struct ModelSubmesh {
   uint32_t id;
   uint32_t facesStart;
   uint32_t facesCount;
+  uint32_t verticesStart;
+  uint32_t verticesCount;
+  bool enabled;
 } ModelPart;
 
 typedef struct ModelAnimationRange {
@@ -172,17 +213,21 @@ typedef struct M2Model {
   uint32_t verticesCount;
   uint32_t weightsPerVertex;
   Vec3f *positions;
+  Vec3f *animatedPositions;
   Vec3f *normals;
+  Vec3f *animatedNormals;
   Vec3f *textureCoords;
   ModelVertexWeight *weights;
   uint32_t facesCount;
   M2Face *faces;
-  uint32_t partsCount;
-  ModelPart *parts;
+  uint32_t submeshesCount;
+  ModelSubmesh *submeshes;
   uint32_t bonesCount;
   ModelBone *bones;
   uint32_t animationsCount;
   ModelAnimation *animations;
+  uint32_t renderPassesCount;
+  M2RenderPass *renderPasses;
 } M2Model;
 
 #pragma pack(pop)

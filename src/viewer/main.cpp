@@ -47,9 +47,6 @@ typedef struct State {
   bool playing;
   bool showBones;
   bool modelChanged;
-  
-  Vec3f *m2vertices;
-  Vec3f *m2normals;
 } State;
 
 static Vec3f hsv_to_rgb(Vec3f hsv)
@@ -371,34 +368,25 @@ static void render_m2_model(State *state, RenderingContext *ctx, M2Model *model)
   shader_data.flags = &state->render_flags;
   Vec3f positions[3];
 
-  #if 1
-    uint32_t partsCount = 7;
-    uint32_t drawParts[][2] = {
-      {0, 0}, {6, 1}, {8, 1}, {9, 0}, {10, 0}, {22, 0}, {28, 0}
-    };
-    drawParts[1][0] = state->hair;
-  #else
-    uint32_t partsCount = 3;
-    uint32_t drawParts[][2] = {
-      {0, 0}, {1, 0}, {2, 0}
-    };  
-  #endif
+  for (int rpi = 0; rpi < model->renderPassesCount; rpi++) {
+    M2RenderPass pass = model->renderPasses[rpi];
+    ModelSubmesh submesh = model->submeshes[pass.submesh];
+    if (!submesh.enabled) {
+      continue;
+    }
 
-  //for (int pi = state->geoindex; pi == state->geoindex; pi++) {
-  for (int i = 0; i < partsCount; i++) {
-    ModelPart part = model->parts[drawParts[i][0]];
-    shader_data.texture = state->textures[drawParts[i][1]];
+    shader_data.texture = state->textures[pass.textureId];
 
-    uint32_t faceStart = part.facesStart;
-    uint32_t faceEnd = faceStart + part.facesCount;
+    uint32_t faceStart = submesh.facesStart;
+    uint32_t faceEnd = faceStart + submesh.facesCount;
 
     for (int fi = faceStart; fi < faceEnd; fi++) {
       M2Face face = model->faces[fi];
 
       for (int vi = 0; vi < 3; vi++) {
-        Vec3f position = state->m2vertices[face.indices[vi]];
+        Vec3f position = model->animatedPositions[face.indices[vi]];
+        Vec3f normal = model->animatedNormals[face.indices[vi]];
         Vec3f texture = model->textureCoords[face.indices[vi]];
-        Vec3f normal = state->m2normals[face.indices[vi]];
 
         shader_data.pos[vi] = position * ctx->model_mat;
         shader_data.uvs[vi] = (Vec3f){texture.x, texture.y, 0};
@@ -475,28 +463,9 @@ static void render_unit_axes(RenderingContext *ctx)
   render_line(ctx, origin, ctx->light, WHITE);
 }
 
-static void animate_vertices(State *state)
+static void animate_model(State *state)
 {
-  m2_calc_bones(state->m2model, state->animId, state->currentFrame);
-
-  for (int i = 0; i < state->m2model->verticesCount; i++) {
-    Vec3f pos = {};
-    Vec3f normal = {};
-    ModelVertexWeight *weights = &state->m2model->weights[i * 4];
-
-    for (int wi = 0; wi < state->m2model->weightsPerVertex; wi++) {
-      if (weights[wi].weight > 0) {
-        Vec3f v = state->m2model->positions[i] * state->m2model->bones[weights[wi].bone].matrix;
-        Vec3f n = state->m2model->normals[i] * state->m2model->bones[weights[wi].bone].normal_matrix;
-        pos = pos + v * weights[wi].weight; 
-        normal = normal + n * weights[wi].weight;
-      }
-    }
-
-    state->m2vertices[i] = pos;
-    state->m2normals[i] = normal;
-  }
-
+  m2_animate_vertices(state->m2model, state->animId, state->currentFrame);
   state->modelChanged = true;
 }
 
@@ -518,9 +487,36 @@ static void switch_animation(State *state, int32_t animId)
   state->currentFracFrame = (double) state->currentFrame;
   state->currentAnimFPS = 1000.0;
 
-  animate_vertices(state);
+  animate_model(state);
   
   printf("Switched animation to: %d\n", state->animId);
+}
+
+static void enable_submeshes(State *state)
+{
+  M2Model *model = state->m2model;
+
+  uint16_t enabledSubmeshes[] = {
+    5, // Hair style
+    401, // Default gloves
+    501, // Default boots
+    1101, // Default pants
+    1301, // Default pants
+    1501 // Default back/cloak
+  };
+
+  for (int si = 0; si < model->submeshesCount; si++) {
+    for (int esi = 0; esi < sizeof(enabledSubmeshes) / sizeof(enabledSubmeshes[0]); esi++) {
+      if (model->submeshes[si].id == enabledSubmeshes[esi]) {
+        model->submeshes[si].enabled = true;
+      }
+    }
+
+    if (si == 34) {
+      // Hack to disable eye glow submesh; Remove when alpha blending is supported
+      model->submeshes[si].enabled = false;
+    }
+  }
 }
 
 static void initialize(State *state, DrawingBuffer *buffer)
@@ -550,15 +546,21 @@ static void initialize(State *state, DrawingBuffer *buffer)
   ctx->diffuse = load_texture(state, diffuse_filename);
   ctx->normal = load_texture(state, normal_filename);
 
+  load_m2_model(state, (char *) "data/misc/nelf.m2");
   state->textures[0] = load_texture(state, (char *) "data/misc/nelf_blue_body.tga");
   state->textures[1] = load_texture(state, (char *) "data/misc/2_hair_D.tga");
-  load_m2_model(state, (char *) "data/misc/nelf.m2");
+  state->textures[2] = load_texture(state, (char *) "data/misc/nelf_cape.tga");
+  state->textures[3] = load_texture(state, (char *) "data/misc/nelf_eye_glow.tga");
 
   // load_m2_model(state, (char *) "data/misc/diablo.m2");
   // state->textures[0] = load_texture(state, (char *) "data/misc/diablo_D.tga");
-  
-  state->m2vertices = (Vec3f *) state->main_arena->allocate(sizeof(Vec3f) * state->m2model->verticesCount);
-  state->m2normals = (Vec3f *) state->main_arena->allocate(sizeof(Vec3f) * state->m2model->verticesCount);
+
+  // load_m2_model(state, (char *) "data/misc/cat.m2");
+  // state->textures[0] = load_texture(state, (char *) "data/misc/cat_0.tga");
+
+  // load_m2_model(state, (char *) "data/misc/riding_horse.m2");
+  // state->textures[0] = load_texture(state, (char *) "data/misc/riding_horse_0.tga");
+  // state->textures[1] = load_texture(state, (char *) "data/misc/riding_horse_1.tga");
 
   state->xRot = RAD(15.0);
   state->yRot = 0.0;
@@ -575,6 +577,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->showBones = false;
   state->modelChanged = true;
   switch_animation(state, 24);
+  enable_submeshes(state);
 
   state->temp_arena->discard();
 }
@@ -632,7 +635,7 @@ static bool update_animation(State *state, float dt)
   if (frame != state->currentFrame) {
     result = true;
     state->currentFrame = frame;
-    animate_vertices(state);
+    animate_model(state);
   }
 
   if (state->currentFracFrame > state->endFrame) {
@@ -743,7 +746,7 @@ static void update_camera(State *state, float dt)
   }  
 
   if (update_anim) {
-    animate_vertices(state);
+    animate_model(state);
   }
 
   state->hsv.y = cos(state->sat_deg) * 0.5 + 0.5; // map to 0..1
@@ -812,7 +815,7 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
     state->keyboard = global_state->keyboard;
 
     initialize(state, drawing_buffer);
-    animate_vertices(state);
+    animate_model(state);
   }
 
   if (state->keyboard->downedKeys[KB_ESCAPE]) {
