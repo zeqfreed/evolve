@@ -100,7 +100,6 @@ static void precalculate_matrices(RenderingContext *ctx)
   Mat44 mvp = ctx->modelview_mat * ctx->projection_mat;
   ctx->mvp_mat = mvp;
 
-  ctx->shadow_mat = ctx->mvp_mat.inverse() * ctx->shadow_mvp_mat;
   Vec4f p = (Vec4f){mvp.c, mvp.g, mvp.k, mvp.o};
   float mag = sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
   ctx->near_clip_plane = p * (1 / mag);

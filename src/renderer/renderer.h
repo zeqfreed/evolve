@@ -29,10 +29,6 @@ typedef struct RenderingContext {
   DrawingBuffer *target;
   zval_t *zbuffer;
 
-  Texture *diffuse;
-  Texture *normal;
-  Texture *shadowmap;
-
   Vec3f clear_color;
   Vec3f light;
 
@@ -42,12 +38,10 @@ typedef struct RenderingContext {
   Mat44 view_mat;
   Mat44 projection_mat;
   Mat44 viewport_mat;
-  Mat44 shadow_mvp_mat;
 
   Mat44 mvp_mat;
   Mat44 modelview_mat;
   Mat44 normal_mat;
-  Mat44 shadow_mat;
 } RenderingContext;
 
 typedef bool FragmentFunc(RenderingContext *ctx, void *shader_data, uint32_t x, uint32_t y,

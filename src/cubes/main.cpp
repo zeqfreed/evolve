@@ -33,6 +33,7 @@ typedef struct State {
 
   RenderingContext rendering_context;
   Font font;
+  Texture *texture;
 
   uint32_t seed;
   float xRot;
@@ -47,11 +48,13 @@ typedef struct ShaderData {
   Vec3f uvs[3];
   Vec3f uv0;
   Vec3f duv[2];
+  Texture *texture;
 } ShaderData;
 
 FRAGMENT_FUNC(fragment)
 {
   ShaderData *d = (ShaderData *) shader_data;
+  Texture *texture = d->texture;
 
 #if CUBES_CORRECT_PERSPECTIVE
   float z = 1.0 / (d->uv0.z + t1 * d->duv[0].z + t2 * d->duv[1].z);
@@ -75,7 +78,7 @@ FRAGMENT_FUNC(fragment)
   int u = ((int) fu) & (128 - 1);
   int v = ((int) fv) & (16 - 1);
 
-  Vec3f tcolor = ctx->diffuse->pixels[v * ctx->diffuse->width + u];
+  Vec3f tcolor = texture->pixels[v * texture->width + u];
   *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b};
 
   return true;
@@ -120,7 +123,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
   ctx->zbuffer = (zval_t *) state->main_arena->allocate(buffer->width * buffer->height * sizeof(zval_t));
 
-  ctx->diffuse = load_texture(state, (char *) "data/cubes.tga");
+  state->texture = load_texture(state, (char *) "data/cubes.tga");
 
   state->font.texture = load_texture(state, (char *) "data/font.tga");
   state->font.spec.char_width = 19;
@@ -274,7 +277,7 @@ static void render_cubes(State *state, RenderingContext *ctx)
 
   Vertex vertices[3];
   Vec3f positions[3] = {};
-  ShaderData data = {};
+  ShaderData data = {.texture = state->texture};
 
   for (int i = 0; i < state->verticesCount; i++) {
     int idx = i % 3;

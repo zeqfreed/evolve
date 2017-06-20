@@ -23,14 +23,22 @@ typedef struct State {
   MemoryArena *main_arena;
   MemoryArena *temp_arena;
 
+  Texture *normalmap;
+  Texture *shadowmap;
+
   Model *model;
   M2Model *m2model;
   Texture *textures[5];
   RenderingContext rendering_context;
+  Mat44 matShadowMVP;
+
+  uint32_t screenWidth;
+  uint32_t screenHeight;
 
   float xRot;
   float yRot;
   float fov;
+  float camDistance;
 
   RenderFlags render_flags;
   Vec3f hsv;
@@ -94,6 +102,7 @@ typedef struct ModelShaderData {
   Vec3f normals[3];
   Vec3f uvs[3];
   Vec3f color;
+  Texture *normalmap;
   Texture *texture;
   RenderFlags *flags;
 } ModelShaderData;
@@ -124,10 +133,10 @@ FRAGMENT_FUNC(fragment_model)
     tcolor = d->color;
   }
 
-  if (f->normal_mapping && ctx->normal) {
-    int nx = (int)(uv.x * ctx->normal->width) & (512 - 1);
-    int ny = (int)(uv.y * ctx->normal->height) & (512 - 1);
-    Vec3f ncolor = ctx->normal->pixels[ny*ctx->normal->width+nx];
+  if (f->normal_mapping && d->normalmap) {
+    int nx = (int)(uv.x * d->normalmap->width) & (d->normalmap->width - 1);
+    int ny = (int)(uv.y * d->normalmap->height) & (d->normalmap->height - 1);
+    Vec3f ncolor = d->normalmap->pixels[ny*d->normalmap->width+nx];
     Vec3f tnormal = (Vec3f){2 * ncolor.r - 1, 2 * ncolor.g - 1, 2 * ncolor.b};
 
     Vec3f dp1 = d->pos[1] - d->pos[0];
@@ -169,12 +178,15 @@ typedef struct FloorShaderData {
   Vec3f uvzs[3];
   Vec3f colors[3];
   Vec3f normal;
+  Texture *shadowmap;
   RenderFlags *flags;
+  Mat44 matShadow;
 } FloorShaderData;
 
 FRAGMENT_FUNC(fragment_floor)
 {
   FloorShaderData *d = (FloorShaderData *) shader_data;
+  Texture *shadowmap = d->shadowmap;
   RenderFlags *f = d->flags;
 
   Vec3f normal = d->normal;
@@ -198,14 +210,14 @@ FRAGMENT_FUNC(fragment_floor)
 
   if (f->shadow_mapping) {
     Vec3f pos = d->pos[0] * t0 + d->pos[1] * t1 + d->pos[2] * t2;
-    Vec3f shadow = pos * ctx->shadow_mat;
+    Vec3f shadow = pos * d->matShadow;
     int shx = shadow.x;
     int shy = shadow.y;
 
     if (shadow.x >= 0 && shadow.y >= 0 &&
-        shadow.x < ctx->shadowmap->width && shadow.y < ctx->shadowmap->height) {
+        shadow.x < shadowmap->width && shadow.y < shadowmap->height) {
       float shz = 1 - shadow.z;
-      Vec3f shval = ctx->shadowmap->pixels[shy * ctx->shadowmap->width + shx];
+      Vec3f shval = shadowmap->pixels[shy * shadowmap->width + shx];
 
       if (shz < shval.x) {
         intensity = 0.2;
@@ -214,6 +226,31 @@ FRAGMENT_FUNC(fragment_floor)
   }
 
   *color = ((Vec3f){vcolor.r * tcolor.r, vcolor.g * tcolor.g, vcolor.b * tcolor.b}).clamped() * intensity;
+
+  return true;
+}
+
+typedef struct DebugShaderData {
+  Vec3f pos[3];
+  Vec3f uv0;
+  Vec3f duv[2];
+  uint32_t clampu;
+  uint32_t clampv;
+  Texture *texture;
+} FontShaderData;
+
+FRAGMENT_FUNC(fragment_debug)
+{
+  DebugShaderData *d = (DebugShaderData *) shader_data;
+
+  float fu = d->uv0.x + t1 * d->duv[0].x + t2 * d->duv[1].x;
+  float fv = d->uv0.y + t1 * d->duv[0].y + t2 * d->duv[1].y;  
+
+  int u = ((int) fu) & d->clampu;
+  int v = ((int) fv) & d->clampv;
+  Vec3f tcolor = d->texture->pixels[v * d->texture->width + u];
+
+  *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b};
 
   return true;
 }
@@ -305,7 +342,9 @@ static void render_floor(State *state, RenderingContext *ctx)
     {RED, BLUE, WHITE}
   };
 
-  FloorShaderData shader_data;
+  FloorShaderData shader_data = {};
+  shader_data.matShadow = ctx->mvp_mat.inverse() * state->matShadowMVP;
+  shader_data.shadowmap = state->shadowmap;
   shader_data.flags = &state->render_flags;
   shader_data.normal = (Vec3f){0, 1, 0};
 
@@ -334,7 +373,7 @@ static void render_model(State *state, RenderingContext *ctx, Model *model)
   ctx->model_mat = Mat44::translate(0, 0, 0);
   precalculate_matrices(ctx);
 
-  ModelShaderData shader_data;
+  ModelShaderData shader_data = {};
   shader_data.color = hsv_to_rgb(state->hsv);
   shader_data.flags = &state->render_flags;
   Vec3f positions[3];
@@ -363,7 +402,7 @@ static void render_m2_model(State *state, RenderingContext *ctx, M2Model *model)
   ctx->model_mat = Mat44::rotate_y(-RAD(90)) * Mat44::scale(state->scale, state->scale, state->scale);
   precalculate_matrices(ctx);
 
-  ModelShaderData shader_data;
+  ModelShaderData shader_data = {};
   shader_data.color = hsv_to_rgb(state->hsv);
   shader_data.flags = &state->render_flags;
   Vec3f positions[3];
@@ -449,6 +488,44 @@ static void render_m2_model_bones(State *state, RenderingContext *ctx, M2Model *
       set_pixel(ctx->target, pos.x, pos.y, color);
     }
   }
+}
+
+static void render_debug_texture(State *state, RenderingContext *ctx, Texture *texture, float x, float y, float width)
+{
+  ctx->viewport_mat = viewport_matrix(state->screenWidth, state->screenHeight, false);
+  ctx->projection_mat = orthographic_matrix(0.1, 100, 0, state->screenHeight, state->screenWidth, 0);
+  ctx->view_mat = Mat44::identity();
+  ctx->model_mat = Mat44::translate(0, 0, 0);
+  precalculate_matrices(ctx);
+
+  const Vec3f texture_coords[4] = {
+    {0, 0, 0},
+    {texture->width, 0, 0},
+    {texture->width, texture->height, 0},
+    {0, texture->height, 0}
+  };
+
+  float height = width * ((float) texture->height / (float) texture->width);
+
+  Vec3f positions[4];
+  positions[0] = (Vec3f){x, y + height, 0.0} * ctx->mvp_mat;
+  positions[1] = (Vec3f){x + width, y + height, 0.0} * ctx->mvp_mat;
+  positions[2] = (Vec3f){x + width, y, 0.0} * ctx->mvp_mat;
+  positions[3] = (Vec3f){x, y, 0.0} * ctx->mvp_mat;
+
+  DebugShaderData shader_data = {};
+  shader_data.clampu = texture->width - 1;
+  shader_data.clampv = texture->height - 1;
+  shader_data.texture = texture;
+
+  shader_data.uv0 = texture_coords[0];
+  shader_data.duv[0] = texture_coords[1] - shader_data.uv0;
+  shader_data.duv[1] = texture_coords[2] - shader_data.uv0;
+  draw_triangle(ctx, &fragment_debug, (void *) &shader_data, positions[0], positions[1], positions[2]);
+
+  shader_data.duv[0] = texture_coords[2] - shader_data.uv0;
+  shader_data.duv[1] = texture_coords[3] - shader_data.uv0;
+  draw_triangle(ctx, &fragment_debug, (void *) &shader_data, positions[0], positions[2], positions[3]);
 }
 
 static void render_unit_axes(RenderingContext *ctx)
@@ -540,17 +617,20 @@ static void initialize(State *state, DrawingBuffer *buffer)
   snprintf(diffuse_filename, 255, (char *) "data/%s_D.tga", basename);
   snprintf(normal_filename, 255, (char *) "data/%s_N.tga", basename);
 
-  state->model = load_model(state, model_filename);
-  state->model->normalize();
-
-  ctx->diffuse = load_texture(state, diffuse_filename);
-  ctx->normal = load_texture(state, normal_filename);
+  state->screenWidth = buffer->width;
+  state->screenHeight = buffer->height;
 
   load_m2_model(state, (char *) "data/misc/nelf.m2");
-  state->textures[0] = load_texture(state, (char *) "data/misc/nelf_blue_body.tga");
-  state->textures[1] = load_texture(state, (char *) "data/misc/2_hair_D.tga");
-  state->textures[2] = load_texture(state, (char *) "data/misc/nelf_cape.tga");
-  state->textures[3] = load_texture(state, (char *) "data/misc/nelf_eye_glow.tga");
+  state->textures[0] = load_texture(state, (char *) "data/misc/nelf_0.tga");
+  state->textures[1] = load_texture(state, (char *) "data/misc/nelf_1.tga");
+  state->textures[2] = load_texture(state, (char *) "data/misc/cape.tga");
+  state->textures[3] = load_texture(state, (char *) "data/misc/nelf_3.tga");
+
+  // load_m2_model(state, (char *) "data/misc/dwarf.m2");
+  // state->textures[0] = load_texture(state, (char *) "data/misc/dwarf_0.tga");
+  // state->textures[1] = load_texture(state, (char *) "data/misc/dwarf_1.tga");
+  // state->textures[2] = load_texture(state, (char *) "data/misc/nelf_cape.tga");
+  // state->textures[3] = load_texture(state, (char *) "data/misc/nelf_eye_glow.tga");  
 
   // load_m2_model(state, (char *) "data/misc/diablo.m2");
   // state->textures[0] = load_texture(state, (char *) "data/misc/diablo_D.tga");
@@ -565,6 +645,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->xRot = RAD(15.0);
   state->yRot = 0.0;
   state->fov = 60.0;
+  state->camDistance = 1.0;
 
   memset(&state->render_flags, 1, sizeof(state->render_flags)); // Set all flags
   state->hsv = (Vec3f){260.0, 0.33, 1.0};
@@ -584,30 +665,29 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
 static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, Texture *shadowmap)
 {
-  Vec3f color = {1, 1, 1};
+  DrawingBuffer dummyTarget = *ctx->target;
+  dummyTarget.width = shadowmap->width;
+  dummyTarget.height = shadowmap->height;
 
   RenderingContext subctx = {};
 
-  ASSERT(shadowmap->width == ctx->target->width);
-  ASSERT(shadowmap->height == ctx->target->height);
-
-  subctx.target = ctx->target;
+  subctx.target = &dummyTarget;
   subctx.clear_color = BLACK;
 
   subctx.model_mat = Mat44::identity();
   subctx.viewport_mat = viewport_matrix(shadowmap->width, shadowmap->height, true);
   subctx.projection_mat = orthographic_matrix(0.1, 10, -1, -1, 1, 1);
 
+  ASSERT(shadowmap->width * shadowmap->height < ctx->target->width * ctx->target->height); // Check we won't overflow zbuffer
   subctx.zbuffer = ctx->zbuffer;
 
-  Mat44 view_mat = look_at_matrix(ctx->light, (Vec3f){0, 0, 0}, (Vec3f){0, 1, 0});
-  subctx.view_mat = view_mat;
-
+  // HACK: Multiplication by 5 so camera doesn't end up inside geometry
+  subctx.view_mat = look_at_matrix(ctx->light * 5, (Vec3f){0, 0, 0}, (Vec3f){0, 1, 0});
   precalculate_matrices(&subctx);
-  ctx->shadow_mvp_mat = subctx.modelview_mat * subctx.projection_mat * subctx.viewport_mat;
+
+  state->matShadowMVP = subctx.modelview_mat * subctx.projection_mat * subctx.viewport_mat;
 
   clear_zbuffer(&subctx);
-
   render_m2_model(state, &subctx, state->m2model);
 
   for  (int i = 0; i < shadowmap->width; i++) {
@@ -622,6 +702,7 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
 #define Y_RAD_PER_SEC RAD(120.0)
 #define X_RAD_PER_SEC RAD(120.0)
 #define FOV_DEG_PER_SEC 30.0
+#define CAM_DIST_PER_SEC 1.0
 #define HUE_PER_SEC 120.0
 #define SATURATION_PER_SEC RAD(120.0)
 
@@ -681,19 +762,19 @@ static void update_camera(State *state, float dt)
 
   da = 0.0;
   if (KEY_IS_DOWN(state->keyboard, KB_PLUS)) {
-    da -= FOV_DEG_PER_SEC * dt;
+    da -= CAM_DIST_PER_SEC * dt;
   }
 
   if (KEY_IS_DOWN(state->keyboard, KB_MINUS)) {
-    da += FOV_DEG_PER_SEC * dt;
+    da += CAM_DIST_PER_SEC * dt;
   }
 
   if (KEY_IS_DOWN(state->keyboard, KB_LEFT_ALT)) {
-    state->scale -= da*0.01;
+    state->scale -= da;
     state->scale = CLAMP(state->scale, 0.1, 5.0);
   } else {
-    state->fov += da;
-    state->fov = CLAMP(state->fov, 3.0, 170.0);
+    state->camDistance += da;
+    state->camDistance = CLAMP(state->camDistance, 1.0, 3.0);
   }
 
   if (KEY_IS_DOWN(state->keyboard, KB_H)) {
@@ -825,15 +906,14 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
 
   RenderingContext *ctx = &state->rendering_context;
 
-  if (!ctx->shadowmap) {
-    ctx->shadowmap = (Texture *) state->main_arena->allocate(sizeof(Texture));
-    ctx->shadowmap->pixels = (Vec3f *) state->main_arena->allocate(drawing_buffer->width * drawing_buffer->height * sizeof(Vec3f));
-    ctx->shadowmap->width = drawing_buffer->width;
-    ctx->shadowmap->height = drawing_buffer->height;
-  
-    ctx->light = ((Vec3f){0.5, 1, 0.5}).normalized();
+  if (!state->shadowmap) {
+    state->shadowmap = (Texture *) state->main_arena->allocate(sizeof(Texture));
+    state->shadowmap->width = 512;
+    state->shadowmap->height = 512;
+    state->shadowmap->pixels = (Vec3f *) state->main_arena->allocate(sizeof(Vec3f) * state->shadowmap->width * state->shadowmap->height);
 
-    render_shadowmap(state, ctx, state->model, ctx->shadowmap);
+    ctx->light = ((Vec3f){0.5, 1, 0.5}).normalized();
+    render_shadowmap(state, ctx, state->model, state->shadowmap);
   }
 
   if (state->playing) {
@@ -842,7 +922,7 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
 
   if (state->modelChanged) {
     if (state->render_flags.shadow_mapping) {
-      render_shadowmap(state, ctx, state->model, ctx->shadowmap);
+      render_shadowmap(state, ctx, state->model, state->shadowmap);
     }
 
     state->modelChanged = false;
@@ -850,13 +930,15 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
 
   update_camera(state, dt);
   handle_input(state);
+
+  ctx->viewport_mat = viewport_matrix(state->screenWidth, state->screenHeight, true);
   ctx->projection_mat = perspective_matrix(0.1, 10, state->fov);
 
   //ctx->view_mat = look_at_matrix((Vec3f){0, 0, 1}, (Vec3f){0, 0.35, 0}, (Vec3f){0, 1, 0});
   ctx->view_mat = Mat44::rotate_y(-state->yRot) *
                   Mat44::translate(0, -0.5, 0) *
                   Mat44::rotate_x(-state->xRot) *
-                  Mat44::translate(0, 0, -1);
+                  Mat44::translate(0, 0, -state->camDistance);
 
   Quaternion q1 = Quaternion::axisAngle((Vec3f){0, 1, 0}, state->yRot);
   //Vec3f newx = q1 * (Vec3f){1, 0, 0} * q1.conjugate();
@@ -884,4 +966,8 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
   //render_line(ctx, p1, (Vec3f){0, 0, 0}, BLUE);
   // render_line(ctx, p2, (Vec3f){0, 0, 0}, RED);
   // render_line(ctx, p3, (Vec3f){0, 0, 0}, WHITE);
+
+  if (state->render_flags.shadow_mapping) {
+    render_debug_texture(state, ctx, state->shadowmap, 10, 10, 400);
+  }
 }

@@ -266,7 +266,7 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
   model->submeshesCount = view->submeshesCount;
   model->submeshes = (ModelSubmesh *) arena->allocate(sizeof(ModelSubmesh) * view->submeshesCount);
   for (int i = 0; i < view->submeshesCount; i++) {
-    m2_dump_geoset(&geosets[i]);
+    //m2_dump_geoset(&geosets[i]);
     ModelSubmesh submesh;
     submesh.id = geosets[i].id;
     submesh.verticesStart = geosets[i].verticesStart;
@@ -491,7 +491,7 @@ void m2_animate_vertices(M2Model *model, uint32_t animId, uint32_t frame)
 
     uint32_t vstart = submesh.verticesStart;
     uint32_t vend = submesh.verticesStart + submesh.verticesCount;
-    
+
     for (int vi = vstart; vi < vend; vi++) {
       Vec3f pos = {};
       Vec3f normal = {};
