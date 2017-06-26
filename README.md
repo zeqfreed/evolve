@@ -7,26 +7,25 @@ codebase simple and clear. Strictly OSX related parts are written in Objective-C
 
 Possibly outdated list of implemented features includes:
 
-1. Minimal MacOS platform layer:
+1. Minimal MacOS platform layer
    * Window creation
-   * Fixed frame rate game loop
-   * Hot reloading of frame rendering module (courtesy of handmadehero.org)
+   * Game loop
+   * Hot reloading of shared executable modules
 
-2. Renderer hot reloadable module
-   * Ad hoc loader of TGA textures and OBJ models
-
-# Renderer
-
-Features
-
-   * "Programmable pipeline" with vertex and fragment shaders
+2. 3D rendering facilities
+   * "Programmable pipeline" with vertex and fragment functions
    * Half-space triangle rasterization
-   * Diffuse texturing
-   * Normal mapping
-   * Basic lighting
-   * Shadow mapping
 
-Example output
+2. Cubes module
+   * Renders a 10x10x10 grid of textured cubes to assess renderer performance
+   * Lazy and poor font rendering demonstration
+
+3. Viewer module
+   * Loading of TGA textures and OBJ models
+   * Loading and animation of M2 models (Vanilla WoW)
+   * Perspective-correct attribute interpolation, normal & shadow mapping, basic lighting in shader functions
+
+# Example output
 
 ![Screenshot](screenshot.png?raw=true)
 
