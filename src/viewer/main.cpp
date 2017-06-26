@@ -219,7 +219,7 @@ FRAGMENT_FUNC(fragment_floor)
       float shz = 1 - shadow.z;
       Vec3f shval = shadowmap->pixels[shy * shadowmap->width + shx];
 
-      if (shz < shval.x) {
+      if (shval.x > 0) {
         intensity = 0.2;
       }
     }
