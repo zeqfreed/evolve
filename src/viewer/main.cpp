@@ -14,6 +14,7 @@ typedef struct RenderFlags {
   bool texture_mapping;
   bool normal_mapping;
   bool shadow_mapping;
+  bool bilinear_filtering;
   bool lighting;
 } RenderFlags;
 
@@ -120,17 +121,36 @@ FRAGMENT_FUNC(fragment_model)
     normal = d->normals[0] * t0 + d->normals[1] * t1 + d->normals[2] * t2;
   } else {
     normal = (d->pos[2] - d->pos[1]).cross(d->pos[2] - d->pos[0]).normalized();
-  }  
+  } 
 
-  Vec3f uv = d->uvs[0] * t0 + d->uvs[1] * t1 + d->uvs[2] * t2;
-  int texX = (int)((uv.x * texture->width)) & (texture->width - 1);
-  int texY = (int)((uv.y * texture->height)) & (texture->height - 1);
+  Vec3f uv = d->uvs[0] * t0 + d->uvs[1] * t1 + d->uvs[2] * t2; 
 
-  Vec3f tcolor;
+  Vec3f texel;
   if (f->texture_mapping) {
-    tcolor = texture->pixels[texY*texture->width+texX];
+    if (f->bilinear_filtering) {
+      Vec3f muv;
+      muv.x = uv.x * texture->width;
+      muv.y = uv.y * texture->height;
+
+      int tx0 = (int)(muv.x) & (texture->width - 1);
+      int ty0 = (int)(muv.y) & (texture->height - 1);
+      int tx1 = ((int)(muv.x + 1)) & (texture->width - 1);
+      int ty1 = ((int)(muv.y + 1)) & (texture->height - 1);
+
+      float dx = muv.x - tx0;
+      float dy = muv.y - ty0;
+      Vec3f ta = texture->pixels[ty0*texture->width+tx0];
+      Vec3f tb = texture->pixels[ty0*texture->width+tx1];
+      Vec3f tc = texture->pixels[ty1*texture->width+tx0];
+      Vec3f td = texture->pixels[ty1*texture->width+tx1];
+      texel = lerp(lerp(ta, tb, dx), lerp(tc, td, dx), dy);
+    } else {
+      int tx0 = (int)(uv.x * texture->width) & (texture->width - 1);
+      int ty0 = (int)(uv.y * texture->height) & (texture->height - 1);
+      texel = texture->pixels[ty0*texture->width+tx0];
+    }
   } else {
-    tcolor = d->color;
+    texel = d->color;
   }
 
   if (f->normal_mapping && d->normalmap) {
@@ -167,8 +187,8 @@ FRAGMENT_FUNC(fragment_model)
     intensity = 0.0;
   }
 
-  Vec3f ambient = tcolor * 0.3;
-  *color = (ambient + tcolor * intensity).clamped();
+  Vec3f ambient = texel * 0.3;
+  *color = (ambient + texel * intensity).clamped();
 
   return true;
 }
@@ -630,7 +650,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
   // state->textures[0] = load_texture(state, (char *) "data/misc/dwarf_0.tga");
   // state->textures[1] = load_texture(state, (char *) "data/misc/dwarf_1.tga");
   // state->textures[2] = load_texture(state, (char *) "data/misc/nelf_cape.tga");
-  // state->textures[3] = load_texture(state, (char *) "data/misc/nelf_eye_glow.tga");  
+  // state->textures[3] = load_texture(state, (char *) "data/misc/nelf_eye_glow.tga");
 
   // load_m2_model(state, (char *) "data/misc/diablo.m2");
   // state->textures[0] = load_texture(state, (char *) "data/misc/diablo_D.tga");
@@ -774,7 +794,7 @@ static void update_camera(State *state, float dt)
     state->scale = CLAMP(state->scale, 0.1, 5.0);
   } else {
     state->camDistance += da;
-    state->camDistance = CLAMP(state->camDistance, 1.0, 3.0);
+    state->camDistance = CLAMP(state->camDistance, 0.7, 3.0);
   }
 
   if (KEY_IS_DOWN(state->keyboard, KB_H)) {
@@ -853,6 +873,10 @@ static void handle_input(State *state)
 
   if (KEY_WAS_PRESSED(state->keyboard, KB_L)) {
     state->render_flags.lighting = !state->render_flags.lighting;
+  }
+
+  if (KEY_WAS_PRESSED(state->keyboard, KB_F)) {
+    state->render_flags.bilinear_filtering = !state->render_flags.bilinear_filtering;
   }
 
   if (KEY_WAS_PRESSED(state->keyboard, KB_SPACE)) {
