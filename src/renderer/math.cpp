@@ -5,29 +5,35 @@
 // Vec3f
 //
 
+inline Vec3f Vec3f::make(float x, float y, float z)
+{
+  Vec3f result = {x, y, z};
+  return result;
+}
+
 inline Vec3f operator+(Vec3f a, Vec3f b)
 {
-  return (Vec3f){a.x + b.x, a.y + b.y, a.z + b.z};
+  return {a.x + b.x, a.y + b.y, a.z + b.z};
 }
 
 inline Vec3f operator-(Vec3f a, Vec3f b)
 {
-  return (Vec3f){a.x - b.x, a.y - b.y, a.z - b.z};
+  return {a.x - b.x, a.y - b.y, a.z - b.z};
 }
 
 inline Vec3f operator-(Vec3f a)
 {
-  return (Vec3f){-a.x, -a.y, -a.z};
+  return {-a.x, -a.y, -a.z};
 }
 
 inline Vec3f operator*(Vec3f v, float scalar)
 {
-  return (Vec3f){v.x * scalar, v.y * scalar, v.z * scalar};
+  return {v.x * scalar, v.y * scalar, v.z * scalar};
 }
 
 inline Vec3f operator/(Vec3f v, float scalar)
 {
-  return v * (1.0 / scalar);
+  return v * (1.0f / scalar);
 }
 
 inline Vec3f Vec3f::cross(Vec3f v)
@@ -35,7 +41,7 @@ inline Vec3f Vec3f::cross(Vec3f v)
   float nx = y * v.z - z * v.y;
   float ny = z * v.x - x * v.z;
   float nz = x * v.y - y * v.x;
-  return (Vec3f){nx, ny, nz};
+  return {nx, ny, nz};
 }
 
 inline float Vec3f::dot(Vec3f v)
@@ -50,8 +56,8 @@ inline float Vec3f::length()
 
 inline Vec3f Vec3f::normalized()
 {
-  float factor = 1.0 / this->length();
-  return (Vec3f){x *= factor, y *= factor, z *= factor};
+  float factor = 1.0f / this->length();
+  return {x *= factor, y *= factor, z *= factor};
 }
 
 inline Vec3f Vec3f::clamped(float min, float max)
@@ -73,9 +79,9 @@ inline Vec3f operator*(Vec3f v, Mat44 mat)
   result.z = v.x * mat.c + v.y * mat.g + v.z * mat.k + mat.o;
   float w  = v.x * mat.d + v.y * mat.h + v.z * mat.l + mat.p;
 
-  ASSERT(w != 0);
+  ASSERT(w != 0.0f);
 
-  if (w != 1.0) {
+  if (w != 1.0f) {
     result.x /= w;
     result.y /= w;
     result.z /= w;
@@ -102,17 +108,17 @@ inline Vec3f Vec3f::transform(Mat44 mat, float *w)
 
 inline Vec4f operator+(Vec4f a, Vec4f b)
 {
-  return (Vec4f){a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w};
+  return {a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w};
 }
 
 inline Vec4f operator-(Vec4f a, Vec4f b)
 {
-  return (Vec4f){a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w};
+  return {a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w};
 }
 
 inline Vec4f operator*(Vec4f v, float scalar)
 {
-  return (Vec4f){v.x * scalar, v.y * scalar, v.z * scalar, v.w * scalar};
+  return {v.x * scalar, v.y * scalar, v.z * scalar, v.w * scalar};
 }
 
 inline float Vec4f::dot(Vec4f v)
@@ -127,7 +133,7 @@ inline float Vec4f::length()
 
 inline Vec4f Vec4f::normalized()
 {
-  float factor = 1.0 / this->length();
+  float factor = 1.0f / this->length();
   return *this * factor;
 }
 
@@ -140,12 +146,12 @@ inline Vec4f operator*(Vec4f v, Mat44 mat)
   result.z = v.x * mat.c + v.y * mat.g + v.z * mat.k + v.w * mat.o;
   result.w = v.x * mat.d + v.y * mat.h + v.z * mat.l + v.w * mat.p;
 
-  if (result.w != 1.0) {
-    float rw = 1.0 / result.w;
+  if (result.w != 1.0f) {
+    float rw = 1.0f / result.w;
     result.x *= rw;
     result.y *= rw;
     result.z *= rw;
-    result.w = 1.0;
+    result.w = 1.0f;
   }
 
   return result;
@@ -159,10 +165,10 @@ Mat44 Mat44::identity()
 {
     Mat44 result = {};
 
-    result.a = 1.0;
-    result.f = 1.0;
-    result.k = 1.0;
-    result.p = 1.0;
+    result.a = 1.0f;
+    result.f = 1.0f;
+    result.k = 1.0f;
+    result.p = 1.0f;
 
     return result;    
 }
@@ -211,12 +217,12 @@ Mat44 Mat44::rotate_x(float angle)
 {
  Mat44 result = {};
 
-  result.a = 1.0;
+  result.a = 1.0f;
   result.f = cos(angle);
   result.g = -sin(angle);
   result.j = sin(angle);
   result.k = cos(angle);
-  result.p = 1.0;
+  result.p = 1.0f;
 
   return result;
 }
@@ -225,10 +231,10 @@ Mat44 Mat44::translate(float x, float y, float z)
 {
     Mat44 result = {0};
 
-    result.a = 1.0;
-    result.f = 1.0;
-    result.k = 1.0;
-    result.p = 1.0;
+    result.a = 1.0f;
+    result.f = 1.0f;
+    result.k = 1.0f;
+    result.p = 1.0f;
     result.m = x;
     result.n = y;
     result.o = z;
@@ -302,7 +308,7 @@ Mat44 Mat44::inverse()
   result.l = -DET3(a, b, d, e, f, h, i, j, l);
   result.p = DET3(a, b, c, e, f, g, i, j, k);
 
-  result = result * (1.0 / det);
+  result = result * (1.0f / det);
   return result;
 }
 
@@ -368,7 +374,7 @@ inline q8 to_q8(int32_t i) {
 }
 
 inline q8 to_q8(float f) {
-  return (q8) ((f * Q_SCALE) + 0.5);
+  return (q8) ((f * Q_SCALE) + 0.5f);
 }
 
 inline q8 qmul(q8 a, q8 b) {
@@ -390,22 +396,22 @@ inline float to_float(q8 v) {
 
 inline Vec3q operator+(Vec3q a, Vec3q b)
 {
-  return (Vec3q){a.x + b.x, a.y + b.y, a.z + b.z};
+  return {a.x + b.x, a.y + b.y, a.z + b.z};
 }
 
 inline Vec3q operator-(Vec3q a, Vec3q b)
 {
-  return (Vec3q){a.x - b.x, a.y - b.y, a.z - b.z};
+  return {a.x - b.x, a.y - b.y, a.z - b.z};
 }
 
 inline Vec3q operator-(Vec3q a)
 {
-  return (Vec3q){-a.x, -a.y, -a.z};
+  return {-a.x, -a.y, -a.z};
 }
 
 inline Vec3q operator*(Vec3q v, q8 q)
 {
-  return (Vec3q){qmul(v.x, q) , qmul(v.y, q), qmul(v.z, q)};
+  return {qmul(v.x, q) , qmul(v.y, q), qmul(v.z, q)};
 }
 
 inline Vec3q operator*(q8 q, Vec3q v)
@@ -455,10 +461,10 @@ Quaternion Quaternion::conjugate()
 Quaternion Quaternion::axisAngle(Vec3f v, float angle)
 {
   Quaternion result = {};
-  result.x = v.x * sin(angle / 2.0);
-  result.y = v.y * sin(angle / 2.0);
-  result.z = v.z * sin(angle / 2.0);
-  result.w = cos(angle / 2.0);
+  result.x = v.x * sin(angle / 2.0f);
+  result.y = v.y * sin(angle / 2.0f);
+  result.z = v.z * sin(angle / 2.0f);
+  result.w = cos(angle / 2.0f);
 
   return result;
 }
@@ -501,8 +507,8 @@ inline Quaternion lerp(Quaternion a, Quaternion b, float t)
 {
   Quaternion result;
 
-  Vec4f v0 = (Vec4f){a.x, a.y, a.z, a.w};
-  Vec4f v1 = (Vec4f){b.x, b.y, b.z, b.w};
+  Vec4f v0 = {a.x, a.y, a.z, a.w};
+  Vec4f v1 = {b.x, b.y, b.z, b.w};
 
   float dot = v0.dot(v1);
 

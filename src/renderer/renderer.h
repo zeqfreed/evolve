@@ -15,11 +15,11 @@ typedef uint16_t zval_t;
 #define ZBUFFER_MAX 0xFFFF
 #define ZTEST(new, old) ((new > old))
 
-#define WHITE (Vec3f){1, 1, 1}
-#define BLACK (Vec3f){0, 0, 0}
-#define RED (Vec3f){1, 0, 0}
-#define GREEN (Vec3f){0, 1, 0}
-#define BLUE (Vec3f){0, 0, 1}
+#define WHITE {1, 1, 1}
+#define BLACK {0, 0, 0}
+#define RED {1, 0, 0}
+#define GREEN {0, 1, 0}
+#define BLUE {0, 0, 1}
 
 typedef struct ShaderContext {
   Vec3f positions[3];

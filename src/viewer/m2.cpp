@@ -135,7 +135,12 @@ typedef void (ModelLoadAnimValueFunc)(void *, void *);
 
 void m2_load_translation(void *src, void *dst)
 {
-  static Mat44 worldMat = {.a = 1.0f, .j = 1.0f, .g = -1.0f, .p = 1.0f};
+  static Mat44 worldMat = {
+    1.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, -1.0f, 0.0f,
+    0.0f, 1.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 1.0f
+  };
 
   Vec3f *srcVal = (Vec3f *) src;
   Vec3f *dstVal = (Vec3f *) dst;
@@ -144,18 +149,28 @@ void m2_load_translation(void *src, void *dst)
 
 void m2_load_rotation(void *src, void *dst)
 {
-  static Mat44 worldMat = {.a = 1.0f, .j = 1.0f, .g = -1.0f, .p = 1.0f};
+  static Mat44 worldMat = {
+    1.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, -1.0f, 0.0f,
+    0.0f, 1.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 1.0f
+  };
 
   Quaternion *srcVal = (Quaternion *) src;
   Quaternion *dstVal = (Quaternion *) dst;
 
-  (*dstVal).v = (*srcVal).v * worldMat;
-  (*dstVal).w = (*srcVal).w;
+  dstVal->v = srcVal->v * worldMat;
+  dstVal->w = srcVal->w;
 }
 
 void m2_load_scaling(void *src, void *dst)
 {
-  static Mat44 worldMat = {.a = 1.0f, .j = 1.0f, .g = 1.0f, .p = 1.0f};
+  static Mat44 worldMat = {
+    1.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 1.0f, 0.0f,
+    0.0f, 1.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 1.0f
+  };
 
   Vec3f *srcVal = (Vec3f *) src;
   Vec3f *dstVal = (Vec3f *) dst;
@@ -227,7 +242,12 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
   model->weightsPerVertex = 4;
   model->weights = (ModelVertexWeight *) arena->allocate(sizeof(ModelVertexWeight) * model->weightsPerVertex * header->verticesCount);
 
-  static Mat44 worldMat = {.a = 1.0f, .j = 1.0f, .g = -1.0f, .p = 1.0f};
+  static Mat44 worldMat = {
+    1.0f, 0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, -1.0f, 0.0f,
+    0.0f, 1.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 1.0f
+  };
 
   M2Vertex *vertices = (M2Vertex *) ((uint8_t *) bytes + header->verticesOffset);
   for(int i = 0; i < header->verticesCount; i++) {
@@ -235,7 +255,7 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
     model->animatedPositions[i] = model->positions[i];
     model->normals[i] = -(vertices[i].normal * worldMat);
     model->animatedNormals[i] = model->normals[i];
-    model->textureCoords[i] = (Vec3f){vertices[i].texcoords[0], vertices[i].texcoords[1]};
+    model->textureCoords[i] = {vertices[i].texcoords[0], vertices[i].texcoords[1], 0.0f};
 
     for (int wi = 0; wi < model->weightsPerVertex; wi++) {
       ModelVertexWeight vw = {};
@@ -368,11 +388,11 @@ void m2_calc_bone(M2Model *model, ModelBone *bone, uint32_t animId, uint32_t fra
   Mat44 mat = Mat44::identity();
   Mat44 nmat = mat;
 
-  ModelAnimationRange trRange;
+  ModelAnimationRange trRange = {};
   bool translate = false;
-  ModelAnimationRange rotRange;
+  ModelAnimationRange rotRange = {};
   bool rotate = false;
-  ModelAnimationRange scaleRange;
+  ModelAnimationRange scaleRange = {};
   bool scale = false;
 
   if (animId < bone->translations.animationsCount) {

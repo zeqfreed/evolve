@@ -184,7 +184,7 @@ typedef struct ModelAnimationData {
 
 typedef struct ModelBone {
   int32_t parent;
-  int16_t keybone;
+  int32_t keybone;
   Vec3f pivot;
   ModelAnimationData translations;
   ModelAnimationData rotations;
@@ -201,7 +201,7 @@ typedef struct M2Face {
 typedef struct ModelAnimation {
   uint32_t startFrame;
   uint32_t endFrame;
-  uint32_t speed;
+  float speed;
 } ModelAnimation;
 
 typedef struct ModelVertexWeight {

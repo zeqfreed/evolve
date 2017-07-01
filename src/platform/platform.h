@@ -18,6 +18,22 @@
 #define ASSERT(...)
 #endif
 
+#ifdef _MSC_VER
+#define EXPORT __declspec(dllexport)
+#else
+#define EXPORT
+#endif
+
+#ifdef _MSC_VER
+#define PACK_START(n) __pragma(pack(push, n))
+#define PACK_END(...) __pragma(pack(pop))
+#define PACKED
+#else
+#define PACK_START(...)
+#define PACK_END(...)
+#define PACKED __attribute__((packed))
+#endif
+
 #define PAPI_OK(x) (x >= 0)
 #define PAPI_ERROR(x) (x < 0)
 
@@ -25,7 +41,7 @@ typedef struct DrawingBuffer {
   uint32_t width;
   uint32_t height;
   uint32_t pitch;
-  uint32_t bits_per_pixel;  
+  uint32_t bytes_per_pixel;  
   void *pixels;
 } DrawingBuffer;
 

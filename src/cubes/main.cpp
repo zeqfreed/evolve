@@ -28,7 +28,7 @@ typedef struct State {
   MemoryArena *main_arena;
   MemoryArena *cubes_arena;
 
-  uint16_t verticesCount;
+  uint32_t verticesCount;
   Vertex *vertices;
 
   RenderingContext rendering_context;
@@ -57,7 +57,7 @@ FRAGMENT_FUNC(fragment)
   Texture *texture = d->texture;
 
 #if CUBES_CORRECT_PERSPECTIVE
-  float z = 1.0 / (d->uv0.z + t1 * d->duv[0].z + t2 * d->duv[1].z);
+  float z = 1.0f / (d->uv0.z + t1 * d->duv[0].z + t2 * d->duv[1].z);
   float fu = (d->uv0.x + t1 * d->duv[0].x + t2 * d->duv[1].x) * z;
   float fv = (d->uv0.y + t1 * d->duv[0].y + t2 * d->duv[1].y) * z;
 #else
@@ -68,10 +68,10 @@ FRAGMENT_FUNC(fragment)
 #if CUBES_TEXTURE_DITHERING
   int ab = (x & 1) | ((y & 1) << 1);
   switch (ab) {
-    case 0: fu -= 0.25; fv -= 0.25; break;
-    case 1: fu += 0.25; fv -= 0.25; break;
-    case 2: fu -= 0.25; fv += 0.25; break;
-    case 3: fu += 0.25; fv += 0.25; break;
+    case 0: fu -= 0.25f; fv -= 0.25f; break;
+    case 1: fu += 0.25f; fv -= 0.25f; break;
+    case 2: fu -= 0.25f; fv += 0.25f; break;
+    case 3: fu += 0.25f; fv += 0.25f; break;
   }
 #endif
 
@@ -79,7 +79,7 @@ FRAGMENT_FUNC(fragment)
   int v = ((int) fv) & (16 - 1);
 
   Vec3f tcolor = texture->pixels[v * texture->width + u];
-  *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b};
+  *color = {tcolor.r, tcolor.g, tcolor.b};
 
   return true;
  }
@@ -118,8 +118,8 @@ static void initialize(State *state, DrawingBuffer *buffer)
   ctx->clear_color = BLACK;
 
   ctx->model_mat = Mat44::identity();
-  ctx->projection_mat = perspective_matrix(0.1, 10, 60);
-  ctx->light = (Vec3f){0, 0, 0};
+  ctx->projection_mat = perspective_matrix(0.1f, 10.0f, 60.0f);
+  ctx->light = { 0.0f, 0.0f, 0.0f };
 
   ctx->zbuffer = (zval_t *) state->main_arena->allocate(buffer->width * buffer->height * sizeof(zval_t));
 
@@ -130,11 +130,11 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->font.spec.char_height = 31;
   state->font.spec.chars_per_line = 13;
 
-  state->xRot = 0.0;
-  state->yRot = 0.0;
-  state->fov = 60.0;
-  state->screen_width = buffer->width;
-  state->screen_height = buffer->height;
+  state->xRot = 0.0f;
+  state->yRot = 0.0f;
+  state->fov = 60.0f;
+  state->screen_width = (float) buffer->width;
+  state->screen_height = (float) buffer->height;
 }
 
 static void write_cube_vertices(Vertex *vertices, Vec3f offset, int textureIdx)
@@ -188,12 +188,12 @@ static void write_cube_vertices(Vertex *vertices, Vec3f offset, int textureIdx)
     {1, 0}, {6, 2}, {5, 3}
   };
 
-  float u0 = textureIdx * 16;
+  float u0 = textureIdx * 16.0f;
 
   for (int vi = 0; vi < 36; vi++) {
     Vec3f tex = texture_coords[indices[vi][1]];
-    tex.x = u0 + tex.x * 16;
-    tex.y = tex.y * 16;
+    tex.x = u0 + tex.x * 16.0f;
+    tex.y = tex.y * 16.0f;
 
     vertices[vi].position = positions[indices[vi][0]] + offset;
     vertices[vi].texture_coords = tex;
@@ -235,13 +235,13 @@ static void regenerate_cube_grid(State *state, uint8_t side)
   for (int i = 0; i < side; i++) {
     for (int j = 0; j < side; j++) {
       for (int k = 0; k < side; k++) {
-        int textureIdx = RAND(0, 10);
+        uint8_t textureIdx = (uint8_t) RAND(0.0f, 10.0f);
 
-        float a = 0.75;
+        float a = 0.75f;
         float xoffset = 2 * i * a + 1 * a - side * a;
         float yoffset = 2 * j * a + 1 * a - side * a;
         float zoffset = 2 * k * a + 1 * a - side * a;
-        Vec3f offset = (Vec3f){xoffset, yoffset, zoffset};
+        Vec3f offset = {xoffset, yoffset, zoffset};
 
         write_cube_vertices(vertices, offset, textureIdx);
         vertices += 36;
@@ -253,20 +253,20 @@ static void regenerate_cube_grid(State *state, uint8_t side)
 static void render_text(State *state, RenderingContext *ctx)
 {
   ctx->viewport_mat = viewport_matrix(state->screen_width, state->screen_height, false);
-  ctx->projection_mat = orthographic_matrix(0.1, 100, 0, state->screen_height, state->screen_width, 0);
+  ctx->projection_mat = orthographic_matrix(0.1f, 100.0f, 0.0f, state->screen_height, state->screen_width, 0.0f);
   ctx->view_mat = Mat44::identity();
-  ctx->model_mat = Mat44::translate(0, 0, 0);
+  ctx->model_mat = Mat44::translate(0.0f, 0.0f, 0.0f);
   precalculate_matrices(ctx);
 
-  state->font.render_string(ctx, 10, 10, (char *) "Welcome to the wonderful world of software rendering :)");
+  state->font.render_string(ctx, 10.0f, 10.0f, (char *) "Welcome to the wonderful world of software rendering :)");
 }
 
 static void render_cubes(State *state, RenderingContext *ctx)
 {
   ctx->viewport_mat = viewport_matrix(state->screen_width, state->screen_height, true);
-  ctx->projection_mat = perspective_matrix(0.1, 1000, state->fov);
+  ctx->projection_mat = perspective_matrix(0.1f, 1000.0f, state->fov);
 
-  Mat44 view_mat = Mat44::translate(0, 0, -15);
+  Mat44 view_mat = Mat44::translate(0.0f, 0.0f, -15.0f);
   ctx->view_mat = Mat44::rotate_y(-state->yRot) *
                   Mat44::rotate_x(-state->xRot) * view_mat;
 
@@ -277,7 +277,8 @@ static void render_cubes(State *state, RenderingContext *ctx)
 
   Vertex vertices[3];
   Vec3f positions[3] = {};
-  ShaderData data = {.texture = state->texture};
+  ShaderData data = {};
+  data.texture = state->texture;
 
   for (int i = 0; i < state->verticesCount; i++) {
     int idx = i % 3;
@@ -286,18 +287,18 @@ static void render_cubes(State *state, RenderingContext *ctx)
 #if CUBES_CORRECT_PERSPECTIVE
     Vec3f cam_pos = vertices[idx].position * ctx->modelview_mat;
     positions[idx] = cam_pos * ctx->projection_mat;
-    float iz = 1.0 / cam_pos.z;
-    data.uvs[idx] = (Vec3f){vertices[idx].texture_coords.x * iz, vertices[idx].texture_coords.y * iz, iz};
+    float iz = 1.0f / cam_pos.z;
+    data.uvs[idx] = {vertices[idx].texture_coords.x * iz, vertices[idx].texture_coords.y * iz, iz};
 #else
-    data.uvs[idx] = (Vec3f){vertices[idx].texture_coords.x, vertices[idx].texture_coords.y, 0};
+    data.uvs[idx] = {vertices[idx].texture_coords.x, vertices[idx].texture_coords.y, 0.0f};
     positions[idx] = vertices[idx].position * ctx->mvp_mat;
 #endif
 
     if (idx == 2) {
       #define VEC3_DOT_PLANE(vec3, p) (vec3.x*p.x + vec3.y*p.y + vec3.z*p.z + p.w)
-      if ((VEC3_DOT_PLANE(vertices[0].position, ctx->near_clip_plane) < 0) ||
-          (VEC3_DOT_PLANE(vertices[1].position, ctx->near_clip_plane) < 0) ||
-          (VEC3_DOT_PLANE(vertices[2].position, ctx->near_clip_plane) < 0)) {
+      if ((VEC3_DOT_PLANE(vertices[0].position, ctx->near_clip_plane) < 0.0f) ||
+          (VEC3_DOT_PLANE(vertices[1].position, ctx->near_clip_plane) < 0.0f) ||
+          (VEC3_DOT_PLANE(vertices[2].position, ctx->near_clip_plane) < 0.0f)) {
         continue;
       }
       #undef VEC3_DOT_PLANE
@@ -311,13 +312,13 @@ static void render_cubes(State *state, RenderingContext *ctx)
   }
 }
 
-#define Y_RAD_PER_SEC RAD(120.0)
-#define X_RAD_PER_SEC RAD(120.0)
-#define FOV_DEG_PER_SEC 30.0
+#define Y_RAD_PER_SEC RAD(120.0f)
+#define X_RAD_PER_SEC RAD(120.0f)
+#define FOV_DEG_PER_SEC 30.0f
 
 static void update_camera(State *state, float dt)
 {
-  float da = 0.0;
+  float da = 0.0f;
   if (KEY_IS_DOWN(state->keyboard, KB_LEFT_ARROW)) {
     da -= Y_RAD_PER_SEC * dt;
   }
@@ -326,7 +327,7 @@ static void update_camera(State *state, float dt)
   }
 
   if (KEY_IS_DOWN(state->keyboard, KB_LEFT_SHIFT)) {
-    da *= 3.0;
+    da *= 3.0f;
   }
 
   state->yRot += da;
@@ -344,7 +345,7 @@ static void update_camera(State *state, float dt)
   }
 
   state->xRot += da;
-  state->xRot = CLAMP(state->xRot, -PI / 2.0, PI / 2.0);
+  state->xRot = CLAMP(state->xRot, -PI / 2.0f, PI / 2.0f);
 
   da = 0.0;
   if (KEY_IS_DOWN(state->keyboard, KB_PLUS)) {
@@ -356,10 +357,10 @@ static void update_camera(State *state, float dt)
   }
 
   state->fov += da;
-  state->fov = CLAMP(state->fov, 3.0, 170.0);
+  state->fov = CLAMP(state->fov, 3.0f, 170.0f);
 }
 
-C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer, float dt)
+C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer, float dt)
 {
   State *state = (State *) global_state->state;
 
@@ -375,7 +376,7 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
     state->platform_api = &global_state->platform_api;
     state->keyboard = global_state->keyboard;
 
-    state->seed = time(NULL);
+    state->seed = (uint32_t) time(NULL);
 
     initialize(state, drawing_buffer);
     regenerate_cube_grid(state, CUBES_GRID_SIZE);
@@ -387,7 +388,7 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
   }
 
   if (KEY_WAS_PRESSED(state->keyboard, KB_W)) {
-    state->seed = time(NULL) ^ (uint32_t) (dt * (state->seed));
+    state->seed = (uint32_t) time(NULL) ^ (uint32_t) (dt * (state->seed));
     regenerate_cube_grid(state, CUBES_GRID_SIZE);
   }
 

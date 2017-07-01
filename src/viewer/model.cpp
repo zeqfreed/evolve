@@ -12,8 +12,8 @@ void Model::parse(void *bytes, size_t size, bool dry_run = false)
   int ti = 0;
 
   Vec3f acc = {0, 0, 0};
-  min = (Vec3f){0, 0, 0};
-  max = (Vec3f){0, 0, 0};
+  min = {0, 0, 0};
+  max = {0, 0, 0};
 
   char *p = (char *) bytes;
   while(p < (char *) bytes + size) {
@@ -31,7 +31,7 @@ void Model::parse(void *bytes, size_t size, bool dry_run = false)
         }
         p += consumed;
 
-        Vec3f vertex = (Vec3f){x, y, z};
+        Vec3f vertex = {x, y, z};
         if (dry_run) {
           vi++;
         } else {
@@ -57,7 +57,7 @@ void Model::parse(void *bytes, size_t size, bool dry_run = false)
         if (dry_run) {
           ni++;
         } else {
-          normals[ni++] = (Vec3f){-x, -y, -z};
+          normals[ni++] = {-x, -y, -z};
         }
       } else if (*p == 't') {
         p++;
@@ -70,7 +70,7 @@ void Model::parse(void *bytes, size_t size, bool dry_run = false)
         if (dry_run) {
           ti++;
         } else {
-          texture_coords[ti++] = (Vec3f){x, y, z};
+          texture_coords[ti++] = {x, y, z};
         }
       }
     } else if (*p == 'f') {
@@ -119,15 +119,15 @@ void Model::parse(void *bytes, size_t size, bool dry_run = false)
   ncount = ni;
   tcount = ti;
 
-  center = acc * (1.0 / vcount);
+  center = acc * (1.0f / vcount);
 }
 
 void Model::normalize(bool move_to_center = false)
 {
   Vec3f d = max - min;
-  float scale = 1.0 / MAX(MAX(d.x, d.y), d.z);
+  float scale = 1.0f / MAX(MAX(d.x, d.y), d.z);
 
-  Vec3f offset = {0, 0, 0};
+  Vec3f offset = { 0.0f, 0.0f, 0.0f };
   if (move_to_center) {
     offset = offset - center;
   }

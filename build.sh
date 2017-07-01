@@ -4,10 +4,11 @@ OBJDIR="_build"
 BINDIR="bin"
 DATASYMLINK="${BINDIR}/data"
 
-CC="g++"
+CC="g++ -std=c++11"
+OC="g++"
 WFLAGS="-Wall -Wno-missing-braces -Wno-unused-variable -Wno-unused-function"
-#CFLAGS="-c ${WFLAGS} -g -gmodules -O0 -DMACOSX -Isrc -DDEBUG"
-CFLAGS="-c ${WFLAGS} -O2 -mssse3 -mtune=core2 -march=native -fomit-frame-pointer -DMACOSX -Isrc"
+#CFLAGS="-c ${FLAGS} ${WFLAGS} -g -gmodules -O0 -DMACOSX -Isrc -DDEBUG"
+CFLAGS="-c ${FLAGS} ${WFLAGS} -O2 -mssse3 -mtune=core2 -march=native -fomit-frame-pointer -DMACOSX -Isrc"
 LIBS="-framework Cocoa -framework OpenGL"
 
 exitcode=0
@@ -58,7 +59,7 @@ function build_exe() {
   EXE="evolve"
   OBJS="$OBJDIR/platform.o $OBJDIR/main.o"
 
-  $CC src/macos/main.m $CFLAGS -o $OBJDIR/main.o
+  $OC src/macos/main.m $CFLAGS -o $OBJDIR/main.o
   $CC src/macos/platform.cpp $CFLAGS -o $OBJDIR/platform.o
   $CC -o $BINDIR/$EXE $OBJS $LIBS
 

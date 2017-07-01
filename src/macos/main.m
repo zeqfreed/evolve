@@ -427,7 +427,7 @@ int main(int argc, char *argv[])
   drawing_buffer.width = WIDTH;
   drawing_buffer.height = HEIGHT;
   drawing_buffer.pitch = WIDTH;
-  drawing_buffer.bits_per_pixel = 4;
+  drawing_buffer.bytes_per_pixel = 4;
 
   GlobalState state = {};
   state.platform_api.get_file_size = macos_fs_size;
