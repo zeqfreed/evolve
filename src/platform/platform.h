@@ -18,6 +18,16 @@
 #define ASSERT(...)
 #endif
 
+#ifdef _MSC_VER
+#define PACKED __declspec(align(1))
+#else
+#define PACKED __attribute__((packed))
+#endif
+
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #define PAPI_OK(x) (x >= 0)
 #define PAPI_ERROR(x) (x < 0)
 

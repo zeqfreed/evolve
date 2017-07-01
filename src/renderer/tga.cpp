@@ -30,7 +30,7 @@ TgaPixelIter::TgaPixelIter(TgaImage *image, uint8_t *pixelData)
 
 bool TgaPixelIter::hasMore()
 {
-  bool result = (pixelsRead < image->header.width * image->header.height);
+  bool result = (pixelsRead < (uint32_t) (image->header.width * image->header.height));
   return result;
 }
 
@@ -69,7 +69,7 @@ Vec3f TgaPixelIter::next()
         uint8_t r = pixelData[2];
         pixelData += bpp;
 
-        rleValue = (Vec3f){r / 255.0, g / 255.0, b / 255.0};
+        rleValue = {r / 255.0f, g / 255.0f, b / 255.0f};
       } else {
         rawCount = (packet & 127) + 1;
       }
@@ -87,7 +87,7 @@ Vec3f TgaPixelIter::next()
       uint8_t r = pixelData[2];
       pixelData += bpp;
 
-      result = (Vec3f){r / 255.0, g / 255.0, b / 255.0};
+      result = {r / 255.0f, g / 255.0f, b / 255.0f};
     }
 
   } else {
@@ -96,7 +96,7 @@ Vec3f TgaPixelIter::next()
     uint8_t r = pixelData[2];
     pixelData += bpp;
 
-    result = (Vec3f){r / 255.0, g / 255.0, b / 255.0};
+    result = {r / 255.0f, g / 255.0f, b / 255.0f};
   }
 
   pixelsRead++;

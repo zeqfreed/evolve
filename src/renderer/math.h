@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#define PI 3.14159265358979323846
+#define PI 3.14159265358979323846f
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MIN3(a, b, c) (MIN(MIN(a, b), c))
@@ -11,7 +11,7 @@
 
 #define CLAMP(val, min, max) (MAX(min, MIN(max, val)))
 
-#define RAD(x) ((x) * (PI / 180.0))
+#define RAD(x) ((x) * (PI / 180.0f))
 
 #define Q_BITS 8
 #define Q_SCALE (1 << Q_BITS)

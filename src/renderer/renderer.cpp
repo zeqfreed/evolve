@@ -20,7 +20,7 @@ static inline void set_pixel(DrawingBuffer *buffer, int32_t x, int32_t y, uint32
   *((uint32_t *) &((uint8_t *)buffer->pixels)[idx]) = rgba;
 }
 
-static inline void set_pixel_safe(DrawingBuffer *buffer, int32_t x, int32_t y, Vec3f color)
+static inline void set_pixel_safe(DrawingBuffer *buffer, uint32_t x, uint32_t y, Vec3f color)
 {
   if (x < 0) { return; }
   if (y < 0) { return; }
@@ -30,10 +30,12 @@ static inline void set_pixel_safe(DrawingBuffer *buffer, int32_t x, int32_t y, V
   set_pixel(buffer, x, y, color);
 }
 
+#ifndef _MSC_VER
 static inline int32_t abs(int32_t v)
 {
   return v > 0.0 ? v : -v;
 }
+#endif
 
 static void draw_line(DrawingBuffer *buffer, int32_t x0, int32_t y0, int32_t x1, int32_t y1, Vec3f color)
 {
@@ -67,7 +69,7 @@ static void draw_line(DrawingBuffer *buffer, int32_t x0, int32_t y0, int32_t x1,
   int32_t dx = x1 - x0;
   int32_t dy = y1 - y0;
 
-  float eps = 0.0000001;
+  float eps = 0.0000001f;
   if (dx < eps && dy < eps) {
     return; // Degenerate case
   }
@@ -100,7 +102,7 @@ static void precalculate_matrices(RenderingContext *ctx)
   Mat44 mvp = ctx->modelview_mat * ctx->projection_mat;
   ctx->mvp_mat = mvp;
 
-  Vec4f p = (Vec4f){mvp.c, mvp.g, mvp.k, mvp.o};
+  Vec4f p = {mvp.c, mvp.g, mvp.k, mvp.o};
   float mag = sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
   ctx->near_clip_plane = p * (1 / mag);
 }
@@ -147,18 +149,18 @@ static void draw_triangle(RenderingContext *ctx, FragmentFunc *fragment, void *s
   maxx = MIN(maxx, (target_width - 1));
   maxy = MIN(maxy, (target_height - 1));
 
-  float rarea = 1.0 / to_float(area);
+  float rarea = 1.0f / to_float(area);
 
   float z0 = p0.z;
   float dz1 = p1.z - z0;
   float dz2 = p2.z - z0;
   
-  Vec3q w_xinc = (Vec3q){(py[1] - py[2]),
-                         (py[2] - py[0]),
-                         (py[0] - py[1])}; // * rarea;
-  Vec3q w_yinc = (Vec3q){(px[2] - px[1]),
-                         (px[0] - px[2]),
-                         (px[1] - px[0])}; // * rarea;
+  Vec3q w_xinc = {(py[1] - py[2]),
+                  (py[2] - py[0]),
+                  (py[0] - py[1])}; // * rarea;
+  Vec3q w_yinc = {(px[2] - px[1]),
+                  (px[0] - px[2]),
+                  (px[1] - px[0])}; // * rarea;
 
   int blkminx = minx & ~(BLOCK_SIZE - 1);
   int blkminy = miny & ~(BLOCK_SIZE - 1);
@@ -176,9 +178,9 @@ static void draw_triangle(RenderingContext *ctx, FragmentFunc *fragment, void *s
   Vec3q blk_xinc = w_xinc * to_q8((int32_t) BLOCK_SIZE);
   Vec3q blk_yinc = w_yinc * to_q8((int32_t) BLOCK_SIZE);
 
-  Vec3q c = (Vec3q){(qmul(px[1], py[2]) - qmul(py[1], px[2])),
-                    (qmul(px[2], py[0]) - qmul(py[2], px[0])),
-                    (qmul(px[0], py[1]) - qmul(py[0], px[1]))}; // + (Vec3q){1, 1, 1};
+  Vec3q c = {(qmul(px[1], py[2]) - qmul(py[1], px[2])),
+             (qmul(px[2], py[0]) - qmul(py[2], px[0])),
+             (qmul(px[0], py[1]) - qmul(py[0], px[1]))}; // + (Vec3q){1, 1, 1};
   Vec3q basew = c + w_xinc * to_q8(blkminx) + w_yinc * to_q8(blkminy);
 
   float t1dx = to_float(w_xinc.y) * rarea;
@@ -226,9 +228,9 @@ static void draw_triangle(RenderingContext *ctx, FragmentFunc *fragment, void *s
       int by = qint(blockY) * BLOCK_SIZE;
 
       int starty = blkminy + by;
-      int endy = starty + BLOCK_SIZE;
+      //int endy = starty + BLOCK_SIZE;
       int startx = blkminx + bx;
-      int endx = blkminx + bx + BLOCK_SIZE;
+      //int endx = blkminx + bx + BLOCK_SIZE;
 
       float t1row = to_float(blockW[0].y) * rarea;
       float t2row = to_float(blockW[0].z) * rarea;
@@ -254,10 +256,10 @@ static void draw_triangle(RenderingContext *ctx, FragmentFunc *fragment, void *s
           uint32_t *bufferp = bufferp_row;
 
           for (int i = 0; i < BLOCK_SIZE; i++) {
-            zval_t zvalue = z * ZBUFFER_MAX;
+            zval_t zvalue = (zval_t) (z * ZBUFFER_MAX);
             if (ZTEST(zvalue, *zp)) {
               *zp = zvalue;
-              Vec3f color = (Vec3f){1, 0, 1};
+              Vec3f color = {1, 0, 1};
               if (!only_z && fragment(ctx, shader_data, startx + i, starty + j, 1 - t1 - t2, t1, t2, &color)) {
                 *bufferp = rgba_color(color);
               }
@@ -293,10 +295,10 @@ static void draw_triangle(RenderingContext *ctx, FragmentFunc *fragment, void *s
 #define INSIDE_TRIANGLE(w) ((w.x | w.y | w.z) >= 0)
           for (int i = 0; i < BLOCK_SIZE; i++) {
             if (INSIDE_TRIANGLE(w)) {
-              zval_t zvalue = z * ZBUFFER_MAX;
+              zval_t zvalue = (zval_t) (z * ZBUFFER_MAX);
               if (ZTEST(zvalue, *zp)) {
                 *zp = zvalue;
-                Vec3f color = (Vec3f){0.2, 0.2, 0.2};
+                Vec3f color = { 0.2f, 0.2f, 0.2f };
                 if (!only_z && fragment(ctx, shader_data, startx + i, starty + j, 1 - t1 - t2, t1, t2, &color)) {
                   *bufferp = rgba_color(color);
                 }
@@ -335,8 +337,8 @@ static void clear_buffer(RenderingContext *ctx)
   uint32_t color = rgba_color(ctx->clear_color);
   uint32_t blocks = (ctx->target->width * ctx->target->height * 32) / 128;
 
-  __m128 value = _mm_set_epi32(color, color, color, color);
-  __m128 *p = (__m128 *) ctx->target->pixels;
+  __m128i value = _mm_set_epi32(color, color, color, color);
+  __m128i *p = (__m128i *) ctx->target->pixels;
 
   while (blocks--) {
     *p++ = value;
@@ -373,10 +375,10 @@ static Mat44 perspective_matrix(float near, float far, float fov)
   Mat44 result = Mat44::identity();
   result.k = (-far / (far - near));
   result.o = (-(far * near) / (far - near));
-  result.l = -1.0;
-  result.p = 0.0;
+  result.l = -1.0f;
+  result.p = 0.0f;
 
-  float s = 1.0 / (tan(fov / 2.0 * PI / 180.0));
+  float s = 1.0f / (tan(fov / 2.0f * PI / 180.0f));
   result.a = s;
   result.f = s;
 
@@ -387,8 +389,8 @@ static Mat44 viewport_matrix(float width, float height, bool fix_aspect = false)
 {
   Mat44 result = Mat44::identity();
 
-  float hw = width / 2.0;
-  float hh = height / 2.0;
+  float hw = width / 2.0f;
+  float hh = height / 2.0f;
 
   if (fix_aspect) {
     if (hw > hh) {

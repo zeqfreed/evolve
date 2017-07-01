@@ -22,7 +22,7 @@ typedef struct TgaHeader
   uint16_t height;
   uint8_t pixelDepth;
   uint8_t imageDescriptor;
-} __attribute__((packed)) TgaHeader;
+} PACKED TgaHeader;
 
 typedef struct TgaImage {
   TgaHeader header;

@@ -6,6 +6,9 @@
 #include <Windows.h>
 #include <wchar.h>
 
+#define WIDTH 1024
+#define HEIGHT 768
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
   switch (message) {
@@ -31,8 +34,10 @@ HWND create_window(HINSTANCE hInstance, uint16_t width, uint16_t height, wchar_t
 {
 	WNDCLASSEX wndClass = {};
 	wndClass.cbSize = sizeof(WNDCLASSEX);
-	wndClass.style = CS_HREDRAW | CS_VREDRAW;
+	wndClass.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
   wndClass.hInstance = hInstance;
+  wndClass.hCursor = LoadCursor(NULL, IDC_ARROW);
+  wndClass.hIcon = LoadIcon(NULL, IDI_APPLICATION);
 	wndClass.lpfnWndProc = WndProc;
 	wndClass.lpszClassName = L"evolveWindowClass";
 
@@ -45,7 +50,7 @@ HWND create_window(HINSTANCE hInstance, uint16_t width, uint16_t height, wchar_t
 		WS_EX_APPWINDOW,
 		wndClass.lpszClassName,
 		title,
-    WS_OVERLAPPEDWINDOW | WS_CAPTION | WS_MINIMIZEBOX | WS_VISIBLE,
+    WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
 		CW_USEDEFAULT,
 		CW_USEDEFAULT,
 		width,
@@ -59,13 +64,12 @@ HWND create_window(HINSTANCE hInstance, uint16_t width, uint16_t height, wchar_t
   return wnd;
 }
 
-
 int WINAPI WinMain(HINSTANCE hInstance,
-  HINSTANCE hPrevInstance,
-  LPSTR lpCmdLine,
-  int nCmdShow)
+                   HINSTANCE hPrevInstance,
+                   LPSTR lpCmdLine,
+                   int nCmdShow)
 {
-  HWND wnd = create_window(hInstance, 800, 600, L"evolve");
+  HWND wnd = create_window(hInstance, WIDTH, HEIGHT, L"evolve");
   if (!wnd) {
     return 1;
   }

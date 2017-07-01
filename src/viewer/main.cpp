@@ -64,9 +64,9 @@ static Vec3f hsv_to_rgb(Vec3f hsv)
   float s = hsv.y;
   float v = hsv.z;
 
-  h = fmod(h / 60.0, 6);
+  h = fmod(h / 60.0f, 6.0f);
   float c = v * s;
-  float x = c * (1 - fabs(fmod(h, 2) - 1));  
+  float x = c * (1.0f - fabs(fmod(h, 2.0f) - 1.0f));  
   float m = v - c;
 
   int hh = (int) h;
@@ -95,7 +95,7 @@ static Vec3f hsv_to_rgb(Vec3f hsv)
     b += x;
   }
 
-  return (Vec3f){r, g, b};
+  return {r, g, b};
 }
 
 typedef struct ModelShaderData {
@@ -157,13 +157,13 @@ FRAGMENT_FUNC(fragment_model)
     int nx = (int)(uv.x * d->normalmap->width) & (d->normalmap->width - 1);
     int ny = (int)(uv.y * d->normalmap->height) & (d->normalmap->height - 1);
     Vec3f ncolor = d->normalmap->pixels[ny*d->normalmap->width+nx];
-    Vec3f tnormal = (Vec3f){2 * ncolor.r - 1, 2 * ncolor.g - 1, 2 * ncolor.b};
+    Vec3f tnormal = {2 * ncolor.r - 1, 2 * ncolor.g - 1, 2 * ncolor.b};
 
     Vec3f dp1 = d->pos[1] - d->pos[0];
     Vec3f dp2 = d->pos[2] - d->pos[1];
     Vec3f duv1 = d->uvs[1] - d->uvs[0];
     Vec3f duv2 = d->uvs[2] - d->uvs[1];
-    float r = 1.0 / (duv1.x * duv2.y - duv1.y * duv2.x);
+    float r = 1.0f / (duv1.x * duv2.y - duv1.y * duv2.x);
     Vec3f tangent = -(dp1 * duv2.y - dp2 * duv1.y) * r;
     tangent = (tangent - normal * normal.dot(tangent)).normalized();
     Vec3f bitangent = -((dp2 * duv1.x - dp1 * duv2.x) * r).normalized();
@@ -180,14 +180,14 @@ FRAGMENT_FUNC(fragment_model)
   if (f->lighting) {
     intensity = normal.dot(-ctx->light);
   } else {
-    intensity = 1.0;
+    intensity = 1.0f;
   }
 
-  if (intensity < 0.0) {
-    intensity = 0.0;
+  if (intensity < 0.0f) {
+    intensity = 0.0f;
   }
 
-  Vec3f ambient = texel * 0.3;
+  Vec3f ambient = texel * 0.3f;
   *color = (ambient + texel * intensity).clamped();
 
   return true;
@@ -214,38 +214,39 @@ FRAGMENT_FUNC(fragment_floor)
 
   Vec3f uvz = d->uvzs[0] * t0 + d->uvzs[1] * t1 + d->uvzs[2] * t2;
   float z = 1 / uvz.z;
-  int texX = uvz.x * z * 5;
-  int texY = uvz.y * z * 5;
+  int32_t texX = (int32_t) (uvz.x * z * 5.0f);
+  int32_t texY = (int32_t) (uvz.y * z * 5.0f);
 
   Vec3f tcolor;
   if (texX % 2 == texY % 2) {
-    tcolor = (Vec3f){1, 1, 1};
+    tcolor = { 1.0f, 1.0f, 1.0f };
   } else {
-    tcolor = (Vec3f){0.5, 0.5, 0.5};
+    tcolor = { 0.5f, 0.5f, 0.5f };
   }
 
-  Vec3f vcolor = (Vec3f){d->colors[0].r * t0 + d->colors[1].r * t1 + d->colors[2].r * t2,
-                         d->colors[0].g * t0 + d->colors[1].g * t1 + d->colors[2].g * t2,
-                         d->colors[0].b * t0 + d->colors[1].b * t1 + d->colors[2].b * t2} * z;
+  Vec3f vcolor = { d->colors[0].r * t0 + d->colors[1].r * t1 + d->colors[2].r * t2,
+                   d->colors[0].g * t0 + d->colors[1].g * t1 + d->colors[2].g * t2,
+                   d->colors[0].b * t0 + d->colors[1].b * t1 + d->colors[2].b * t2 };
+  vcolor = vcolor * z;
 
   if (f->shadow_mapping) {
     Vec3f pos = d->pos[0] * t0 + d->pos[1] * t1 + d->pos[2] * t2;
     Vec3f shadow = pos * d->matShadow;
-    int shx = shadow.x;
-    int shy = shadow.y;
+    int32_t shx = (int32_t) shadow.x;
+    int32_t shy = (int32_t) shadow.y;
 
     if (shadow.x >= 0 && shadow.y >= 0 &&
         shadow.x < shadowmap->width && shadow.y < shadowmap->height) {
-      float shz = 1 - shadow.z;
       Vec3f shval = shadowmap->pixels[shy * shadowmap->width + shx];
 
-      if (shval.x > 0) {
-        intensity = 0.2;
+      if (shval.x > 0.0f) {
+        intensity = 0.2f;
       }
     }
   }
 
-  *color = ((Vec3f){vcolor.r * tcolor.r, vcolor.g * tcolor.g, vcolor.b * tcolor.b}).clamped() * intensity;
+  Vec3f rcolor = { vcolor.r * tcolor.r, vcolor.g * tcolor.g, vcolor.b * tcolor.b };
+  *color = (rcolor * intensity).clamped();
 
   return true;
 }
@@ -270,7 +271,7 @@ FRAGMENT_FUNC(fragment_debug)
   int v = ((int) fv) & d->clampv;
   Vec3f tcolor = d->texture->pixels[v * d->texture->width + u];
 
-  *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b};
+  *color = {tcolor.r, tcolor.g, tcolor.b};
 
   return true;
 }
@@ -366,7 +367,7 @@ static void render_floor(State *state, RenderingContext *ctx)
   shader_data.matShadow = ctx->mvp_mat.inverse() * state->matShadowMVP;
   shader_data.shadowmap = state->shadowmap;
   shader_data.flags = &state->render_flags;
-  shader_data.normal = (Vec3f){0, 1, 0};
+  shader_data.normal = {0, 1, 0};
 
   Vec3f positions[3];
 
@@ -380,7 +381,7 @@ static void render_floor(State *state, RenderingContext *ctx)
 
       float iz = 1 / cam_pos.z;
       Vec3f tex = vertices[idx][1];
-      shader_data.uvzs[i] = (Vec3f){tex.x * iz, tex.y * iz, iz};
+      shader_data.uvzs[i] = {tex.x * iz, tex.y * iz, iz};
       shader_data.colors[i] = colors[tri][i] * iz;
     }
 
@@ -407,7 +408,7 @@ static void render_model(State *state, RenderingContext *ctx, Model *model)
       Vec3f normal = model->normals[face.ni[vi]];
 
       shader_data.pos[vi] = position;
-      shader_data.uvs[vi] = (Vec3f){texture.x, texture.y, 0};
+      shader_data.uvs[vi] = {texture.x, texture.y, 0};
       shader_data.normals[vi] = (normal * ctx->normal_mat).normalized();
 
       positions[vi] = position * ctx->mvp_mat;
@@ -448,7 +449,7 @@ static void render_m2_model(State *state, RenderingContext *ctx, M2Model *model)
         Vec3f texture = model->textureCoords[face.indices[vi]];
 
         shader_data.pos[vi] = position * ctx->model_mat;
-        shader_data.uvs[vi] = (Vec3f){texture.x, texture.y, 0};
+        shader_data.uvs[vi] = {texture.x, texture.y, 0};
         shader_data.normals[vi] = (normal * ctx->normal_mat).normalized();
 
         positions[vi] = position * ctx->mvp_mat;
@@ -461,8 +462,10 @@ static void render_m2_model(State *state, RenderingContext *ctx, M2Model *model)
 
 static inline void render_line(RenderingContext *ctx, Vec3f start, Vec3f end, Vec3f color)
 {
-  float d0 = (Vec4f){start.x, start.y, start.z, 1}.dot(ctx->near_clip_plane);
-  float d1 = (Vec4f){end.x, end.y, end.z, 1}.dot(ctx->near_clip_plane);
+  Vec4f v0 = { start.x, start.y, start.z, 1 };
+  Vec4f v1 = { end.x, end.y, end.z, 1 };
+  float d0 = v0.dot(ctx->near_clip_plane);
+  float d1 = v1.dot(ctx->near_clip_plane);
 
   if (d0 < 0 && d1 < 0) {
     return;
@@ -480,7 +483,7 @@ static inline void render_line(RenderingContext *ctx, Vec3f start, Vec3f end, Ve
   start = start * ctx->mvp_mat * ctx->viewport_mat;
   end = end * ctx->mvp_mat * ctx->viewport_mat;
 
-  draw_line(ctx->target, start.x, start.y, end.x, end.y, color);
+  draw_line(ctx->target, (int32_t) start.x, (int32_t) start.y, (int32_t) end.x, (int32_t) end.y, color);
 }
 
 static void render_m2_model_bones(State *state, RenderingContext *ctx, M2Model *model)
@@ -505,33 +508,33 @@ static void render_m2_model_bones(State *state, RenderingContext *ctx, M2Model *
       render_line(ctx, p1, p2, color);
     } else {
       Vec3f pos = bone.pivot * bone.matrix * mat;
-      set_pixel(ctx->target, pos.x, pos.y, color);
+      set_pixel(ctx->target, (int32_t) pos.x, (int32_t) pos.y, color);
     }
   }
 }
 
 static void render_debug_texture(State *state, RenderingContext *ctx, Texture *texture, float x, float y, float width)
 {
-  ctx->viewport_mat = viewport_matrix(state->screenWidth, state->screenHeight, false);
-  ctx->projection_mat = orthographic_matrix(0.1, 100, 0, state->screenHeight, state->screenWidth, 0);
+  ctx->viewport_mat = viewport_matrix((float) state->screenWidth, (float) state->screenHeight, false);
+  ctx->projection_mat = orthographic_matrix(0.1f, 100.0f, 0.0f, (float) state->screenHeight, (float) state->screenWidth, 0);
   ctx->view_mat = Mat44::identity();
   ctx->model_mat = Mat44::translate(0, 0, 0);
   precalculate_matrices(ctx);
 
   const Vec3f texture_coords[4] = {
-    {0, 0, 0},
-    {texture->width, 0, 0},
-    {texture->width, texture->height, 0},
-    {0, texture->height, 0}
+    {0.0f, 0.0f, 0.0f},
+    {(float) texture->width, 0.0f, 0.0f},
+    {(float) texture->width, (float) texture->height, 0.0f},
+    {0, (float) texture->height, 0.0f}
   };
 
   float height = width * ((float) texture->height / (float) texture->width);
 
   Vec3f positions[4];
-  positions[0] = (Vec3f){x, y + height, 0.0} * ctx->mvp_mat;
-  positions[1] = (Vec3f){x + width, y + height, 0.0} * ctx->mvp_mat;
-  positions[2] = (Vec3f){x + width, y, 0.0} * ctx->mvp_mat;
-  positions[3] = (Vec3f){x, y, 0.0} * ctx->mvp_mat;
+  positions[0] = {x, y + height, 0.0} * ctx->mvp_mat;
+  positions[1] = {x + width, y + height, 0.0} * ctx->mvp_mat;
+  positions[2] = {x + width, y, 0.0} * ctx->mvp_mat;
+  positions[3] = {x, y, 0.0} * ctx->mvp_mat;
 
   DebugShaderData shader_data = {};
   shader_data.clampu = texture->width - 1;
@@ -554,9 +557,9 @@ static void render_unit_axes(RenderingContext *ctx)
   precalculate_matrices(ctx);
 
   Vec3f origin = {0, 0, 0};
-  render_line(ctx, origin, (Vec3f){1, 0, 0}, RED);
-  render_line(ctx, origin, (Vec3f){0, 1, 0}, GREEN);
-  render_line(ctx, origin, (Vec3f){0, 0, 1}, BLUE);
+  render_line(ctx, origin, {1, 0, 0}, RED);
+  render_line(ctx, origin, {0, 1, 0}, GREEN);
+  render_line(ctx, origin, {0, 0, 1}, BLUE);
   render_line(ctx, origin, ctx->light, WHITE);
 }
 
@@ -623,9 +626,11 @@ static void initialize(State *state, DrawingBuffer *buffer)
   ctx->clear_color = BLACK;
 
   ctx->model_mat = Mat44::identity();
-  ctx->viewport_mat = viewport_matrix(buffer->width, buffer->height, true);
-  ctx->projection_mat = perspective_matrix(0.1, 10, 60);
-  ctx->light = ((Vec3f){0, -1, 0}).normalized();
+  ctx->viewport_mat = viewport_matrix((float) buffer->width, (float) buffer->height, true);
+  ctx->projection_mat = perspective_matrix(0.1f, 10.0f, 60.0f);
+
+  ctx->light = { 0, -1, 0 };
+  ctx->light = ctx->light.normalized();
 
   ctx->zbuffer = (zval_t *) state->main_arena->allocate(buffer->width * buffer->height * sizeof(zval_t));
 
@@ -662,17 +667,17 @@ static void initialize(State *state, DrawingBuffer *buffer)
   // state->textures[0] = load_texture(state, (char *) "data/misc/riding_horse_0.tga");
   // state->textures[1] = load_texture(state, (char *) "data/misc/riding_horse_1.tga");
 
-  state->xRot = RAD(15.0);
-  state->yRot = 0.0;
-  state->fov = 60.0;
-  state->camDistance = 1.0;
+  state->xRot = RAD(15.0f);
+  state->yRot = 0.0f;
+  state->fov = 60.0f;
+  state->camDistance = 1.0f;
 
   memset(&state->render_flags, 1, sizeof(state->render_flags)); // Set all flags
-  state->hsv = (Vec3f){260.0, 0.33, 1.0};
-  state->sat_deg = RAD(109);
+  state->hsv = { 260.0f, 0.33f, 1.0f };
+  state->sat_deg = RAD(109.0f);
   
   state->hair = 6;
-  state->scale = 0.4;
+  state->scale = 0.4f;
 
   state->playing = true;
   state->showBones = false;
@@ -695,14 +700,14 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
   subctx.clear_color = BLACK;
 
   subctx.model_mat = Mat44::identity();
-  subctx.viewport_mat = viewport_matrix(shadowmap->width, shadowmap->height, true);
-  subctx.projection_mat = orthographic_matrix(0.1, 10, -1, -1, 1, 1);
+  subctx.viewport_mat = viewport_matrix((float) shadowmap->width, (float) shadowmap->height, true);
+  subctx.projection_mat = orthographic_matrix(0.1f, 10.0f, -1.0f, -1.0f, 1.0f, 1.0f);
 
   ASSERT(shadowmap->width * shadowmap->height < ctx->target->width * ctx->target->height); // Check we won't overflow zbuffer
   subctx.zbuffer = ctx->zbuffer;
 
   // HACK: Multiplication by 5 so camera doesn't end up inside geometry
-  subctx.view_mat = look_at_matrix(ctx->light * 5, (Vec3f){0, 0, 0}, (Vec3f){0, 1, 0});
+  subctx.view_mat = look_at_matrix(ctx->light * 5, {0, 0, 0}, {0, 1, 0});
   precalculate_matrices(&subctx);
 
   state->matShadowMVP = subctx.modelview_mat * subctx.projection_mat * subctx.viewport_mat;
@@ -714,17 +719,17 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
     for (int j = 0; j < shadowmap->height; j++) {
       zval_t zval = subctx.zbuffer[j * shadowmap->width + i];
       float v = (float) zval / ZBUFFER_MAX;
-      shadowmap->pixels[j * shadowmap->width + i] = (Vec3f){v, v, v};
+      shadowmap->pixels[j * shadowmap->width + i] = { v, v, v };
     }
   }
 }
 
-#define Y_RAD_PER_SEC RAD(120.0)
-#define X_RAD_PER_SEC RAD(120.0)
-#define FOV_DEG_PER_SEC 30.0
-#define CAM_DIST_PER_SEC 1.0
-#define HUE_PER_SEC 120.0
-#define SATURATION_PER_SEC RAD(120.0)
+#define Y_RAD_PER_SEC RAD(120.0f)
+#define X_RAD_PER_SEC RAD(120.0f)
+#define FOV_DEG_PER_SEC 30.0f
+#define CAM_DIST_PER_SEC 1.0f
+#define HUE_PER_SEC 120.0f
+#define SATURATION_PER_SEC RAD(120.0f)
 
 static bool update_animation(State *state, float dt)
 {
@@ -791,26 +796,26 @@ static void update_camera(State *state, float dt)
 
   if (KEY_IS_DOWN(state->keyboard, KB_LEFT_ALT)) {
     state->scale -= da;
-    state->scale = CLAMP(state->scale, 0.1, 5.0);
+    state->scale = CLAMP(state->scale, 0.1f, 5.0f);
   } else {
     state->camDistance += da;
-    state->camDistance = CLAMP(state->camDistance, 0.7, 3.0);
+    state->camDistance = CLAMP(state->camDistance, 0.7f, 3.0f);
   }
 
   if (KEY_IS_DOWN(state->keyboard, KB_H)) {
     state->hsv.x += HUE_PER_SEC * dt;
   }
 
-  if (state->hsv.x > 360.0) {
-    state->hsv.x -= 360.0;
+  if (state->hsv.x > 360.0f) {
+    state->hsv.x -= 360.0f;
   }
 
   if (KEY_IS_DOWN(state->keyboard, KB_C)) {
     state->sat_deg += SATURATION_PER_SEC * dt;
   }
 
-  if (state->sat_deg > RAD(360.0)) {
-    state->sat_deg -= RAD(360.0);
+  if (state->sat_deg > RAD(360.0f)) {
+    state->sat_deg -= RAD(360.0f);
   }
 
   bool update_anim = false;
@@ -850,7 +855,7 @@ static void update_camera(State *state, float dt)
     animate_model(state);
   }
 
-  state->hsv.y = cos(state->sat_deg) * 0.5 + 0.5; // map to 0..1
+  state->hsv.y = cos(state->sat_deg) * 0.5f + 0.5f; // map to 0..1
 }
 
 static void handle_input(State *state)
@@ -936,7 +941,9 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
     state->shadowmap->height = 512;
     state->shadowmap->pixels = (Vec3f *) state->main_arena->allocate(sizeof(Vec3f) * state->shadowmap->width * state->shadowmap->height);
 
-    ctx->light = ((Vec3f){0.5, 1, 0.5}).normalized();
+    ctx->light = { 0.5, 1, 0.5 };
+    ctx->light = ctx->light.normalized();
+
     render_shadowmap(state, ctx, state->model, state->shadowmap);
   }
 
@@ -955,24 +962,14 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
   update_camera(state, dt);
   handle_input(state);
 
-  ctx->viewport_mat = viewport_matrix(state->screenWidth, state->screenHeight, true);
-  ctx->projection_mat = perspective_matrix(0.1, 10, state->fov);
+  ctx->viewport_mat = viewport_matrix((float) state->screenWidth, (float) state->screenHeight, true);
+  ctx->projection_mat = perspective_matrix(0.1f, 10.0f, state->fov);
 
   //ctx->view_mat = look_at_matrix((Vec3f){0, 0, 1}, (Vec3f){0, 0.35, 0}, (Vec3f){0, 1, 0});
   ctx->view_mat = Mat44::rotate_y(-state->yRot) *
-                  Mat44::translate(0, -0.5, 0) *
+                  Mat44::translate(0.0f, -0.5f, 0.0f) *
                   Mat44::rotate_x(-state->xRot) *
-                  Mat44::translate(0, 0, -state->camDistance);
-
-  Quaternion q1 = Quaternion::axisAngle((Vec3f){0, 1, 0}, state->yRot);
-  //Vec3f newx = q1 * (Vec3f){1, 0, 0} * q1.conjugate();
-  Quaternion q2 = Quaternion::axisAngle((Vec3f){1, 0, 0}, state->xRot);
-  Quaternion q3 = q1 * q2;
-  Mat44 mat = Mat44::from_quaternion(q3);
-  Vec3f p1 = (Vec3f){0, 0, 1} * mat;
-  Vec3f p2 = (q2 * (Vec3f){0, 0, 1} * q2.conjugate());
-  Vec3f p3 = (q3 * (Vec3f){0, 0, 1} * q3.conjugate());
-  //ctx->view_mat = look_at_matrix((Vec3f){0, 1, 1}, (Vec3f){0, 0, 0}, (Vec3f){0, 1, 0});
+                  Mat44::translate(0.0f, 0.0f, -state->camDistance);
 
   clear_buffer(ctx);
   clear_zbuffer(ctx);
@@ -995,3 +992,23 @@ C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buff
     render_debug_texture(state, ctx, state->shadowmap, 10, 10, 400);
   }
 }
+
+#ifdef _WIN32
+#include "Windows.h"
+
+BOOLEAN WINAPI DllMain(IN HINSTANCE hDllHandle,
+                       IN DWORD     nReason,
+                       IN LPVOID    Reserved)
+{
+  switch (nReason) {
+    case DLL_PROCESS_ATTACH:
+      DisableThreadLibraryCalls(hDllHandle);
+      break;
+
+    case DLL_PROCESS_DETACH:
+      break;
+  }
+
+  return true;
+}
+#endif
