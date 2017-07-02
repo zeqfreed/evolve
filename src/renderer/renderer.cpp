@@ -10,13 +10,13 @@ static inline uint32_t rgba_color(Vec3f color)
 
 static inline void set_pixel(DrawingBuffer *buffer, int32_t x, int32_t y, Vec3f color)
 {
-  int idx = (y * buffer->pitch + x) * buffer->bits_per_pixel;
+  int idx = (y * buffer->pitch + x) * buffer->bytes_per_pixel;
   *((uint32_t *) &((uint8_t *)buffer->pixels)[idx]) = rgba_color(color);
 }
 
 static inline void set_pixel(DrawingBuffer *buffer, int32_t x, int32_t y, uint32_t rgba)
 {
-  int idx = (y * buffer->pitch + x) * buffer->bits_per_pixel;
+  int idx = (y * buffer->pitch + x) * buffer->bytes_per_pixel;
   *((uint32_t *) &((uint8_t *)buffer->pixels)[idx]) = rgba;
 }
 

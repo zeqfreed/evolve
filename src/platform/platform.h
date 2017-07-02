@@ -31,7 +31,7 @@ typedef struct DrawingBuffer {
   uint32_t width;
   uint32_t height;
   uint32_t pitch;
-  uint32_t bits_per_pixel;  
+  uint32_t bytes_per_pixel;  
   void *pixels;
 } DrawingBuffer;
 
