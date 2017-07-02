@@ -12,7 +12,7 @@ set BFLAGS=/Fd%BUILDDIR%\
 set CFLAGS=/Zi /EHsc
 set WFLAGS=/W4 /wd4018 /wd4100 /wd4201 /wd4505 /wd4996 /WX
 
-cl.exe -Isrc src\windows\main.cpp user32.lib %BFLAGS% %CFLAGS% %WFLAGS% /Fo%BUILDDIR%\evolve.obj /Fe%EXE%
+cl.exe -Isrc src\windows\main.cpp user32.lib kernel32.lib gdi32.lib %BFLAGS% %CFLAGS% %WFLAGS% /Fo%BUILDDIR%\evolve.obj /Fe%EXE%
 if not %errorlevel% == 0 goto :error
 
 cl.exe -Isrc src\viewer\main.cpp /LD %BFLAGS% %CFLAGS% %WFLAGS% /Fo%BUILDDIR%\viewer.obj /Fe%EXEDIR%\viewer.dll
