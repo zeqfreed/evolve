@@ -5,6 +5,12 @@
 // Vec3f
 //
 
+inline Vec3f Vec3f::make(float x, float y, float z)
+{
+  Vec3f result = {x, y, z};
+  return result;
+}
+
 inline Vec3f operator+(Vec3f a, Vec3f b)
 {
   return {a.x + b.x, a.y + b.y, a.z + b.z};

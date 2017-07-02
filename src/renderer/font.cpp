@@ -23,7 +23,7 @@ FRAGMENT_FUNC(fragment_text)
   int v = ((int) fv) & d->clampv;
   Vec3f tcolor = d->texture->pixels[v * d->texture->width + u];
 
-  *color = (Vec3f){tcolor.r, tcolor.g, tcolor.b};
+  *color = {tcolor.r, tcolor.g, tcolor.b};
 
   return tcolor.r;
 }
@@ -50,16 +50,16 @@ void Font::render_string(RenderingContext *ctx, float x, float y, const char *st
     uint32_t chy = chidx / spec.chars_per_line;
 
     Vec3f texture_coords[4] = {};
-    texture_coords[0] = (Vec3f){chx * spec.char_width, texture->height - chy * spec.char_height, 0};
-    texture_coords[1] = texture_coords[0] + (Vec3f){0, -spec.char_height, 0};
-    texture_coords[2] = texture_coords[0] + (Vec3f){spec.char_width - 1, -spec.char_height, 0};
-    texture_coords[3] = texture_coords[0] + (Vec3f){spec.char_width - 1, 0, 0};
+    texture_coords[0] = {(float) (chx * spec.char_width), (float) (texture->height - chy * spec.char_height), 0};
+    texture_coords[1] = texture_coords[0] + Vec3f::make(0.0f, (float) -spec.char_height, 0.0f);
+    texture_coords[2] = texture_coords[0] + Vec3f::make((float) spec.char_width - 1.0f, (float) -spec.char_height, 0.0f);
+    texture_coords[3] = texture_coords[0] + Vec3f::make((float) spec.char_width - 1.0f, 0.0f, 0.0f);
 
     Vec3f positions[4] = {};
-    positions[0] = (Vec3f){xoffset + x, y, 0};
-    positions[1] = positions[0] + (Vec3f){0, spec.char_height, 0};
-    positions[2] = positions[0] + (Vec3f){spec.char_width, spec.char_height, 0};
-    positions[3] = positions[0] + (Vec3f){spec.char_width, 0, 0};
+    positions[0] = {xoffset + x, y, 0};
+    positions[1] = positions[0] +  Vec3f::make(0.0f, (float) spec.char_height, 0.0f);
+    positions[2] = positions[0] +  Vec3f::make((float) spec.char_width, (float) spec.char_height, 0.0f);
+    positions[3] = positions[0] +  Vec3f::make((float) spec.char_width, 0.0f, 0.0f);
 
     for (int i = 0; i < 4; i++) {
       positions[i] = positions[i] * ctx->mvp_mat;

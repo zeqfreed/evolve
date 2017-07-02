@@ -69,6 +69,11 @@ typedef union Vec3f {
     float b;
   };
 
+  constexpr Vec3f(): x(0.0f), y(0.0f), z(0.0f) {};
+  constexpr Vec3f(const float x, const float y, const float z): x(x), y(y), z(z) {};
+
+  static Vec3f make(float x, float y, float z);
+
   Vec3f cross(Vec3f v);
   float dot(Vec3f v);
   float length();
@@ -105,6 +110,10 @@ typedef union Quaternion {
     float z;
     float w;
   };
+
+  constexpr Quaternion(): x(0.0f), y(0.0f), z(0.0f), w(0.0f) {};
+  constexpr Quaternion(const Vec3f v, const float w = 0.0f): x(v.x), y(v.y), z(v.z), w(w) {};
+  constexpr Quaternion(const float x, const float y, const float z, const float w): x(x), y(y), z(z), w(w) {};
 
   float length();
   Quaternion normalized();

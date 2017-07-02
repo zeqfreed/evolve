@@ -255,7 +255,7 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
     model->animatedPositions[i] = model->positions[i];
     model->normals[i] = -(vertices[i].normal * worldMat);
     model->animatedNormals[i] = model->normals[i];
-    model->textureCoords[i] = {vertices[i].texcoords[0], vertices[i].texcoords[1]};
+    model->textureCoords[i] = {vertices[i].texcoords[0], vertices[i].texcoords[1], 0.0f};
 
     for (int wi = 0; wi < model->weightsPerVertex; wi++) {
       ModelVertexWeight vw = {};

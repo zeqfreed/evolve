@@ -530,11 +530,16 @@ static void render_debug_texture(State *state, RenderingContext *ctx, Texture *t
 
   float height = width * ((float) texture->height / (float) texture->width);
 
-  Vec3f positions[4];
-  positions[0] = {x, y + height, 0.0} * ctx->mvp_mat;
-  positions[1] = {x + width, y + height, 0.0} * ctx->mvp_mat;
-  positions[2] = {x + width, y, 0.0} * ctx->mvp_mat;
-  positions[3] = {x, y, 0.0} * ctx->mvp_mat;
+  Vec3f positions[4] = {
+    {x, y + height, 0.0},
+    {x + width, y + height, 0.0},
+    {x + width, y, 0.0},
+    {x, y, 0.0}
+  };
+
+  for (uint32_t i = 0; i < 4; i++) {
+    positions[i] = positions[i] * ctx->mvp_mat;
+  }
 
   DebugShaderData shader_data = {};
   shader_data.clampu = texture->width - 1;

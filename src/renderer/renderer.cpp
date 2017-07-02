@@ -22,8 +22,6 @@ static inline void set_pixel(DrawingBuffer *buffer, int32_t x, int32_t y, uint32
 
 static inline void set_pixel_safe(DrawingBuffer *buffer, uint32_t x, uint32_t y, Vec3f color)
 {
-  if (x < 0) { return; }
-  if (y < 0) { return; }
   if (x >= buffer->width) { return; }
   if (y >= buffer->height) { return; }
 
