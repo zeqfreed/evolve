@@ -1,10 +1,9 @@
 #include <cstdio>
 #include <cstdint>
 
-#define UNICODE
-
 #include <Windows.h>
-#include <wchar.h>
+
+#include "platform/platform.h"
 
 #define WIDTH 1024
 #define HEIGHT 768
@@ -30,7 +29,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
   return 0;
 }
 
-HWND create_window(HINSTANCE hInstance, uint16_t width, uint16_t height, wchar_t *title)
+HWND create_window(HINSTANCE hInstance, uint16_t width, uint16_t height, char *title)
 {
 	WNDCLASSEX wndClass = {};
 	wndClass.cbSize = sizeof(WNDCLASSEX);
@@ -39,10 +38,10 @@ HWND create_window(HINSTANCE hInstance, uint16_t width, uint16_t height, wchar_t
   wndClass.hCursor = LoadCursor(NULL, IDC_ARROW);
   wndClass.hIcon = LoadIcon(NULL, IDI_APPLICATION);
 	wndClass.lpfnWndProc = WndProc;
-	wndClass.lpszClassName = L"evolveWindowClass";
+	wndClass.lpszClassName = "evolveWindowClass";
 
 	if (!RegisterClassEx(&wndClass)) {
-		MessageBox(NULL, L"RegisterClassEx failed!", L"Evolve", NULL);
+		MessageBox(NULL, "RegisterClassEx failed!", "Evolve", NULL);
 		return false;
 	}
 
@@ -64,12 +63,69 @@ HWND create_window(HINSTANCE hInstance, uint16_t width, uint16_t height, wchar_t
   return wnd;
 }
 
+static HMODULE dllHandle = NULL;
+static DrawFrameFunc drawFrame = NULL;
+
+bool load_library(char *filename)
+{
+  printf("Loading library: %s\n", filename);
+  HMODULE newHandle = LoadLibrary(filename);
+  if (!newHandle) {
+    printf("Failed to load library: %s\n", filename);
+    return false;
+  }
+
+  DrawFrameFunc newDrawFrame = (DrawFrameFunc) GetProcAddress(newHandle, "draw_frame");
+  if (!newDrawFrame) {
+    printf("GetProcAddress for draw_frame failed\n");
+    FreeLibrary(newHandle);
+    return false;
+  }
+
+  if (dllHandle) {
+    FreeLibrary(dllHandle);
+  }
+
+  dllHandle = newHandle;
+  drawFrame = newDrawFrame;
+  return true;
+}
+
+inline void prepare_console()
+{
+  AllocConsole();
+  freopen("CONOUT$", "w", stdout);
+}
+
 int WINAPI WinMain(HINSTANCE hInstance,
                    HINSTANCE hPrevInstance,
                    LPSTR lpCmdLine,
                    int nCmdShow)
 {
-  HWND wnd = create_window(hInstance, WIDTH, HEIGHT, L"evolve");
+  prepare_console();
+
+  char module[255] = {};
+  if (strlen(lpCmdLine) > 0) {
+    uint32_t idx = 0;
+    while (idx < sizeof(module) && lpCmdLine[idx] != ' ') {
+      module[idx] = lpCmdLine[idx];
+      idx++;
+    }
+  }
+
+  char dllPath[255] = {};
+  if (strlen(module) > 0) {
+    snprintf(dllPath, sizeof(dllPath), "%s.dll", (char *) module);
+  } else {
+    printf("Supply a module name\n");
+    exit(1);
+  };
+
+  if (load_library(dllPath)) {
+    printf("Loaded module: %s\n", dllPath);
+  }
+
+  HWND wnd = create_window(hInstance, WIDTH, HEIGHT, "evolve");
   if (!wnd) {
     return 1;
   }
