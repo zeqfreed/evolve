@@ -8,6 +8,8 @@ typedef struct Texture{
 
 #define TGA_ATTRIBUTES_PER_PIXEL_MASK 0b111
 
+PACK_START(1);
+
 typedef struct TgaHeader
 {
   uint8_t idLength;
@@ -23,6 +25,8 @@ typedef struct TgaHeader
   uint8_t pixelDepth;
   uint8_t imageDescriptor;
 } PACKED TgaHeader;
+
+PACK_END();
 
 typedef struct TgaImage {
   TgaHeader header;

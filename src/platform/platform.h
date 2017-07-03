@@ -19,8 +19,18 @@
 #endif
 
 #ifdef _MSC_VER
-#define PACKED __declspec(align(1))
+#define EXPORT __declspec(dllexport)
 #else
+#define EXPORT
+#endif
+
+#ifdef _MSC_VER
+#define PACK_START(n) __pragma(pack(push, n))
+#define PACK_END(...) __pragma(pack(pop))
+#define PACKED
+#else
+#define PACK_START(...)
+#define PACK_END(...)
 #define PACKED __attribute__((packed))
 #endif
 
