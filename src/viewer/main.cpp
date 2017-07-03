@@ -913,7 +913,7 @@ static void handle_input(State *state)
   }
 }
 
-C_LINKAGE void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer, float dt)
+C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer, float dt)
 {
   State *state = (State *) global_state->state;
 

@@ -8,8 +8,9 @@ set EXE="%EXEDIR%\evolve"
 if not exist %BUILDDIR% mkdir %BUILDDIR%
 if not exist %EXEDIR% mkdir %EXEDIR%
 
-set BFLAGS=/Fd%BUILDDIR%\
-set CFLAGS=/Zi /EHsc
+set BFLAGS=/DCOLOR_BGR /Fd%BUILDDIR%\
+REM set CFLAGS=/MP /Zi /EHsc /FC
+set CFLAGS=/MP /Ox /EHsc /FC
 set WFLAGS=/W4 /wd4018 /wd4100 /wd4201 /wd4505 /wd4996 /WX
 
 cl.exe -Isrc src\windows\main.cpp user32.lib kernel32.lib gdi32.lib %BFLAGS% %CFLAGS% %WFLAGS% /Fo%BUILDDIR%\evolve.obj /Fe%EXE%
@@ -25,7 +26,8 @@ goto :success
 
 :error
 REM Error
-exit 1
+exit /B 1
 
 :success
 REM Success
+exit /B 0

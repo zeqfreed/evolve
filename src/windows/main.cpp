@@ -8,8 +8,12 @@
 
 #include "platform/platform.h"
 
+#include "windows/fs.cpp"
+
 #define WIDTH 1024
 #define HEIGHT 768
+
+#define FRAMES_TO_UPDATE_FPS 30
 
 static volatile bool gameRunning = false;
 static HMODULE dllHandle = NULL;
@@ -17,6 +21,7 @@ static DrawFrameFunc drawFrame = NULL;
 static KeyboardState keyboardState;
 static BITMAPINFO bmi = {};
 static HDC targetDC = NULL;
+static HWND gameWindow = NULL;
 
 inline void blit_buffer(DrawingBuffer *buffer)
 {
@@ -126,6 +131,24 @@ static void windows_handle_events()
   }
 }
 
+C_LINKAGE void *windows_allocate_memory(size_t size)
+{
+  void *result = calloc(size, 1);
+  return result;
+}
+
+C_LINKAGE void windows_terminate()
+{
+  gameRunning = false;
+}
+
+static void update_fps(float frameMs, float fps)
+{
+  char buf[255];
+  snprintf(buf, 255, "Evolve - %.2f ms / %.1f FPS", frameMs, fps);
+  SetWindowText(gameWindow, buf);
+}
+
 void test_draw_frame(GlobalState *state, DrawingBuffer *buffer, float dt)
 {
   static float start = 0.0f;
@@ -183,14 +206,14 @@ int WINAPI WinMain(HINSTANCE hInstance,
     printf("Loaded module: %s\n", dllPath);
   }
 
-  drawFrame = test_draw_frame;
+  //drawFrame = test_draw_frame;
 
-  HWND wnd = create_window(hInstance, WIDTH, HEIGHT, "evolve");
-  if (!wnd) {
+  gameWindow = create_window(hInstance, WIDTH, HEIGHT, "Evolve");
+  if (!gameWindow) {
     return 1;
   }
 
-  targetDC = GetDC(wnd);
+  targetDC = GetDC(gameWindow);
 
   uint32_t bytesPerPixel = 4;
 
@@ -209,10 +232,10 @@ int WINAPI WinMain(HINSTANCE hInstance,
   bmi.bmiHeader.biCompression = BI_RGB;
 
   GlobalState state = {};
-  // state.platform_api.get_file_size = macos_fs_size;
-  // state.platform_api.read_file_contents = macos_fs_read;
-  // state.platform_api.allocate_memory = macos_allocate_memory;
-  // state.platform_api.terminate = macos_terminate;
+  state.platform_api.get_file_size = windows_fs_size;
+  state.platform_api.read_file_contents = windows_fs_read;
+  state.platform_api.allocate_memory = windows_allocate_memory;
+  state.platform_api.terminate = windows_terminate;
   
   state.keyboard = &keyboardState; 
 
@@ -228,7 +251,24 @@ int WINAPI WinMain(HINSTANCE hInstance,
 
   QueryPerformanceCounter((LARGE_INTEGER *) &start);
 
-  while (gameRunning) {
+  uint32_t frames = 0;
+  float averageFps = 0;
+  float acc = 0;
+
+  while(gameRunning) {
+    if (frames >= FRAMES_TO_UPDATE_FPS) {
+      averageFps = (float) FRAMES_TO_UPDATE_FPS / acc;
+      update_fps((acc / (float) FRAMES_TO_UPDATE_FPS) * 1000.0f, averageFps);
+      acc = 0.0f;
+      frames = 0;
+
+      // if (averageFps >= 60.0) {
+      //   targetMsPerFrame = 1000 / 60.0;
+      // } else {
+      //   targetMsPerFrame = 1000 / 30.0;
+      // }
+    }
+
     windows_handle_events();
 
     if (drawFrame) {
@@ -239,6 +279,9 @@ int WINAPI WinMain(HINSTANCE hInstance,
     QueryPerformanceCounter((LARGE_INTEGER *) &end);
     lastFrameTotal = (end - start) * countsToSeconds;
     start = end;
+
+    acc += lastFrameTotal;
+    frames++;
   }
 
 	return 0;

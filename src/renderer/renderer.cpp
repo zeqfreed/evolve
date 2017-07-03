@@ -5,7 +5,12 @@ static inline uint32_t rgba_color(Vec3f color)
   uint8_t r = (uint8_t) (255.0 * color.r);
   uint8_t g = (uint8_t) (255.0 * color.g);
   uint8_t b = (uint8_t) (255.0 * color.b);
+
+#if COLOR_BGR
+  return (0xFF000000 | (r << 16) | (g << 8) | b);
+#else
   return (0xFF000000 | (b << 16) | (g << 8) | r);
+#endif
 }
 
 static inline void set_pixel(DrawingBuffer *buffer, int32_t x, int32_t y, Vec3f color)
