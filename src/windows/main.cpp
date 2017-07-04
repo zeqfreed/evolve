@@ -9,6 +9,7 @@
 #include "platform/platform.h"
 
 #include "windows/fs.cpp"
+#include "windows/keyboard.cpp"
 
 #define WIDTH 1024
 #define HEIGHT 768
@@ -36,12 +37,72 @@ inline void blit_buffer(DrawingBuffer *buffer)
   );
 }
 
+inline uint32_t map_keycode(WPARAM wParam, LPARAM lParam)
+{
+  uint32_t result = wParam;
+
+  switch (wParam) {
+    case VK_SHIFT: {
+      uint32_t scancode = (lParam & 0x00ff0000) >> 16;
+      result = MapVirtualKey(scancode, MAPVK_VSC_TO_VK_EX);
+    }; break;
+  
+    case VK_CONTROL: {
+      uint32_t extended  = (lParam & 0x01000000) >> 23;
+      result = VK_LCONTROL + extended;
+    }; break;
+
+    case VK_MENU: {
+      uint32_t extended  = (lParam & 0x01000000) >> 23;
+      result = VK_LMENU + extended;
+    }; break;
+
+    default:
+      break;
+  }
+
+  return result;
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
   switch (message) {
+    case WM_KEYDOWN: {
+      uint32_t keyCode = map_keycode(wParam, lParam);
+      keyboard_state_key_down(&keyboardState, KEYBOARD_CODE(keyCode));
+    }; break;
+
+    case WM_KEYUP: {
+      uint32_t keyCode = map_keycode(wParam, lParam);
+      keyboard_state_key_up(&keyboardState, KEYBOARD_CODE(keyCode));
+    }; break;
+
+    case WM_SYSKEYDOWN: {
+      uint32_t keyCode = map_keycode(wParam, lParam);
+      keyboard_state_key_down(&keyboardState, KEYBOARD_CODE(keyCode));
+    }; break;
+
+    case WM_SYSKEYUP: {
+      uint32_t keyCode = map_keycode(wParam, lParam);
+      keyboard_state_key_up(&keyboardState, KEYBOARD_CODE(keyCode));
+    }; break;              
+
     case WM_DESTROY:
       gameRunning = false;
       PostQuitMessage(0);
+      break;
+
+    case WM_SYSCOMMAND:
+      if (wParam == SC_KEYMENU && (lParam>>16) <= 0) return 0;  
+      return DefWindowProc(hWnd, message, wParam, lParam);
+      break;
+
+    case WM_SETFOCUS:
+      // TODO: Disable sticky keys and other accessibility features when app is active
+      break;
+
+    case WM_KILLFOCUS:
+      keyboard_clear_state(&keyboardState);
       break;
 
     default:
@@ -269,6 +330,7 @@ int WINAPI WinMain(HINSTANCE hInstance,
       // }
     }
 
+    keyboard_clear_state_changes(&keyboardState);
     windows_handle_events();
 
     if (drawFrame) {
