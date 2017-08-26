@@ -2,12 +2,14 @@
 
 #include "platform/platform.h"
 
-#include "renderer/math.cpp"
-#include "renderer/tga.cpp"
-#include "renderer/renderer.cpp"
-#include "renderer/font.cpp"
+#include "utils/math.cpp"
+#include "utils/tga.cpp"
+#include "utils/texture.cpp"
 #include "utils/memory.cpp"
 #include "utils/assets.cpp"
+
+#include "renderer/renderer.cpp"
+#include "renderer/font.cpp"
 
 #ifndef CUBES_GRID_SIZE
 #define CUBES_GRID_SIZE 6
@@ -78,8 +80,8 @@ FRAGMENT_FUNC(fragment)
   int u = ((int) fu) & (128 - 1);
   int v = ((int) fv) & (16 - 1);
 
-  Vec3f tcolor = texture->pixels[v * texture->width + u];
-  *color = {tcolor.r, tcolor.g, tcolor.b};
+  Vec3f tcolor = TEXEL3F(texture, u, v);
+  *color = {tcolor.r, tcolor.g, tcolor.b, 1.0f};
 
   return true;
  }
@@ -102,11 +104,7 @@ static Texture *load_texture(State *state, char *filename)
   printf("X offset: %d; Y offset: %d; FlipX: %d; FlipY: %d\n",
          header->xOffset, header->yOffset, image.flipX, image.flipY);
   
-  Texture *texture = (Texture *) state->main_arena->allocate(sizeof(Texture));
-  texture->width = header->width;
-  texture->height = header->height;
-  texture->pixels = (Vec3f *) state->main_arena->allocate(sizeof(Vec3f) * texture->width * texture->height);
-
+  Texture *texture = texture_create(state->main_arena, header->width, header->height);
   image.read_into_texture(file.contents, file.size, texture);
   return texture;
 }
@@ -114,8 +112,7 @@ static Texture *load_texture(State *state, char *filename)
 static void initialize(State *state, DrawingBuffer *buffer)
 {
   RenderingContext *ctx = &state->rendering_context;
-  ctx->target = buffer;
-  ctx->clear_color = BLACK;
+  set_target(ctx, buffer);
 
   ctx->model_mat = Mat44::identity();
   ctx->projection_mat = perspective_matrix(0.1f, 10.0f, 60.0f);
@@ -307,7 +304,7 @@ static void render_cubes(State *state, RenderingContext *ctx)
       data.duv[0] = data.uvs[1] - data.uvs[0];
       data.duv[1] = data.uvs[2] - data.uvs[0];
 
-      draw_triangle(ctx, &fragment, (void *) &data, positions[0], positions[1], positions[2]);
+      ctx->draw_triangle(ctx, &fragment, (void *) &data, positions[0], positions[1], positions[2]);
     }
   }
 }
@@ -360,12 +357,24 @@ static void update_camera(State *state, float dt)
   state->fov = CLAMP(state->fov, 3.0f, 170.0f);
 }
 
+static inline void clear_buffer(DrawingBuffer *buffer, Vec4f color)
+{
+  uint32_t iterCount = (buffer->width * buffer->height) / 4;
+
+  __m128i value = _mm_set1_epi32(rgba_color(color));
+  __m128i *p = (__m128i *) buffer->pixels;
+
+  while (iterCount--) {
+    *p++ = value;
+  }
+}
+
 C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer, float dt)
 {
   State *state = (State *) global_state->state;
 
   if (!state) {
-    MemoryArena *arena = MemoryArena::initialize(global_state->platform_api.allocate_memory(MB(16)), MB(16));
+    MemoryArena *arena = MemoryArena::initialize(global_state->platform_api.allocate_memory(MB(64)), MB(64));
 
     state = (State *) arena->allocate(MB(1));
     global_state->state = state;
@@ -396,7 +405,7 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
 
   update_camera(state, dt);
 
-  clear_buffer(ctx);
+  clear_buffer(drawing_buffer, {0.0f, 0.0f, 0.0f, 0.0f});
   clear_zbuffer(ctx);
 
   render_cubes(state, ctx);

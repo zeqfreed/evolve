@@ -1,10 +1,12 @@
 #include "platform/platform.h"
 
-#include "renderer/math.cpp"
-#include "renderer/tga.cpp"
-#include "renderer/renderer.cpp"
+#include "utils/math.cpp"
+#include "utils/tga.cpp"
+#include "utils/texture.cpp"
 #include "utils/memory.cpp"
 #include "utils/assets.cpp"
+
+#include "renderer/renderer.cpp"
 
 #include "model.cpp"
 #include "m2.cpp"
@@ -46,6 +48,8 @@ typedef struct State {
   float sat_deg;
   uint32_t hair;
   float scale;
+
+  DrawingBuffer *buffer;
 
   uint32_t animId;
   uint32_t startFrame;
@@ -126,6 +130,7 @@ FRAGMENT_FUNC(fragment_model)
   Vec3f uv = d->uvs[0] * t0 + d->uvs[1] * t1 + d->uvs[2] * t2; 
 
   Vec3f texel;
+  Vec4f texel4;
   if (f->texture_mapping) {
     if (f->bilinear_filtering) {
       Vec3f muv;
@@ -139,24 +144,27 @@ FRAGMENT_FUNC(fragment_model)
 
       float dx = muv.x - tx0;
       float dy = muv.y - ty0;
-      Vec3f ta = texture->pixels[ty0*texture->width+tx0];
-      Vec3f tb = texture->pixels[ty0*texture->width+tx1];
-      Vec3f tc = texture->pixels[ty1*texture->width+tx0];
-      Vec3f td = texture->pixels[ty1*texture->width+tx1];
-      texel = lerp(lerp(ta, tb, dx), lerp(tc, td, dx), dy);
+      Vec4f ta = TEXEL4F(texture, tx0, ty0);
+      Vec4f tb = TEXEL4F(texture, tx1, ty0);
+      Vec4f tc = TEXEL4F(texture, tx0, ty1);
+      Vec4f td = TEXEL4F(texture, tx1, ty1);
+      texel4 = lerp(lerp(ta, tb, dx), lerp(tc, td, dx), dy);
+      texel = texel4.xyz;
     } else {
       int tx0 = (int)(uv.x * texture->width) & (texture->width - 1);
       int ty0 = (int)(uv.y * texture->height) & (texture->height - 1);
-      texel = texture->pixels[ty0*texture->width+tx0];
+      texel4 = TEXEL4F(texture, tx0, ty0);
+      texel = texel4.xyz;
     }
   } else {
     texel = d->color;
   }
 
+#if 0
   if (f->normal_mapping && d->normalmap) {
     int nx = (int)(uv.x * d->normalmap->width) & (d->normalmap->width - 1);
     int ny = (int)(uv.y * d->normalmap->height) & (d->normalmap->height - 1);
-    Vec3f ncolor = d->normalmap->pixels[ny*d->normalmap->width+nx];
+    Vec3f ncolor = TEXEL3F(d->normalmap, nx, ny);
     Vec3f tnormal = {2 * ncolor.r - 1, 2 * ncolor.g - 1, 2 * ncolor.b};
 
     Vec3f dp1 = d->pos[1] - d->pos[0];
@@ -176,6 +184,7 @@ FRAGMENT_FUNC(fragment_model)
     };
     normal = (tnormal * invTBN).normalized();
   }
+#endif  
 
   if (f->lighting) {
     intensity = normal.dot(-ctx->light);
@@ -188,7 +197,7 @@ FRAGMENT_FUNC(fragment_model)
   }
 
   Vec3f ambient = texel * 0.3f;
-  *color = (ambient + texel * intensity).clamped();
+  *color = Vec4f((ambient + texel * intensity).clamped(), texel4.a);
 
   return true;
 }
@@ -237,7 +246,7 @@ FRAGMENT_FUNC(fragment_floor)
 
     if (shadow.x >= 0 && shadow.y >= 0 &&
         shadow.x < shadowmap->width && shadow.y < shadowmap->height) {
-      Vec3f shval = shadowmap->pixels[shy * shadowmap->width + shx];
+      Vec3f shval = TEXEL3F(shadowmap, shx, shy);
 
       if (shval.x > 0.0f) {
         intensity = 0.2f;
@@ -246,7 +255,7 @@ FRAGMENT_FUNC(fragment_floor)
   }
 
   Vec3f rcolor = { vcolor.r * tcolor.r, vcolor.g * tcolor.g, vcolor.b * tcolor.b };
-  *color = (rcolor * intensity).clamped();
+  *color = Vec4f((rcolor * intensity).clamped(), 1.0f);
 
   return true;
 }
@@ -269,9 +278,9 @@ FRAGMENT_FUNC(fragment_debug)
 
   int u = ((int) fu) & d->clampu;
   int v = ((int) fv) & d->clampv;
-  Vec3f tcolor = d->texture->pixels[v * d->texture->width + u];
+  Vec3f tcolor = TEXEL3F(d->texture, u, v);
 
-  *color = {tcolor.r, tcolor.g, tcolor.b};
+  *color = {tcolor.r, tcolor.g, tcolor.b, 1.0f};
 
   return true;
 }
@@ -332,11 +341,7 @@ static Texture *load_texture(State *state, char *filename)
   printf("X offset: %d; Y offset: %d; FlipX: %d; FlipY: %d\n",
          header->xOffset, header->yOffset, image.flipX, image.flipY);
   
-  Texture *texture = (Texture *) state->main_arena->allocate(sizeof(Texture));
-  texture->width = header->width;
-  texture->height = header->height;
-  texture->pixels = (Vec3f *) state->main_arena->allocate(sizeof(Vec3f) * texture->width * texture->height);
-
+  Texture *texture = texture_create(state->main_arena, header->width, header->height);
   image.read_into_texture(file.contents, file.size, texture);
   return texture;
 }
@@ -385,7 +390,7 @@ static void render_floor(State *state, RenderingContext *ctx)
       shader_data.colors[i] = colors[tri][i] * iz;
     }
 
-    draw_triangle(ctx, &fragment_floor, (void *) &shader_data, positions[0], positions[1], positions[2]);
+    ctx->draw_triangle(ctx, &fragment_floor, (void *) &shader_data, positions[0], positions[1], positions[2]);
   }
 }
 
@@ -455,7 +460,7 @@ static void render_m2_model(State *state, RenderingContext *ctx, M2Model *model)
         positions[vi] = position * ctx->mvp_mat;
       }
 
-      draw_triangle(ctx, &fragment_model, (void *) &shader_data, positions[0], positions[1], positions[2]);
+      ctx->draw_triangle(ctx, &fragment_model, (void *) &shader_data, positions[0], positions[1], positions[2]);
     }
   }
 }
@@ -483,7 +488,7 @@ static inline void render_line(RenderingContext *ctx, Vec3f start, Vec3f end, Ve
   start = start * ctx->mvp_mat * ctx->viewport_mat;
   end = end * ctx->mvp_mat * ctx->viewport_mat;
 
-  draw_line(ctx->target, (int32_t) start.x, (int32_t) start.y, (int32_t) end.x, (int32_t) end.y, color);
+  // draw_line(ctx->target, (int32_t) start.x, (int32_t) start.y, (int32_t) end.x, (int32_t) end.y, color);
 }
 
 static void render_m2_model_bones(State *state, RenderingContext *ctx, M2Model *model)
@@ -508,7 +513,7 @@ static void render_m2_model_bones(State *state, RenderingContext *ctx, M2Model *
       render_line(ctx, p1, p2, color);
     } else {
       Vec3f pos = bone.pivot * bone.matrix * mat;
-      set_pixel_safe(ctx->target, (uint32_t) pos.x, (uint32_t) pos.y, color);
+      // set_pixel_safe(ctx->target, (uint32_t) pos.x, (uint32_t) pos.y, color);
     }
   }
 }
@@ -549,11 +554,11 @@ static void render_debug_texture(State *state, RenderingContext *ctx, Texture *t
   shader_data.uv0 = texture_coords[0];
   shader_data.duv[0] = texture_coords[1] - shader_data.uv0;
   shader_data.duv[1] = texture_coords[2] - shader_data.uv0;
-  draw_triangle(ctx, &fragment_debug, (void *) &shader_data, positions[0], positions[1], positions[2]);
+  ctx->draw_triangle(ctx, &fragment_debug, (void *) &shader_data, positions[0], positions[1], positions[2]);
 
   shader_data.duv[0] = texture_coords[2] - shader_data.uv0;
   shader_data.duv[1] = texture_coords[3] - shader_data.uv0;
-  draw_triangle(ctx, &fragment_debug, (void *) &shader_data, positions[0], positions[2], positions[3]);
+  ctx->draw_triangle(ctx, &fragment_debug, (void *) &shader_data, positions[0], positions[2], positions[3]);
 }
 
 static void render_unit_axes(RenderingContext *ctx)
@@ -607,7 +612,8 @@ static void enable_submeshes(State *state)
     501, // Default boots
     1101, // Default pants
     1301, // Default pants
-    1501 // Default back/cloak
+    1501, // Default back/cloak
+    1701 // Eyeglow
   };
 
   for (int si = 0; si < model->submeshesCount; si++) {
@@ -627,7 +633,7 @@ static void enable_submeshes(State *state)
 static void initialize(State *state, DrawingBuffer *buffer)
 {
   RenderingContext *ctx = &state->rendering_context;
-  ctx->target = buffer;
+  set_target(ctx, buffer);
   ctx->clear_color = BLACK;
 
   ctx->model_mat = Mat44::identity();
@@ -647,6 +653,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
   snprintf(diffuse_filename, 255, (char *) "data/%s_D.tga", basename);
   snprintf(normal_filename, 255, (char *) "data/%s_N.tga", basename);
 
+  state->buffer = buffer;
   state->screenWidth = buffer->width;
   state->screenHeight = buffer->height;
 
@@ -659,14 +666,22 @@ static void initialize(State *state, DrawingBuffer *buffer)
   // load_m2_model(state, (char *) "data/misc/dwarf.m2");
   // state->textures[0] = load_texture(state, (char *) "data/misc/dwarf_0.tga");
   // state->textures[1] = load_texture(state, (char *) "data/misc/dwarf_1.tga");
-  // state->textures[2] = load_texture(state, (char *) "data/misc/nelf_cape.tga");
-  // state->textures[3] = load_texture(state, (char *) "data/misc/nelf_eye_glow.tga");
+  // state->textures[2] = load_texture(state, (char *) "data/misc/cape.tga");
+  // state->textures[3] = load_texture(state, (char *) "data/misc/nelf_3.tga");
 
   // load_m2_model(state, (char *) "data/misc/diablo.m2");
   // state->textures[0] = load_texture(state, (char *) "data/misc/diablo_D.tga");
 
-  // load_m2_model(state, (char *) "data/misc/cat.m2");
-  // state->textures[0] = load_texture(state, (char *) "data/misc/cat_0.tga");
+  // load_m2_model(state, (char *) "data/misc/hydra.m2");
+  // state->textures[0] = load_texture(state, (char *) "data/misc/hydra_0.tga");
+
+  // load_m2_model(state, (char *) "data/misc/gnoll_caster.m2");
+  // state->textures[0] = load_texture(state, (char *) "data/misc/gnoll_caster_0.tga");
+  // state->textures[1] = load_texture(state, (char *) "data/misc/nelf_3.tga");
+
+  // load_m2_model(state, (char *) "data/misc/ent.m2");
+  // state->textures[0] = load_texture(state, (char *) "data/misc/ent_0.tga");
+  // state->textures[1] = state->textures[0];
 
   // load_m2_model(state, (char *) "data/misc/riding_horse.m2");
   // state->textures[0] = load_texture(state, (char *) "data/misc/riding_horse_0.tga");
@@ -695,14 +710,9 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
 static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, Texture *shadowmap)
 {
-  DrawingBuffer dummyTarget = *ctx->target;
-  dummyTarget.width = shadowmap->width;
-  dummyTarget.height = shadowmap->height;
-
   RenderingContext subctx = {};
 
-  subctx.target = &dummyTarget;
-  subctx.clear_color = BLACK;
+  set_target(&subctx, shadowmap);
 
   subctx.model_mat = Mat44::identity();
   subctx.viewport_mat = viewport_matrix((float) shadowmap->width, (float) shadowmap->height, true);
@@ -720,11 +730,11 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
   clear_zbuffer(&subctx);
   render_m2_model(state, &subctx, state->m2model);
 
-  for  (int i = 0; i < shadowmap->width; i++) {
+  for (int i = 0; i < shadowmap->width; i++) {
     for (int j = 0; j < shadowmap->height; j++) {
       zval_t zval = subctx.zbuffer[j * shadowmap->width + i];
       float v = (float) zval / ZBUFFER_MAX;
-      shadowmap->pixels[j * shadowmap->width + i] = { v, v, v };
+      shadowmap->pixels[j * shadowmap->width + i] = { v, v, v, 1.0 };
     }
   }
 }
@@ -913,6 +923,18 @@ static void handle_input(State *state)
   }
 }
 
+static inline void clear_buffer(DrawingBuffer *buffer, Vec4f color)
+{
+  uint32_t iterCount = (buffer->width * buffer->height) / 4;
+
+  __m128i value = _mm_set1_epi32(rgba_color(color));
+  __m128i *p = (__m128i *) buffer->pixels;
+
+  while (iterCount--) {
+    *p++ = value;
+  }
+}
+
 C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer, float dt)
 {
   State *state = (State *) global_state->state;
@@ -941,14 +963,10 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   RenderingContext *ctx = &state->rendering_context;
 
   if (!state->shadowmap) {
-    state->shadowmap = (Texture *) state->main_arena->allocate(sizeof(Texture));
-    state->shadowmap->width = 512;
-    state->shadowmap->height = 512;
-    state->shadowmap->pixels = (Vec3f *) state->main_arena->allocate(sizeof(Vec3f) * state->shadowmap->width * state->shadowmap->height);
-
     ctx->light = { 0.5, 1, 0.5 };
     ctx->light = ctx->light.normalized();
 
+    state->shadowmap = texture_create(state->main_arena, 512, 512);
     render_shadowmap(state, ctx, state->model, state->shadowmap);
   }
 
@@ -976,7 +994,8 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
                   Mat44::rotate_x(-state->xRot) *
                   Mat44::translate(0.0f, 0.0f, -state->camDistance);
 
-  clear_buffer(ctx);
+  set_target(ctx, state->buffer);
+  clear_buffer(state->buffer, {0.0f, 0.0f, 0.0f, 0.0f});
   clear_zbuffer(ctx);
 
   render_floor(state, ctx);

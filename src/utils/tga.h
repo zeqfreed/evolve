@@ -1,10 +1,6 @@
 #pragma once
 
-typedef struct Texture{
-    uint32_t width;
-    uint32_t height;
-    Vec3f *pixels;
-} Texture;
+#include "texture.h"
 
 #define TGA_ATTRIBUTES_PER_PIXEL_MASK 0b111
 
@@ -46,7 +42,7 @@ typedef struct TgaPixelIter {
   bool compressed;
   int rleCount;
   int rawCount;
-  Vec3f rleValue;
+  Vec4f rleValue;
 
   int bpp;
 
@@ -56,7 +52,7 @@ typedef struct TgaPixelIter {
 
   TgaPixelIter(TgaImage *image, uint8_t *pixelData);
   bool hasMore();
-  Vec3f next();
+  Vec4f next();
 
 private:
  

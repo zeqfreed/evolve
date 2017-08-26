@@ -34,9 +34,9 @@ bool TgaPixelIter::hasMore()
   return result;
 }
 
-Vec3f TgaPixelIter::next()
+Vec4f TgaPixelIter::next()
 {
-  Vec3f result = {};
+  Vec4f result = {};
 
   if (initialized) {
     if (image->flipX) {
@@ -67,9 +67,10 @@ Vec3f TgaPixelIter::next()
         uint8_t b = pixelData[0];
         uint8_t g = pixelData[1];
         uint8_t r = pixelData[2];
+        uint8_t a = pixelData[3];
         pixelData += bpp;
 
-        rleValue = {r / 255.0f, g / 255.0f, b / 255.0f};
+        rleValue = {r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f};
       } else {
         rawCount = (packet & 127) + 1;
       }
@@ -85,18 +86,20 @@ Vec3f TgaPixelIter::next()
       uint8_t b = pixelData[0];
       uint8_t g = pixelData[1];
       uint8_t r = pixelData[2];
+      uint8_t a = pixelData[3];
       pixelData += bpp;
 
-      result = {r / 255.0f, g / 255.0f, b / 255.0f};
+      result = {r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f};
     }
 
   } else {
     uint8_t b = pixelData[0];
     uint8_t g = pixelData[1];
     uint8_t r = pixelData[2];
+    uint8_t a = pixelData[3];
     pixelData += bpp;
 
-    result = {r / 255.0f, g / 255.0f, b / 255.0f};
+    result = {r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f};
   }
 
   pixelsRead++;
@@ -125,8 +128,10 @@ void TgaImage::read_into_texture(void *bytes, size_t size, Texture *texture)
   uint8_t *pixelData = (uint8_t *) ((uint8_t *)bytes + sizeof(TgaHeader)); // Doesn't account for ImageID or Palette
   TgaPixelIter iter = TgaPixelIter(this, pixelData);
 
+  ASSERT(iter.bpp == 4);
+
   while (iter.hasMore()) {
-    Vec3f pixel = iter.next();
+    Vec4f pixel = iter.next();
     texture->pixels[iter.y * header.width + iter.x] = pixel;
   }
 }

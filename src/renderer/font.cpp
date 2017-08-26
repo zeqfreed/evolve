@@ -21,11 +21,10 @@ FRAGMENT_FUNC(fragment_text)
 
   int u = ((int) fu) & d->clampu;
   int v = ((int) fv) & d->clampv;
-  Vec3f tcolor = d->texture->pixels[v * d->texture->width + u];
 
-  *color = {tcolor.r, tcolor.g, tcolor.b};
+  *color = TEXEL4F(d->texture, u, v);
 
-  return tcolor.r;
+  return true;
 }
 
 void Font::render_string(RenderingContext *ctx, float x, float y, const char *string)
@@ -68,11 +67,11 @@ void Font::render_string(RenderingContext *ctx, float x, float y, const char *st
     data.uv0 = texture_coords[0];
     data.duv[0] = texture_coords[1] - data.uv0;
     data.duv[1] = texture_coords[2] - data.uv0;
-    draw_triangle(ctx, &fragment_text, (void *) &data, positions[0], positions[1], positions[2]);
+    ctx->draw_triangle(ctx, &fragment_text, (void *) &data, positions[0], positions[1], positions[2]);
 
     data.duv[0] = texture_coords[2] - data.uv0;
     data.duv[1] = texture_coords[3] - data.uv0;
-    draw_triangle(ctx, &fragment_text, (void *) &data, positions[0], positions[2], positions[3]);
+    ctx->draw_triangle(ctx, &fragment_text, (void *) &data, positions[0], positions[2], positions[3]);
 
     xoffset += spec.char_width;
     p++;

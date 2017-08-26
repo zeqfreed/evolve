@@ -108,7 +108,7 @@ inline Vec3f Vec3f::transform(Mat44 mat, float *w)
 
 inline Vec4f operator+(Vec4f a, Vec4f b)
 {
-  return {a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w};
+  return Vec4f(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w);
 }
 
 inline Vec4f operator-(Vec4f a, Vec4f b)
@@ -500,7 +500,12 @@ inline Vec3f operator*(Vec3f v, Quaternion b)
 
 inline Vec3f lerp(Vec3f a, Vec3f b, float t)
 {
-  return a * (1 - t) + b * t;
+  return a * (1.0f - t) + b * t;
+}
+
+inline Vec4f lerp(Vec4f a, Vec4f b, float t)
+{
+  return a * (1.0f - t) + b * t;
 }
 
 inline Quaternion lerp(Quaternion a, Quaternion b, float t)

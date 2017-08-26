@@ -6,9 +6,9 @@
 #include <string.h>
 
 #include "platform/platform.h"
-#include "memory.h"
-#include "math.h"
-#include "tga.h"
+#include "utils/memory.h"
+#include "utils/texture.h"
+#include "utils/math.h"
 
 typedef uint16_t zval_t;
 #define ZBUFFER_MIN 0
@@ -21,13 +21,25 @@ typedef uint16_t zval_t;
 #define GREEN {0, 1, 0}
 #define BLUE {0, 0, 1}
 
+struct RenderingContext;
+
+#define FRAGMENT_FUNC(name) bool name(RenderingContext *ctx, void *shader_data, uint32_t x, uint32_t y, float t0, float t1, float t2, Texel *color)
+typedef FRAGMENT_FUNC(FragmentFunc);
+
+#define DRAW_TRIANGLE_FUNC(name) void name(RenderingContext *ctx, FragmentFunc *fragment, void *shader_data, Vec3f p0, Vec3f p1, Vec3f p2)
+typedef DRAW_TRIANGLE_FUNC(DrawTriangleFunc);
+
 typedef struct ShaderContext {
   Vec3f positions[3];
 } ShaderContext;
 
 typedef struct RenderingContext {
-  DrawingBuffer *target;
+  void *target;
+  uint32_t target_width;
+  uint32_t target_height;
   zval_t *zbuffer;
+
+  DrawTriangleFunc *draw_triangle;
 
   Vec3f clear_color;
   Vec3f light;
@@ -43,9 +55,3 @@ typedef struct RenderingContext {
   Mat44 modelview_mat;
   Mat44 normal_mat;
 } RenderingContext;
-
-typedef bool FragmentFunc(RenderingContext *ctx, void *shader_data, uint32_t x, uint32_t y,
-                          float t0, float t1, float t2, Vec3f *color);
-
-#define FRAGMENT_FUNC(name) bool name(RenderingContext *ctx, void *shader_data, uint32_t x, uint32_t y, \
-                                      float t0, float t1, float t2, Vec3f *color)

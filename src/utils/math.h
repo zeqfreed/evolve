@@ -83,23 +83,34 @@ typedef union Vec3f {
 } Vec3f;
 
 typedef union Vec4f {
-  struct {
-    float x;
-    float y;
-    float z;
-    float w;
-  };
+  union {
+    Vec3f xyz;
+    Vec3f rgb;
 
-  struct {
-    float a;
-    float b;
-    float c;
-    float d;
+    struct {
+      float x;
+      float y;
+      float z;
+      float w;
+    };    
+
+    struct {
+      float r;
+      float g;
+      float b;
+      float a;
+    };
+
+    float e[4];
   };
 
   float length();
   Vec4f normalized();
   float dot(Vec4f v);
+
+  constexpr Vec4f(): x(0.0f), y(0.0f), z(0.0f), w(0.0f) {};
+  constexpr Vec4f(Vec3f xyz, float w = 0.0f): x(xyz.x), y(xyz.y), z(xyz.z), w(w) {};
+  constexpr Vec4f(float x, float y, float z, float w): x(x), y(y), z(z), w(w) {};
 } Vec4f;
 
 typedef union Quaternion {
