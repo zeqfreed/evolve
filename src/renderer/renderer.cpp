@@ -1,76 +1,6 @@
 #include <cstdlib>
 #include "renderer.h"
 
-static inline void set_pixel(Texture *target, int32_t x, int32_t y, Vec3f color)
-{
-  target->pixels[y * target->width + x] = color;
-}
-
-static inline void set_pixel_safe(Texture *target, uint32_t x, uint32_t y, Vec3f color)
-{
-  if (x >= target->width) { return; }
-  if (y >= target->height) { return; }
-
-  set_pixel(target, x, y, color);
-}
-
-static void draw_line(Texture *target, int32_t x0, int32_t y0, int32_t x1, int32_t y1, Vec3f color)
-{
-  x0 = CLAMP(x0, 0, target->width - 1);
-  x1 = CLAMP(x1, 0, target->height - 1);
-  y0 = CLAMP(y0, 0, target->width - 1);
-  y1 = CLAMP(y1, 0, target->height - 1);
-
-  int32_t t;
-  bool transposed = abs(y1-y0) > abs(x1-x0);
-  if (transposed) {
-    t = x0;
-    x0 = y0;
-    y0 = t;
-
-    t = x1;
-    x1 = y1;
-    y1 = t;
-  }
-
-  if (x0 > x1) {
-    t = x0;
-    x0 = x1;
-    x1 = t;
-
-    t = y0;
-    y0 = y1;
-    y1 = t;
-  }
-
-  int32_t dx = x1 - x0;
-  int32_t dy = y1 - y0;
-
-  float eps = 0.0000001f;
-  if (dx < eps && dy < eps) {
-    return; // Degenerate case
-  }
-
-  int32_t y = y0;
-  int32_t slope = 2 * abs(dy);
-  int32_t error = 0;
-  int32_t inc = dy > 0 ? 1 : -1;
-
-  for (int32_t x = x0; x <= x1; x++) {
-    if (transposed) {
-      set_pixel_safe(target, y, x, color);
-    } else {
-      set_pixel_safe(target, x, y, color);
-    }
-
-    error += slope;
-    if (error > dx) {
-      y += inc;
-      error -= 2*dx;
-    }
-  }
-}
-
 static inline Texel blend(Texel src, Texel dst)
 {
 #if 1
@@ -78,8 +8,13 @@ static inline Texel blend(Texel src, Texel dst)
     return src;
   }
   
-  Vec3f c = src.rgb * src.a + dst.rgb * (1.0f - src.a);
-  return (Texel) Vec4f(c, 1.0f);
+  #if 1
+    Vec3f c = src.rgb * src.a + dst.rgb * (1.0f - src.a);
+    return (Texel) Vec4f(c, 1.0f);
+  #else
+    Vec4f c = src + dst * (1 - src.a);
+    return c;
+  #endif
 #else
   return src;
 #endif  
@@ -87,13 +22,8 @@ static inline Texel blend(Texel src, Texel dst)
 
 static inline uint32_t blend(Texel src, uint32_t dst)
 {
-#if 0
-  if (src.a == 1.0) {
-    return src;
-  }
-  
-  Vec3f c = src.rgb * src.a + dst.rgb * (1.0f - src.a);
-  return (Texel) Vec4f(c, 1.0f);
+#if 1
+  return rgba_color(blend(src, color_rgba(dst)));
 #else
   return rgba_color(src);
 #endif
@@ -117,6 +47,17 @@ inline static q8 edge_funcq(q8 x0, q8 y0, q8 x1, q8 y1)
   return qmul(x0, y1) - qmul(x1, y0);
 }
 
+#define DRAW_LINE_TARGET_TYPE Texture
+#define DRAW_LINE_TEXEL_TYPE Texel
+#define DRAW_LINE_FUNC_NAME draw_line
+#include "draw_line.cpp"
+
+#define DRAW_LINE_TARGET_TYPE DrawingBuffer
+#define DRAW_LINE_TEXEL_TYPE uint32_t
+#define DRAW_LINE_TEXEL_CONVERSION_FUNC rgba_color
+#define DRAW_LINE_FUNC_NAME draw_line_rgba32
+#include "draw_line.cpp"
+
 #define DRAW_TRIANGLE_NO_FRAGMENT
 #define DRAW_TRIANGLE_TARGET_TYPE Texture
 #define DRAW_TRIANGLE_TEXEL_TYPE Texel
@@ -136,6 +77,7 @@ static inline void set_target(RenderingContext *ctx, Texture *texture)
   ctx->target_width = texture->width;
   ctx->target_height = texture->height;
   ctx->draw_triangle = &draw_triangle;
+  ctx->draw_line = &draw_line;
 }
 
 static inline void set_target(RenderingContext *ctx, DrawingBuffer *buffer)
@@ -144,6 +86,7 @@ static inline void set_target(RenderingContext *ctx, DrawingBuffer *buffer)
   ctx->target_width = buffer->width;
   ctx->target_height = buffer->height;
   ctx->draw_triangle = &draw_triangle_rgba32;
+  ctx->draw_line = &draw_line_rgba32;
 }
 
 static inline void clear_zbuffer(RenderingContext *ctx)

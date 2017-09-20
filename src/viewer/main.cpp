@@ -504,13 +504,13 @@ static void render_m2_model_bones(State *state, RenderingContext *ctx, M2Model *
       continue;
     }
 
-    Vec3f color = GREEN;
+    Vec4f color = {0.0f, 1.0f, 0.0f, 1.0f};
 
     if (bone.parent >= 0) {
       ModelBone parentBone = model->bones[bone.parent];
       Vec3f p1 = bone.pivot * bone.matrix;
       Vec3f p2 = parentBone.pivot * parentBone.matrix;
-      render_line(ctx, p1, p2, color);
+      ctx->draw_line(ctx, p1, p2, color);
     } else {
       Vec3f pos = bone.pivot * bone.matrix * mat;
       // set_pixel_safe(ctx->target, (uint32_t) pos.x, (uint32_t) pos.y, color);
@@ -567,10 +567,10 @@ static void render_unit_axes(RenderingContext *ctx)
   precalculate_matrices(ctx);
 
   Vec3f origin = {0, 0, 0};
-  render_line(ctx, origin, {1, 0, 0}, RED);
-  render_line(ctx, origin, {0, 1, 0}, GREEN);
-  render_line(ctx, origin, {0, 0, 1}, BLUE);
-  render_line(ctx, origin, ctx->light, WHITE);
+  ctx->draw_line(ctx, origin, {1, 0, 0}, {1.0f, 0.0f, 0.0f, 1.0f});
+  ctx->draw_line(ctx, origin, {0, 1, 0}, {0.0f, 1.0f, 0.0f, 1.0f});
+  ctx->draw_line(ctx, origin, {0, 0, 1}, {0.0f, 0.0f, 1.0f, 1.0f});
+  ctx->draw_line(ctx, origin, ctx->light, {1.0f, 1.0f, 1.0f, 1.0f});
 }
 
 static void animate_model(State *state)
@@ -1006,15 +1006,13 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   if (state->showBones) {
    render_m2_model_bones(state, ctx, state->m2model);
   }
-  // render_unit_axes(ctx);
-
-  //render_line(ctx, p1, (Vec3f){0, 0, 0}, BLUE);
-  // render_line(ctx, p2, (Vec3f){0, 0, 0}, RED);
-  // render_line(ctx, p3, (Vec3f){0, 0, 0}, WHITE);
+  //render_unit_axes(ctx);
 
   if (state->render_flags.shadow_mapping) {
     render_debug_texture(state, ctx, state->shadowmap, 10, 10, 400);
   }
+
+  //render_debug_texture(state, ctx, state->textures[0], 10, 410, 400);
 }
 
 #ifdef _WIN32

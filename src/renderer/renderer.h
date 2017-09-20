@@ -15,11 +15,11 @@ typedef uint16_t zval_t;
 #define ZBUFFER_MAX 0xFFFF
 #define ZTEST(new, old) ((new > old))
 
-#define WHITE {1, 1, 1}
-#define BLACK {0, 0, 0}
-#define RED {1, 0, 0}
-#define GREEN {0, 1, 0}
-#define BLUE {0, 0, 1}
+#define WHITE {1.0f, 1.0f, 1.0f}
+#define BLACK {0.0f, 0.0f, 0.0f}
+#define RED {1.0f, 0.0f, 0.0f}
+#define GREEN {0.0f, 1.0f, 0.0f}
+#define BLUE {0.0f, 0.0f, 1.0f}
 
 struct RenderingContext;
 
@@ -28,6 +28,9 @@ typedef FRAGMENT_FUNC(FragmentFunc);
 
 #define DRAW_TRIANGLE_FUNC(name) void name(RenderingContext *ctx, FragmentFunc *fragment, void *shader_data, Vec3f p0, Vec3f p1, Vec3f p2)
 typedef DRAW_TRIANGLE_FUNC(DrawTriangleFunc);
+
+#define DRAW_LINE_FUNC(name) void name(RenderingContext *ctx, Vec3f p0, Vec3f p1, Vec4f color)
+typedef DRAW_LINE_FUNC(DrawLineFunc);
 
 typedef struct ShaderContext {
   Vec3f positions[3];
@@ -40,6 +43,7 @@ typedef struct RenderingContext {
   zval_t *zbuffer;
 
   DrawTriangleFunc *draw_triangle;
+  DrawLineFunc *draw_line;
 
   Vec3f clear_color;
   Vec3f light;

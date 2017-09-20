@@ -23,6 +23,21 @@ static inline uint32_t rgba_color(Vec4f color)
 #endif
 }
 
+static inline Vec4f color_rgba(uint32_t color)
+{
+#if COLOR_BGR
+  float b = (color & 0xFF) / 255.0;
+  float g = ((color >> 8) & 0xFF) / 255.0;
+  float r = ((color >> 16) & 0xFF) / 255.0;
+#else
+  float r = (color & 0xFF) / 255.0;
+  float g = ((color >> 8) & 0xFF) / 255.0;
+  float b = ((color >> 16) & 0xFF) / 255.0;
+#endif
+
+  return {r, g, b, 0.0f};
+}
+
 #include <emmintrin.h>
 
 static inline void texture_clear(Texture *texture, Vec4f color)
