@@ -1,6 +1,21 @@
 
 #define DRAW_TRIANGLE_TEXELP(TARGET, X, Y) (&((DRAW_TRIANGLE_TEXEL_TYPE *) TARGET->pixels)[(Y) * TARGET->width + (X)])
-#define DRAW_TRIANGLE_BLEND(SRC, DST) (blend(SRC, DST))
+
+#ifndef DRAW_TRIANGLE_COLOR_TO_TEXEL
+  #define DRAW_TRIANGLE_COLOR_TO_TEXEL(V) (V)
+#endif
+
+#ifndef DRAW_TRIANGLE_TEXEL_TO_COLOR
+  #define DRAW_TRIANGLE_TEXEL_TO_COLOR(V) (V)
+#endif
+
+#if DRAW_TRIANGLE_BLEND
+  #define DRAW_TRIANGLE_DO_BLEND(CTX, SRC, DST) DRAW_TRIANGLE_TEXEL_TO_COLOR(ctx->blend_func(SRC, DRAW_TRIANGLE_COLOR_TO_TEXEL(DST)))
+#else
+  #define DRAW_TRIANGLE_DO_BLEND(CTX, SRC, DST) DRAW_TRIANGLE_TEXEL_TO_COLOR(SRC)
+#endif
+
+#define ALPHA_TEST(A) (A > 0.5f)
 
 static DRAW_TRIANGLE_FUNC(DRAW_TRIANGLE_FUNC_NAME)
 {
@@ -17,9 +32,12 @@ static DRAW_TRIANGLE_FUNC(DRAW_TRIANGLE_FUNC_NAME)
   q8 py[3] = {IROUND(p0.y), IROUND(p1.y), IROUND(p2.y)};
 
   q8 area = edge_funcq(px[1] - px[0], py[1] - py[0], px[2] - px[1], py[2] - py[1]);
+
+#if DRAW_TRIANGLE_CULL
   if (area <= 0) {
     return;
   }
+#endif
 
   int32_t minx = qint(MIN3(px[0], px[1], px[2]));
   int32_t miny = qint(MIN3(py[0], py[1], py[2]));
@@ -108,7 +126,11 @@ static DRAW_TRIANGLE_FUNC(DRAW_TRIANGLE_FUNC_NAME)
       inout[3] = INOUT(blockW[3]);
 
       bool allSame = (inout[0] == inout[1]) && (inout[0] == inout[2]) && (inout[0] == inout[3]);
+#if DRAW_TRIANGLE_CULL
       bool allInside = allSame && (inout[0] == 7);
+#else      
+      bool allInside = allSame && (inout[0] == 7 || inout[0] == 0);
+#endif      
       bool allOutside = allSame && !allInside;
 
       if (allOutside) {
@@ -149,13 +171,17 @@ static DRAW_TRIANGLE_FUNC(DRAW_TRIANGLE_FUNC_NAME)
           for (int i = 0; i < BLOCK_SIZE; i++) {
             zval_t zvalue = (zval_t) (z * ZBUFFER_MAX);
             if (ZTEST(zvalue, *zp)) {
-              *zp = zvalue;
-
-              #ifndef DRAW_TRIANGLE_NO_FRAGMENT
+              #if DRAW_TRIANGLE_FRAG
                 Texel color = {};
                 if (fragment(ctx, shader_data, startx + i, starty + j, 1 - t1 - t2, t1, t2, &color)) {
-                  *bufferp = DRAW_TRIANGLE_BLEND(color, *bufferp);
+                  *bufferp = DRAW_TRIANGLE_DO_BLEND(ctx, color, *bufferp);
                 }
+
+                if (ALPHA_TEST(color.a)) {
+                  *zp = zvalue;
+                }
+              #else
+                *zp = zvalue;
               #endif
             }
 
@@ -186,18 +212,27 @@ static DRAW_TRIANGLE_FUNC(DRAW_TRIANGLE_FUNC_NAME)
           zval_t *zp = zp_row;
           DRAW_TRIANGLE_TEXEL_TYPE *bufferp = bufferp_row;
 
-#define INSIDE_TRIANGLE(w) ((w.x | w.y | w.z) >= 0)
+#if DRAW_TRIANGLE_CULL
+  #define INSIDE_TRIANGLE(w) ((w.x | w.y | w.z) >= 0)
+#else
+  #define INSIDE_TRIANGLE(w) (((w.x | w.y | w.z) >= 0) || ((w.x < 0.0f) && (w.y < 0.0f) && (w.z < 0.0f)))
+#endif
+
           for (int i = 0; i < BLOCK_SIZE; i++) {
             if (INSIDE_TRIANGLE(w)) {
               zval_t zvalue = (zval_t) (z * ZBUFFER_MAX);
               if (ZTEST(zvalue, *zp)) {
-                *zp = zvalue;
-                
-                #ifndef DRAW_TRIANGLE_NO_FRAGMENT
+                #if DRAW_TRIANGLE_FRAG
                   Texel color = {};
                   if (fragment(ctx, shader_data, startx + i, starty + j, 1 - t1 - t2, t1, t2, &color)) {
-                    *bufferp = DRAW_TRIANGLE_BLEND(color, *bufferp);
+                    *bufferp = DRAW_TRIANGLE_DO_BLEND(ctx, color, *bufferp);
                   }
+
+                  if (ALPHA_TEST(color.a)) {
+                    *zp = zvalue;
+                  }
+                #else
+                  *zp = zvalue;  
                 #endif  
               }
             }
@@ -227,10 +262,18 @@ static DRAW_TRIANGLE_FUNC(DRAW_TRIANGLE_FUNC_NAME)
 #undef BLOCK_SIZE
 }
 
-#undef DRAW_TRIANGLE_BLEND
+#undef ALPHA_TEST
+
+#undef DRAW_TRIANGLE_DO_BLEND
 #undef DRAW_TRIANGLE_TEXELP
 
 #undef DRAW_TRIANGLE_FUNC_NAME
 #undef DRAW_TRIANGLE_TARGET_TYPE
 #undef DRAW_TRIANGLE_TEXEL_TYPE
-#undef DRAW_TRIANGLE_NO_FRAGMENT
+
+#undef DRAW_TRIANGLE_COLOR_TO_TEXEL
+#undef DRAW_TRIANGLE_TEXEL_TO_COLOR
+
+#undef DRAW_TRIANGLE_BLEND
+#undef DRAW_TRIANGLE_CULL
+#undef DRAW_TRIANGLE_FRAG

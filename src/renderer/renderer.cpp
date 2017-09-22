@@ -1,32 +1,25 @@
 #include <cstdlib>
 #include "renderer.h"
 
-static inline Texel blend(Texel src, Texel dst)
+static inline Vec4f blend_src_copy(Vec4f src, Vec4f dst)
 {
-#if 1
-  if (src.a == 1.0) {
-    return src;
+  if (src.a == 0.0f) {
+    return dst; // TODO: Should this be in draw_triangle?
   }
-  
-  #if 1
-    Vec3f c = src.rgb * src.a + dst.rgb * (1.0f - src.a);
-    return (Texel) Vec4f(c, 1.0f);
-  #else
-    Vec4f c = src + dst * (1 - src.a);
-    return c;
-  #endif
-#else
+
   return src;
-#endif  
 }
 
-static inline uint32_t blend(Texel src, uint32_t dst)
+static inline Texel blend_decal(Vec4f src, Vec4f dst)
 {
-#if 1
-  return rgba_color(blend(src, color_rgba(dst)));
-#else
-  return rgba_color(src);
-#endif
+  Vec3f c = src.rgb * src.a + dst.rgb * (1.0f - src.a);
+  return Vec4f(c, 1.0f);
+}
+
+static inline Vec4f blend_src_alpha_one(Vec4f src, Vec4f dst)
+{
+  Vec3f c = src.rgb * src.a + dst.rgb;
+  return Vec4f(c, 1.0f);
 }
 
 static void precalculate_matrices(RenderingContext *ctx)
@@ -49,7 +42,7 @@ inline static q8 edge_funcq(q8 x0, q8 y0, q8 x1, q8 y1)
 
 #define DRAW_LINE_TARGET_TYPE Texture
 #define DRAW_LINE_TEXEL_TYPE Texel
-#define DRAW_LINE_FUNC_NAME draw_line
+#define DRAW_LINE_FUNC_NAME draw_line_rgba4f
 #include "draw_line.cpp"
 
 #define DRAW_LINE_TARGET_TYPE DrawingBuffer
@@ -58,35 +51,132 @@ inline static q8 edge_funcq(q8 x0, q8 y0, q8 x1, q8 y1)
 #define DRAW_LINE_FUNC_NAME draw_line_rgba32
 #include "draw_line.cpp"
 
-#define DRAW_TRIANGLE_NO_FRAGMENT
+/* Texture target */
+
 #define DRAW_TRIANGLE_TARGET_TYPE Texture
 #define DRAW_TRIANGLE_TEXEL_TYPE Texel
-#define DRAW_TRIANGLE_FUNC_NAME draw_triangle
+#define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba4f_noblend_nocull_nofrag
+#define DRAW_TRIANGLE_BLEND 0
+#define DRAW_TRIANGLE_CULL 0
+#define DRAW_TRIANGLE_FRAG 0
 #include "draw_triangle.cpp"
 
+/* DrawingBuffer target */
+
+#define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba32_blend_nocull_frag
 #define DRAW_TRIANGLE_TARGET_TYPE DrawingBuffer
 #define DRAW_TRIANGLE_TEXEL_TYPE uint32_t
-#define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba32
+#define DRAW_TRIANGLE_COLOR_TO_TEXEL(V) (color_rgba(V))
+#define DRAW_TRIANGLE_TEXEL_TO_COLOR(V) (rgba_color(V))
+#define DRAW_TRIANGLE_BLEND 1
+#define DRAW_TRIANGLE_CULL 0
+#define DRAW_TRIANGLE_FRAG 1
+#include "draw_triangle.cpp"
+
+#define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba32_noblend_nocull_frag
+#define DRAW_TRIANGLE_TARGET_TYPE DrawingBuffer
+#define DRAW_TRIANGLE_TEXEL_TYPE uint32_t
+#define DRAW_TRIANGLE_COLOR_TO_TEXEL(V) (color_rgba(V))
+#define DRAW_TRIANGLE_TEXEL_TO_COLOR(V) (rgba_color(V))
+#define DRAW_TRIANGLE_BLEND 0
+#define DRAW_TRIANGLE_CULL 0
+#define DRAW_TRIANGLE_FRAG 1
+#include "draw_triangle.cpp"
+
+#define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba32_noblend_cull_frag
+#define DRAW_TRIANGLE_TARGET_TYPE DrawingBuffer
+#define DRAW_TRIANGLE_TEXEL_TYPE uint32_t
+#define DRAW_TRIANGLE_COLOR_TO_TEXEL(V) (color_rgba(V))
+#define DRAW_TRIANGLE_TEXEL_TO_COLOR(V) (rgba_color(V))
+#define DRAW_TRIANGLE_BLEND 0
+#define DRAW_TRIANGLE_CULL 1
+#define DRAW_TRIANGLE_FRAG 1
 #include "draw_triangle.cpp"
 
 #include <emmintrin.h>
 
-static inline void set_target(RenderingContext *ctx, Texture *texture)
+static void set_target(RenderingContext *ctx, Texture *texture)
 {
   ctx->target = texture;
+  ctx->target_type = TARGET_TYPE_TEXTURE;
   ctx->target_width = texture->width;
   ctx->target_height = texture->height;
-  ctx->draw_triangle = &draw_triangle;
-  ctx->draw_line = &draw_line;
+  ctx->draw_triangle = &draw_triangle_rgba4f_noblend_nocull_nofrag;
+  ctx->draw_line = &draw_line_rgba4f;
+  ctx->blend_func = &blend_src_copy;
 }
 
-static inline void set_target(RenderingContext *ctx, DrawingBuffer *buffer)
+static void set_target(RenderingContext *ctx, DrawingBuffer *buffer)
 {
   ctx->target = buffer;
+  ctx->target_type = TARGET_TYPE_RGBA32;
   ctx->target_width = buffer->width;
   ctx->target_height = buffer->height;
-  ctx->draw_triangle = &draw_triangle_rgba32;
+  ctx->draw_triangle = &draw_triangle_rgba32_blend_nocull_frag;
   ctx->draw_line = &draw_line_rgba32;
+  ctx->blend_func = &blend_src_copy;
+}
+
+static void change_draw_func(RenderingContext *ctx)
+{
+  switch (ctx->target_type) {
+    case TARGET_TYPE_TEXTURE:
+      ctx->draw_triangle = &draw_triangle_rgba4f_noblend_nocull_nofrag;
+      break;
+
+    case TARGET_TYPE_RGBA32:
+      if (ctx->blending) {
+        ctx->draw_triangle = &draw_triangle_rgba32_blend_nocull_frag;
+      } else {
+        if (ctx->culling) {
+          ctx->draw_triangle = &draw_triangle_rgba32_noblend_cull_frag;
+        } else {
+          ctx->draw_triangle = &draw_triangle_rgba32_noblend_nocull_frag;
+        }
+      }
+      break;
+  }
+}
+
+static inline void set_blending(RenderingContext *ctx, bool enabled)
+{
+  bool wasEnabled = ctx->blending;
+  ctx->blending = enabled;
+
+  if (wasEnabled != enabled) {
+    change_draw_func(ctx);
+  }
+}
+
+static inline void set_culling(RenderingContext *ctx, bool enabled)
+{
+  bool wasEnabled = ctx->culling;
+  ctx->culling = enabled;
+
+  if (wasEnabled != enabled) {
+    change_draw_func(ctx);
+  }
+}
+
+static void set_blend_mode(RenderingContext *ctx, BlendMode blend_mode)
+{
+  switch (blend_mode) {
+    case BLEND_MODE_DECAL:
+      ctx->blend_func = &blend_decal;
+      break;
+
+    case BLEND_MODE_SRC_COPY:
+      ctx->blend_func = &blend_src_copy;
+      break;
+
+    case BLEND_MODE_SRC_ALPHA_ONE:
+      ctx->blend_func = &blend_src_alpha_one;
+      break;      
+
+    default:
+      ctx->blend_func = &blend_src_copy;
+      break;  
+  }
 }
 
 static inline void clear_zbuffer(RenderingContext *ctx)

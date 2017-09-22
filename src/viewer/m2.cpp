@@ -13,7 +13,7 @@ static void m2_dump_header(M2Header *header, void *bytes)
   const char *entries[] = {
     "GlobalSequences", "Animations", "AnimationLookups", "PlayableAnimLookups",
     "Bones", "KeyBoneLookups", "Vertices", "Views", "Colors", "Textures", "Transparencies",
-    "TextureAnimations", "TextureReplacements", "TextureFlags", "BoneLookups", "TextureLookups",
+    "Reserved", "TextureAnimations", "TextureReplacements", "RenderFlags", "BoneLookups", "TextureLookups",
     "TextureUnitLookups"
   };
 
@@ -271,10 +271,19 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
   model->renderPassesCount = view->renderPassesCount;
   model->renderPasses = (M2RenderPass *) arena->allocate(sizeof(M2RenderPass) * view->renderPassesCount);
 
+  model->renderFlagsCount = header->renderFlagsCount;
+  model->renderFlags = (M2RenderFlag *) arena->allocate(sizeof(M2RenderFlag) * header->renderFlagsCount);
+  M2RenderFlag *renderFlags = (M2RenderFlag *) ((uint8_t *) bytes + header->renderFlagsOffset);
+  for (int rfi = 0; rfi < header->renderFlagsCount; rfi++) {
+    model->renderFlags[rfi] = renderFlags[rfi];
+    // printf("Render flag %d: f = %d; b = %d\n", rfi, renderFlags[rfi].flags, renderFlags[rfi].blendingMode);
+  }
+
   M2RenderPass *renderPasses = (M2RenderPass *) ((uint8_t *) bytes + view->renderPassesOffset);
   for (int rpi = 0; rpi < view->renderPassesCount; rpi++) {
     //m2_dump_render_pass(&renderPasses[rpi], bytes, header);
     model->renderPasses[rpi] = renderPasses[rpi];
+    // printf("Render pass %d: flags: %d; submesh: %d, render flags index = %d\n", rpi, renderPasses[rpi].flags, renderPasses[rpi].submesh, renderPasses[rpi].renderFlagIndex);
   }
 
   // M2Texture *textures = (M2Texture *) ((uint8_t *) bytes + header->texturesOffset);

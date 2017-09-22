@@ -32,18 +32,38 @@ typedef DRAW_TRIANGLE_FUNC(DrawTriangleFunc);
 #define DRAW_LINE_FUNC(name) void name(RenderingContext *ctx, Vec3f p0, Vec3f p1, Vec4f color)
 typedef DRAW_LINE_FUNC(DrawLineFunc);
 
+#define BLEND_FUNC(name) Vec4f name(Vec4f src, Vec4f dst);
+typedef BLEND_FUNC(BlendFunc);
+
+typedef enum TargetType {
+  TARGET_TYPE_RGBA32,
+  TARGET_TYPE_TEXTURE
+} TargetType;
+
+typedef enum BlendMode {
+  BLEND_MODE_SRC_COPY,
+  BLEND_MODE_DECAL,
+  BLEND_MODE_SRC_ALPHA_ONE
+} BlendMode;
+
 typedef struct ShaderContext {
   Vec3f positions[3];
 } ShaderContext;
 
 typedef struct RenderingContext {
   void *target;
+  TargetType target_type;
   uint32_t target_width;
   uint32_t target_height;
+
   zval_t *zbuffer;
 
   DrawTriangleFunc *draw_triangle;
   DrawLineFunc *draw_line;
+  BlendFunc *blend_func;
+
+  bool blending;
+  bool culling;
 
   Vec3f clear_color;
   Vec3f light;

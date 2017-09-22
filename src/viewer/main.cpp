@@ -157,6 +157,7 @@ FRAGMENT_FUNC(fragment_model)
       texel = texel4.xyz;
     }
   } else {
+    texel4 = {0.0f, 0.0f, 0.0f, 1.0f};
     texel = d->color;
   }
 
@@ -419,76 +420,100 @@ static void render_model(State *state, RenderingContext *ctx, Model *model)
       positions[vi] = position * ctx->mvp_mat;
     }
 
-    draw_triangle(ctx, &fragment_model, (void *) &shader_data, positions[0], positions[1], positions[2]);
+    ctx->draw_triangle(ctx, &fragment_model, (void *) &shader_data, positions[0], positions[1], positions[2]);
   }
 }
 
-static void render_m2_model(State *state, RenderingContext *ctx, M2Model *model)
+static inline void render_m2_pass(State *state, RenderingContext *ctx, M2Model *model, M2RenderPass *pass, ModelSubmesh *submesh)
 {
-  ctx->model_mat = Mat44::rotate_y(-RAD(90)) * Mat44::scale(state->scale, state->scale, state->scale);
-  precalculate_matrices(ctx);
-
   ModelShaderData shader_data = {};
   shader_data.color = hsv_to_rgb(state->hsv);
   shader_data.flags = &state->render_flags;
   Vec3f positions[3];
 
-  for (int rpi = 0; rpi < model->renderPassesCount; rpi++) {
-    M2RenderPass pass = model->renderPasses[rpi];
-    ModelSubmesh submesh = model->submeshes[pass.submesh];
-    if (!submesh.enabled) {
-      continue;
+  shader_data.texture = state->textures[pass->textureId];
+  
+  uint32_t faceStart = submesh->facesStart;
+  uint32_t faceEnd = faceStart + submesh->facesCount;
+
+  for (int fi = faceStart; fi < faceEnd; fi++) {
+    M2Face face = model->faces[fi];
+
+    for (int vi = 0; vi < 3; vi++) {
+      Vec3f position = model->animatedPositions[face.indices[vi]];
+      Vec3f normal = model->animatedNormals[face.indices[vi]];
+      Vec3f texture = model->textureCoords[face.indices[vi]];
+
+      shader_data.pos[vi] = position * ctx->model_mat;
+      shader_data.uvs[vi] = {texture.x, texture.y, 0};
+      shader_data.normals[vi] = (normal * ctx->normal_mat).normalized();
+
+      positions[vi] = position * ctx->mvp_mat;
     }
 
-    shader_data.texture = state->textures[pass.textureId];
+    ctx->draw_triangle(ctx, &fragment_model, (void *) &shader_data, positions[0], positions[1], positions[2]);
+  }  
+}
 
-    uint32_t faceStart = submesh.facesStart;
-    uint32_t faceEnd = faceStart + submesh.facesCount;
+typedef enum {
+  RENDER_MODE_ANY,
+  RENDER_MODE_OPAQUE,
+  RENDER_MODE_TRANSPARENT
+} RenderMode;
 
-    for (int fi = faceStart; fi < faceEnd; fi++) {
-      M2Face face = model->faces[fi];
-
-      for (int vi = 0; vi < 3; vi++) {
-        Vec3f position = model->animatedPositions[face.indices[vi]];
-        Vec3f normal = model->animatedNormals[face.indices[vi]];
-        Vec3f texture = model->textureCoords[face.indices[vi]];
-
-        shader_data.pos[vi] = position * ctx->model_mat;
-        shader_data.uvs[vi] = {texture.x, texture.y, 0};
-        shader_data.normals[vi] = (normal * ctx->normal_mat).normalized();
-
-        positions[vi] = position * ctx->mvp_mat;
-      }
-
-      ctx->draw_triangle(ctx, &fragment_model, (void *) &shader_data, positions[0], positions[1], positions[2]);
-    }
+static BlendMode map_blending_mode(uint16_t blendingMode)
+{
+  switch (blendingMode) {
+    case 1:
+      // return BLEND_MODE_SRC_COPY;
+      return BLEND_MODE_DECAL; // This works better
+    case 2:
+      return BLEND_MODE_DECAL;
+    case 4:
+      return BLEND_MODE_SRC_ALPHA_ONE;
+    default:
+      return BLEND_MODE_SRC_COPY;
   }
 }
 
-static inline void render_line(RenderingContext *ctx, Vec3f start, Vec3f end, Vec3f color)
+static void render_m2_model(State *state, RenderingContext *ctx, M2Model *model, RenderMode mode = RENDER_MODE_ANY)
 {
-  Vec4f v0 = { start.x, start.y, start.z, 1 };
-  Vec4f v1 = { end.x, end.y, end.z, 1 };
-  float d0 = v0.dot(ctx->near_clip_plane);
-  float d1 = v1.dot(ctx->near_clip_plane);
+  ctx->model_mat = Mat44::rotate_y(-RAD(90)) * Mat44::scale(state->scale, state->scale, state->scale);
+  precalculate_matrices(ctx);
 
-  if (d0 < 0 && d1 < 0) {
-    return;
+  for (int rpi = 0; rpi < model->renderPassesCount; rpi++) {
+    M2RenderPass *pass = &model->renderPasses[rpi];
+    ModelSubmesh *submesh = &model->submeshes[pass->submesh];
+    if (!submesh->enabled) {
+      continue;
+    }
+
+    M2RenderFlag *rf = &model->renderFlags[pass->renderFlagIndex];
+
+    set_culling(ctx, (rf->flags & 0x04) != 0x04);
+
+    switch (mode) {
+      case RENDER_MODE_OPAQUE:
+        if (rf->blendingMode != 0) {
+          continue;
+        }
+        set_blending(ctx, false);
+        break;
+
+      case RENDER_MODE_TRANSPARENT:
+        if (rf->blendingMode > 0) {
+          set_blending(ctx, true);
+          set_blend_mode(ctx, map_blending_mode(rf->blendingMode));
+        } else {
+          continue;
+        }
+        break;
+
+      default:; // No filtering
+    }
+
+    render_m2_pass(state, ctx, model, pass, submesh);
   }
-  
-  float c;
-  if (d1 < 0) {
-    c = d0 / (d0 - d1);
-    end = start + (end - start) * c;
-  } else if (d0 < 0) {
-    c = d0 / (d1 - d0);
-    start = start + (start - end) * c;
-  }
-
-  start = start * ctx->mvp_mat * ctx->viewport_mat;
-  end = end * ctx->mvp_mat * ctx->viewport_mat;
-
-  // draw_line(ctx->target, (int32_t) start.x, (int32_t) start.y, (int32_t) end.x, (int32_t) end.y, color);
 }
 
 static void render_m2_model_bones(State *state, RenderingContext *ctx, M2Model *model)
@@ -610,6 +635,7 @@ static void enable_submeshes(State *state)
     5, // Hair style
     401, // Default gloves
     501, // Default boots
+    702, // Ears
     1101, // Default pants
     1301, // Default pants
     1501, // Default back/cloak
@@ -621,11 +647,6 @@ static void enable_submeshes(State *state)
       if (model->submeshes[si].id == enabledSubmeshes[esi]) {
         model->submeshes[si].enabled = true;
       }
-    }
-
-    if (si == 34) {
-      // Hack to disable eye glow submesh; Remove when alpha blending is supported
-      model->submeshes[si].enabled = false;
     }
   }
 }
@@ -657,7 +678,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->screenWidth = buffer->width;
   state->screenHeight = buffer->height;
 
-  load_m2_model(state, (char *) "data/misc/nelf.m2");
+  load_m2_model(state, (char *) "data/misc/nelf-patched.m2");
   state->textures[0] = load_texture(state, (char *) "data/misc/nelf_0.tga");
   state->textures[1] = load_texture(state, (char *) "data/misc/nelf_1.tga");
   state->textures[2] = load_texture(state, (char *) "data/misc/cape.tga");
@@ -686,6 +707,10 @@ static void initialize(State *state, DrawingBuffer *buffer)
   // load_m2_model(state, (char *) "data/misc/riding_horse.m2");
   // state->textures[0] = load_texture(state, (char *) "data/misc/riding_horse_0.tga");
   // state->textures[1] = load_texture(state, (char *) "data/misc/riding_horse_1.tga");
+
+  // load_m2_model(state, (char *) "data/misc/murloc.m2");
+  // state->textures[0] = load_texture(state, (char *) "data/misc/murloc_0.tga");
+  // state->textures[1] = state->textures[0];
 
   state->xRot = RAD(15.0f);
   state->yRot = 0.0f;
@@ -1001,7 +1026,8 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   render_floor(state, ctx);
   //render_model(state, ctx, state->model);
 
-  render_m2_model(state, ctx, state->m2model);
+  render_m2_model(state, ctx, state->m2model, RENDER_MODE_OPAQUE);
+  render_m2_model(state, ctx, state->m2model, RENDER_MODE_TRANSPARENT);
 
   if (state->showBones) {
    render_m2_model_bones(state, ctx, state->m2model);

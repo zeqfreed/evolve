@@ -34,12 +34,14 @@ typedef struct M2Header {
   uint32_t texturesOffset;
   uint32_t transparenciesCount;
   uint32_t transparenciesOffset;
+  uint32_t reservedCount;
+  uint32_t reservedOffset;
   uint32_t textureAnimationsCount;
   uint32_t textureAnimationsOffset;
   uint32_t textureReplacementsCount;
   uint32_t textureReplacementsOffset;
-  uint32_t textureFlagsCount;
-  uint32_t textureFlagsOffset;
+  uint32_t renderFlagsCount;
+  uint32_t renderFlagsOffset;
   uint32_t boneLookupsCount;
   uint32_t boneLookupsOffset;
   uint32_t textureLookupsCount;
@@ -64,6 +66,11 @@ typedef struct M2Texture {
   uint32_t filenameLength;
   uint32_t filenameOffset;
 } M2Texture;
+
+typedef struct M2RenderFlag {
+  uint16_t flags;
+  uint16_t blendingMode;
+} M2RenderFlag;
 
 typedef struct M2RenderPass {
   uint16_t flags;
@@ -226,6 +233,8 @@ typedef struct M2Model {
   ModelBone *bones;
   uint32_t animationsCount;
   ModelAnimation *animations;
+  uint32_t renderFlagsCount;
+  M2RenderFlag *renderFlags;
   uint32_t renderPassesCount;
   M2RenderPass *renderPasses;
 } M2Model;
