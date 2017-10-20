@@ -59,6 +59,7 @@ typedef struct State {
   double currentAnimFPS;
   bool playing;
   bool showBones;
+  bool showUnitAxes;
   bool modelChanged;
 } State;
 
@@ -725,7 +726,9 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
   state->playing = true;
   state->showBones = false;
+  state->showUnitAxes = false;
   state->modelChanged = true;
+
   switch_animation(state, 24);
   enable_submeshes(state);
 
@@ -945,6 +948,10 @@ static void handle_input(State *state)
   if (KEY_WAS_PRESSED(state->keyboard, KB_B)) {
     state->showBones = !state->showBones;
   }
+
+  if (KEY_WAS_PRESSED(state->keyboard, KB_U)) {
+    state->showUnitAxes = !state->showUnitAxes;
+  }
 }
 
 static inline void clear_buffer(DrawingBuffer *buffer, Vec4f color)
@@ -1031,7 +1038,10 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   if (state->showBones) {
    render_m2_model_bones(state, ctx, state->m2model);
   }
-  //render_unit_axes(ctx);
+
+  if (state->showUnitAxes) {
+    render_unit_axes(ctx);
+  }
 
   if (state->render_flags.shadow_mapping) {
     render_debug_texture(state, ctx, state->shadowmap, 10, 10, 400);
