@@ -30,9 +30,80 @@ static void precalculate_matrices(RenderingContext *ctx)
   Mat44 mvp = ctx->modelview_mat * ctx->projection_mat;
   ctx->mvp_mat = mvp;
 
-  Vec4f p = {mvp.c, mvp.g, mvp.k, mvp.o};
+  Mat44 m = ctx->mvp_mat;
+  Vec4f p = {m.c + m.d, m.g + m.h, m.k + m.l, m.o + m.p};
   float mag = sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
-  ctx->near_clip_plane = p * (1 / mag);
+  ctx->near_clip_plane = p * (1.0f / mag);
+}
+
+#define OUTCODE_LEFT 1
+#define OUTCODE_RIGHT 2
+#define OUTCODE_BOTTOM 4
+#define OUTCODE_TOP 8
+
+static inline int32_t outcode(int32_t x, int32_t y, int32_t xmin, int32_t ymin, int32_t xmax, int32_t ymax)
+{
+  int32_t result = 0;
+
+  if (x < xmin) {
+    result |= OUTCODE_LEFT;
+  } else if (x > xmax) {
+    result |= OUTCODE_RIGHT;
+  }
+
+  if (y < ymin) {
+    result |= OUTCODE_BOTTOM;
+  } else if (y > ymax) {
+    result |= OUTCODE_TOP;
+  }
+
+  return result;
+}
+
+static bool clip_line(int32_t *x0, int32_t *y0, int32_t *x1, int32_t *y1, int32_t xmin, int32_t ymin, int32_t xmax, int32_t ymax)
+{
+  int32_t code0 = outcode(*x0, *y0, xmin, ymin, xmax, ymax);
+  int32_t code1 = outcode(*x1, *y1, xmin, ymin, xmax, ymax);
+
+  while (true) {
+    if (!(code0 | code1)) {
+      return true; // Both inside
+    } else if (code0 & code1) {
+      return false; // Both outside in the same region
+    } else {
+      int32_t code = code0 ? code0 : code1;
+
+      float x, y;
+      float dx = *x1 - *x0;
+      float dy = *y1 - *y0;
+
+      if (code & OUTCODE_TOP) {
+        x = *x0 + dx * (ymax - *y0) / dy;
+        y = ymax;
+      } else if (code & OUTCODE_BOTTOM) {
+        x = *x0 + dx * (ymin - *y0) / dy;
+        y = ymin;
+      } else if (code & OUTCODE_RIGHT) {
+        y = *y0 + dy * (xmax - *x0) / dx;
+        x = xmax;
+      } else if (code & OUTCODE_LEFT) {
+        y = *y0 + dy * (xmin - *x0) / dx;
+        x = xmin;
+      }
+
+      if (code == code0) {
+        *x0 = x;
+        *y0 = y;
+        code0 = outcode(*x0, *y0, xmin, ymin, xmax, ymax);
+      } else {
+        *x1 = x;
+        *y1 = y;
+        code1 = outcode(*x1, *y1, xmin, ymin, xmax, ymax);
+      }
+    }
+  }
+
+  return false;
 }
 
 inline static q8 edge_funcq(q8 x0, q8 y0, q8 x1, q8 y1)

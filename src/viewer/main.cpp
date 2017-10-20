@@ -595,7 +595,6 @@ static void render_unit_axes(RenderingContext *ctx)
   ctx->draw_line(ctx, origin, {1, 0, 0}, {1.0f, 0.0f, 0.0f, 1.0f});
   ctx->draw_line(ctx, origin, {0, 1, 0}, {0.0f, 1.0f, 0.0f, 1.0f});
   ctx->draw_line(ctx, origin, {0, 0, 1}, {0.0f, 0.0f, 1.0f, 1.0f});
-  ctx->draw_line(ctx, origin, ctx->light, {1.0f, 1.0f, 1.0f, 1.0f});
 }
 
 static void animate_model(State *state)
@@ -743,7 +742,7 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
   subctx.viewport_mat = viewport_matrix((float) shadowmap->width, (float) shadowmap->height, true);
   subctx.projection_mat = orthographic_matrix(0.1f, 10.0f, -1.0f, -1.0f, 1.0f, 1.0f);
 
-  ASSERT(shadowmap->width * shadowmap->height < ctx->target->width * ctx->target->height); // Check we won't overflow zbuffer
+  ASSERT(shadowmap->width * shadowmap->height < ctx->target_width * ctx->target_height); // Check we won't overflow zbuffer
   subctx.zbuffer = ctx->zbuffer;
 
   // HACK: Multiplication by 5 so camera doesn't end up inside geometry

@@ -8,10 +8,9 @@
 
 static void draw_2d_line(DRAW_LINE_TARGET_TYPE *target, int32_t x0, int32_t y0, int32_t x1, int32_t y1, Vec4f color)
 {
-  x0 = CLAMP(x0, 0, target->width - 1);
-  x1 = CLAMP(x1, 0, target->height - 1);
-  y0 = CLAMP(y0, 0, target->width - 1);
-  y1 = CLAMP(y1, 0, target->height - 1);
+  if (!clip_line(&x0, &y0, &x1, &y1, 0, 0, target->width - 1, target->height - 1)) {
+    return;
+  }
 
   int32_t t;
   bool transposed = abs(y1-y0) > abs(x1-x0);
@@ -58,27 +57,27 @@ static void draw_2d_line(DRAW_LINE_TARGET_TYPE *target, int32_t x0, int32_t y0, 
     error += slope;
     if (error > dx) {
       y += inc;
-      error -= 2*dx;
+      error -= 2.0f * dx;
     }
   }
 }
 
 static DRAW_LINE_FUNC(DRAW_LINE_FUNC_NAME)
 {
-  Vec4f v0 = { p0.x, p0.y, p0.z, 1 };
-  Vec4f v1 = { p1.x, p1.y, p1.z, 1 };
+  Vec4f v0 = { p0.x, p0.y, p0.z, 1.0f };
+  Vec4f v1 = { p1.x, p1.y, p1.z, 1.0f };
   float d0 = v0.dot(ctx->near_clip_plane);
   float d1 = v1.dot(ctx->near_clip_plane);
 
-  if (d0 < 0 && d1 < 0) {
+  if (d0 < 0.0f && d1 < 0.0f) {
     return;
   }
-  
+
   float c;
-  if (d1 < 0) {
+  if (d1 < 0.0f) {
     c = d0 / (d0 - d1);
     p1 = p0 + (p1 - p0) * c;
-  } else if (d0 < 0) {
+  } else if (d0 < 0.0f) {
     c = d0 / (d1 - d0);
     p0 = p0 + (p0 - p1) * c;
   }
