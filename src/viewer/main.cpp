@@ -71,15 +71,15 @@ static Vec3f hsv_to_rgb(Vec3f hsv)
 
   h = fmod(h / 60.0f, 6.0f);
   float c = v * s;
-  float x = c * (1.0f - fabs(fmod(h, 2.0f) - 1.0f));  
+  float x = c * (1.0f - fabs(fmod(h, 2.0f) - 1.0f));
   float m = v - c;
 
   int hh = (int) h;
 
   float r = m;
   float g = m;
-  float b = m;  
-  
+  float b = m;
+
   if (hh == 0) {
     r += c;
     g += x;
@@ -126,9 +126,9 @@ FRAGMENT_FUNC(fragment_model)
     normal = d->normals[0] * t0 + d->normals[1] * t1 + d->normals[2] * t2;
   } else {
     normal = (d->pos[2] - d->pos[1]).cross(d->pos[2] - d->pos[0]).normalized();
-  } 
+  }
 
-  Vec3f uv = d->uvs[0] * t0 + d->uvs[1] * t1 + d->uvs[2] * t2; 
+  Vec3f uv = d->uvs[0] * t0 + d->uvs[1] * t1 + d->uvs[2] * t2;
 
   Vec3f texel;
   Vec4f texel4;
@@ -186,7 +186,7 @@ FRAGMENT_FUNC(fragment_model)
     };
     normal = (tnormal * invTBN).normalized();
   }
-#endif  
+#endif
 
   if (f->lighting) {
     intensity = normal.dot(-ctx->light);
@@ -276,7 +276,7 @@ FRAGMENT_FUNC(fragment_debug)
   DebugShaderData *d = (DebugShaderData *) shader_data;
 
   float fu = d->uv0.x + t1 * d->duv[0].x + t2 * d->duv[1].x;
-  float fv = d->uv0.y + t1 * d->duv[0].y + t2 * d->duv[1].y;  
+  float fv = d->uv0.y + t1 * d->duv[0].y + t2 * d->duv[1].y;
 
   int u = ((int) fu) & d->clampu;
   int v = ((int) fv) & d->clampv;
@@ -294,7 +294,7 @@ static Model *load_model(State *state, char *filename)
     printf("Failed to load model: %s\n", filename);
     return NULL;
   }
-  
+
   Model *model = (Model *) state->main_arena->allocate(sizeof(Model));
   model->parse(file.contents, file.size, true);
 
@@ -321,7 +321,7 @@ static void load_m2_model(State *state, char *filename)
     printf("Failed to load file: %s\n", filename);
     return;
   }
-  
+
   state->m2model = m2_load(file.contents, file.size, state->main_arena);
 }
 
@@ -342,7 +342,7 @@ static Texture *load_texture(State *state, char *filename)
 
   printf("X offset: %d; Y offset: %d; FlipX: %d; FlipY: %d\n",
          header->xOffset, header->yOffset, image.flipX, image.flipY);
-  
+
   Texture *texture = texture_create(state->main_arena, header->width, header->height);
   image.read_into_texture(file.contents, file.size, texture);
   return texture;
@@ -433,7 +433,7 @@ static inline void render_m2_pass(State *state, RenderingContext *ctx, M2Model *
   Vec3f positions[3];
 
   shader_data.texture = state->textures[pass->textureId];
-  
+
   uint32_t faceStart = submesh->facesStart;
   uint32_t faceEnd = faceStart + submesh->facesCount;
 
@@ -453,7 +453,7 @@ static inline void render_m2_pass(State *state, RenderingContext *ctx, M2Model *
     }
 
     ctx->draw_triangle(ctx, &fragment_model, (void *) &shader_data, positions[0], positions[1], positions[2]);
-  }  
+  }
 }
 
 typedef enum {
@@ -609,7 +609,7 @@ static void switch_animation(State *state, int32_t animId)
   if (animId < 0) {
     animId = state->m2model->animationsCount - 1;
   }
-  
+
   if (animId >= state->m2model->animationsCount) {
     animId = 0;
   }
@@ -623,7 +623,7 @@ static void switch_animation(State *state, int32_t animId)
   state->currentAnimFPS = 1000.0;
 
   animate_model(state);
-  
+
   printf("Switched animation to: %d\n", state->animId);
 }
 
@@ -720,7 +720,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
   memset(&state->render_flags, 1, sizeof(state->render_flags)); // Set all flags
   state->hsv = { 260.0f, 0.33f, 1.0f };
   state->sat_deg = RAD(109.0f);
-  
+
   state->hair = 6;
   state->scale = 0.4f;
 
@@ -891,7 +891,7 @@ static void update_camera(State *state, float dt)
       }
     }
     update_anim = true;
-  }  
+  }
 
   if (update_anim) {
     animate_model(state);

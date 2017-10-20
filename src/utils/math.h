@@ -50,7 +50,7 @@ typedef struct Mat44 {
   static inline Mat44 rotate_x(float angle);
   static inline Mat44 translate(float x, float y, float z);
   static inline Mat44 from_quaternion(Quaternion q);
-  
+
   void print();
   Mat44 inverse();
   Mat44 transposed();
@@ -92,7 +92,7 @@ typedef union Vec4f {
       float y;
       float z;
       float w;
-    };    
+    };
 
     struct {
       float r;

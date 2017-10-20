@@ -242,11 +242,11 @@ static void set_blend_mode(RenderingContext *ctx, BlendMode blend_mode)
 
     case BLEND_MODE_SRC_ALPHA_ONE:
       ctx->blend_func = &blend_src_alpha_one;
-      break;      
+      break;
 
     default:
       ctx->blend_func = &blend_src_copy;
-      break;  
+      break;
   }
 }
 
@@ -309,7 +309,7 @@ static Mat44 viewport_matrix(float width, float height, bool fix_aspect = false)
     result.a = hw;
     result.f = hh;
   }
-  
+
   result.m = hw;
   result.n = hh;
 

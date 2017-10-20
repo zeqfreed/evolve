@@ -72,7 +72,7 @@ function build_tools() {
 
   EXE="dbcdump"
   OBJS="$OBJDIR/main.o"
-  
+
   $CC src/tools/dbcdump/main.cpp $CFLAGS -o $OBJDIR/main.o
   $CC -o $BINDIR/$EXE $OBJS
 
@@ -100,7 +100,7 @@ function build_all() {
   build_targets "viewer cubes exe"
 }
 
-case "$1" in 
+case "$1" in
   "") build_all;;
   "all") build_all;;
   "viewer") build_targets "viewer exe";;
