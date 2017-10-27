@@ -57,6 +57,8 @@ typedef struct State {
   uint32_t currentFrame;
   double currentFracFrame;
   double currentAnimFPS;
+  uint32_t currentGlobalFrame;
+  double currentGlobalFracFrame;
   bool playing;
   bool showBones;
   bool showUnitAxes;
@@ -600,7 +602,7 @@ static void render_unit_axes(RenderingContext *ctx)
 
 static void animate_model(State *state)
 {
-  m2_animate_vertices(state->m2model, state->animId, state->currentFrame);
+  m2_animate_vertices(state->m2model, state->animId, state->currentFrame, state->currentGlobalFrame);
   state->modelChanged = true;
 }
 
@@ -775,14 +777,25 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
 
 static bool update_animation(State *state, float dt)
 {
-  state->currentFracFrame += dt * state->currentAnimFPS;
+  float dframe = dt * state->currentAnimFPS;
+  state->currentFracFrame += dframe;
+  state->currentGlobalFracFrame += dframe;
 
   bool result = false;
+
+  uint32_t globalFrame = (uint32_t) state->currentGlobalFracFrame;
+  if (globalFrame != state->currentGlobalFrame) {
+    state->currentGlobalFrame = globalFrame;
+    result = true;
+  }
 
   uint32_t frame = (uint32_t) state->currentFracFrame;
   if (frame != state->currentFrame) {
     result = true;
     state->currentFrame = frame;
+  }
+
+  if (result) {
     animate_model(state);
   }
 

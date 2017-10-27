@@ -181,6 +181,7 @@ typedef enum ModelInterpolationType {
 } ModelInterpolationType;
 
 typedef struct ModelAnimationData {
+  bool isGlobal;
   ModelInterpolationType interpolationType;
   uint32_t animationsCount;
   ModelAnimationRange *animationRanges;

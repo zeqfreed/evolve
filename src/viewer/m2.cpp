@@ -3,6 +3,9 @@
 
 #include "m2.h"
 
+typedef void (ModelLoadAnimValueFunc)(void *, void *);
+typedef void (ModelDumpAnimValueFunc)(uint32_t, void *);
+
 static void m2_dump_header(M2Header *header, void *bytes)
 {
   printf("%c%c%c%c (version %d)\n", header->magic[0], header->magic[1], header->magic[2], header->magic[3], header->version);
@@ -46,7 +49,7 @@ static void m2_dump_texture(M2Texture *tex, void *bytes)
   printf("Texture %p\n", tex);
   printf("Type: %d\n", tex->type);
   printf("Flags: %x\n", tex->flags);
-  
+
   char *filename = (char *) ((uint8_t *) bytes + tex->filenameOffset);
   printf("Filename length: %d\n", tex->filenameLength);
   printf("Filename: %s\n", filename);
@@ -71,7 +74,7 @@ static void m2_dump_geoset(M2Geoset *geoset)
   const char *fields[] = {
     "verticesStart", "verticesCount", "indicesStart",
     "indicesCount", "skinnedBonesCount", "bonesStart",
-    "rootBone", "bonesCount"  
+    "rootBone", "bonesCount"
   };
 
   uint16_t *f = (uint16_t *) &geoset->verticesStart;
@@ -116,9 +119,20 @@ static void m2_dump_bone(M2Bone *bone)
          scale->interpolationType, scale->globalSequence,
          scale->lookupsCount, scale->lookupsOffset,
          scale->timestampsCount, scale->timestampsOffset,
-         scale->keyframesCount, scale->keyframesOffset);                                                                                                                                  
+         scale->keyframesCount, scale->keyframesOffset);
+}
 
-  printf("\n");
+static void m2_dump_animation_block(M2Header *header, void *bytes, M2AnimationBlock *block, uint32_t elSize, ModelDumpAnimValueFunc *func)
+{
+  printf("Animation block %p\n", block);
+
+  uint32_t *timestamps = (uint32_t *) ((uint8_t *) bytes + block->timestampsOffset);
+  void *data = (void *) ((uint8_t *) bytes + block->keyframesOffset);
+
+  for (uint32_t i = 0; i < block->keyframesCount; i++) {
+    uint32_t timestamp = timestamps[i];
+    func(timestamp, (uint8_t *) data + elSize * i);
+  }
 }
 
 static void m2_dump_animation(M2Animation *animation)
@@ -130,8 +144,6 @@ static void m2_dump_animation(M2Animation *animation)
   printf("Radius: %.3f\n", animation->radius);
   printf("Next: %d; Alias of: %d\n\n", animation->nextAnimation, animation->aliasedAnimation);
 }
-
-typedef void (ModelLoadAnimValueFunc)(void *, void *);
 
 void m2_load_translation(void *src, void *dst)
 {
@@ -177,43 +189,62 @@ void m2_load_scaling(void *src, void *dst)
   *dstVal = *srcVal * worldMat;
 }
 
-void m2_load_animation_data(void *bytes, MemoryArena *arena, ModelAnimationData *data, M2AnimationBlock *block, uint32_t elSize, ModelLoadAnimValueFunc *func)
+void m2_dump_anim_vec3f(uint32_t timestamp, void *value)
+{
+  Vec3f *vec = (Vec3f *) value;
+  printf("%d\t%.03f %.03f %.03f\n", timestamp, vec->x, vec->y, vec->z);
+}
+
+void m2_dump_anim_quaternion(uint32_t timestamp, void *value)
+{
+  Quaternion *q = (Quaternion *) value;
+  printf("%d\t%.03f %.03f %.03f %.03f\n", timestamp, q->x, q->y, q->z, q->w);
+}
+
+void m2_load_animation_data(void *bytes, M2Header *header, MemoryArena *arena, ModelAnimationData *data, M2AnimationBlock *block, uint32_t elSize, ModelLoadAnimValueFunc *func)
 {
     ASSERT(block->timestampsCount == block->keyframesCount);
-
-    if (block->globalSequence >= 0) {
-      return; // TODO: Support global sequences
-    }
 
     data->interpolationType = (ModelInterpolationType) block->interpolationType;
     ASSERT(data->interpolationType < 2); // TODO: Support Hermite and Bezier interpolations
 
-    if (block->lookupsCount > 0) {
+    if (block->globalSequence >= 0) {
+      uint32_t *globalSequences = (uint32_t *) ((uint8_t *) bytes + header->globalSequencesOffset);
+
+      data->isGlobal = true;
+      data->animationsCount = 0;
+      data->animationRanges = (ModelAnimationRange *) arena->allocate(sizeof(ModelAnimationRange));
+      data->animationRanges[0].start = 0;
+      data->animationRanges[0].end = globalSequences[block->globalSequence];
+
+    } else if (block->lookupsCount > 0) {
       uint32_t *ranges = (uint32_t *) ((uint8_t *) bytes + block->lookupsOffset);
-      uint32_t *timestamps = (uint32_t *) ((uint8_t *) bytes + block->timestampsOffset);
-      void *values = (void *) ((uint8_t *) bytes + block->keyframesOffset);
-      
+
+      data->isGlobal = false;
       data->animationsCount = block->lookupsCount;
       data->animationRanges = (ModelAnimationRange *) arena->allocate(sizeof(ModelAnimationRange) * block->lookupsCount);
-      
+
       for (uint32_t li = 0; li < block->lookupsCount; li++) {
         ModelAnimationRange range;
         range.start = ranges[li * 2];
         range.end = ranges[li * 2 + 1];
         data->animationRanges[li] = range;
       }
-      
-      data->keyframesCount = block->keyframesCount;
-      data->timestamps = (uint32_t *) arena->allocate(sizeof(uint32_t) * block->keyframesCount); 
-      data->data = arena->allocate(elSize * block->keyframesCount);
+    }
 
-      for (uint32_t ki = 0; ki < block->keyframesCount; ki++) {
-        uint32_t ts = timestamps[ki];
-        data->timestamps[ki] = ts;
+    uint32_t *timestamps = (uint32_t *) ((uint8_t *) bytes + block->timestampsOffset);
+    void *values = (void *) ((uint8_t *) bytes + block->keyframesOffset);
 
-        func((uint8_t *) values + elSize * ki, (uint8_t *) data->data + elSize * ki);
-      }
-    }  
+    data->keyframesCount = block->keyframesCount;
+    data->timestamps = (uint32_t *) arena->allocate(sizeof(uint32_t) * block->keyframesCount);
+    data->data = arena->allocate(elSize * block->keyframesCount);
+
+    for (uint32_t ki = 0; ki < block->keyframesCount; ki++) {
+      uint32_t ts = timestamps[ki];
+      data->timestamps[ki] = ts;
+
+      func((uint8_t *) values + elSize * ki, (uint8_t *) data->data + elSize * ki);
+    }
 }
 
 M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
@@ -344,9 +375,9 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
     bone.parent = bones[i].parent;
     bone.keybone = bones[i].keybone;
 
-    m2_load_animation_data(bytes, arena, &bone.translations, &bones[i].translation, sizeof(Vec3f), m2_load_translation);
-    m2_load_animation_data(bytes, arena, &bone.rotations, &bones[i].rotation, sizeof(Quaternion), m2_load_rotation);
-    m2_load_animation_data(bytes, arena, &bone.scalings, &bones[i].scaling, sizeof(Vec3f), m2_load_scaling);
+    m2_load_animation_data(bytes, header, arena, &bone.translations, &bones[i].translation, sizeof(Vec3f), m2_load_translation);
+    m2_load_animation_data(bytes, header, arena, &bone.rotations, &bones[i].rotation, sizeof(Quaternion), m2_load_rotation);
+    m2_load_animation_data(bytes, header, arena, &bone.scalings, &bones[i].scaling, sizeof(Vec3f), m2_load_scaling);
 
     model->bones[i] = bone;
   }
@@ -361,8 +392,19 @@ inline void m2_reset_bones(M2Model *model)
   }
 }
 
-inline void m2_anim_get_frame(ModelAnimationData *data, ModelAnimationRange range, uint32_t frame, uint32_t *idx0, uint32_t *idx1, float *t)
+inline void m2_anim_get_frame(ModelAnimationData *data, ModelAnimationRange range, uint32_t frame, uint32_t globalFrame, uint32_t *idx0, uint32_t *idx1, float *t)
 {
+  if (range.start == range.end) {
+    *idx0 = range.start;
+    *idx1 = range.start;
+    *t = 0;
+    return;
+  }
+
+  if (data->isGlobal) {
+    frame = range.start + globalFrame % (range.end - range.start);
+  }
+
   uint32_t tsMax = data->timestamps[range.end];
   if (frame > tsMax) {
     *idx0 = range.end;
@@ -388,7 +430,7 @@ inline void m2_anim_get_frame(ModelAnimationData *data, ModelAnimationRange rang
   *t = 0;
 }
 
-void m2_calc_bone(M2Model *model, ModelBone *bone, uint32_t animId, uint32_t frame)
+void m2_calc_bone(M2Model *model, ModelBone *bone, uint32_t animId, uint32_t frame, uint32_t globalFrame)
 {
   if (bone->calculated) {
     return;
@@ -404,22 +446,31 @@ void m2_calc_bone(M2Model *model, ModelBone *bone, uint32_t animId, uint32_t fra
   ModelAnimationRange scaleRange = {};
   bool scale = false;
 
-  if (animId < bone->translations.animationsCount) {
+  if (bone->translations.isGlobal) {
+    trRange = bone->translations.animationRanges[0];
+    translate = true;
+  } else if (animId < bone->translations.animationsCount) {
     trRange = bone->translations.animationRanges[animId];
     translate = bone->translations.keyframesCount > 0;
   }
 
-  if (animId < bone->rotations.animationsCount) {
+  if (bone->rotations.isGlobal) {
+    rotRange = bone->rotations.animationRanges[0];
+    rotate = true;
+  } else if (animId < bone->rotations.animationsCount) {
     rotRange = bone->rotations.animationRanges[animId];
     rotate = bone->rotations.keyframesCount > 0;
   }
 
-  if (animId < bone->scalings.animationsCount) {
+  if (bone->scalings.isGlobal) {
+    scaleRange = bone->scalings.animationRanges[0];
+    scale = true;
+  } else if (animId < bone->scalings.animationsCount) {
     scaleRange = bone->scalings.animationRanges[animId];
     scale = bone->scalings.keyframesCount > 0;
   }
 
-  bool animated = translate || rotate;
+  bool animated = translate || rotate || scale;
   uint32_t idx0;
   uint32_t idx1;
   float t;
@@ -428,15 +479,15 @@ void m2_calc_bone(M2Model *model, ModelBone *bone, uint32_t animId, uint32_t fra
     mat = Mat44::translate(-bone->pivot.x, -bone->pivot.y, -bone->pivot.z);
 
     if (scale) {
-      m2_anim_get_frame(&bone->scalings, scaleRange, frame, &idx0, &idx1, &t);
+      m2_anim_get_frame(&bone->scalings, scaleRange, frame, globalFrame, &idx0, &idx1, &t);
       Vec3f s0 = ((Vec3f *) bone->scalings.data)[idx0];
       Vec3f s1 = ((Vec3f *) bone->scalings.data)[idx1];
       Vec3f s = lerp(s0, s1, t);
       mat = mat * Mat44::scale(s.x, s.y, s.z);
-    }    
+    }
 
     if (rotate) {
-      m2_anim_get_frame(&bone->rotations, rotRange, frame, &idx0, &idx1, &t);
+      m2_anim_get_frame(&bone->rotations, rotRange, frame, globalFrame, &idx0, &idx1, &t);
       Quaternion q0 = ((Quaternion *) bone->rotations.data)[idx0];
       Quaternion q;
 
@@ -452,16 +503,16 @@ void m2_calc_bone(M2Model *model, ModelBone *bone, uint32_t animId, uint32_t fra
 
         default:
           q = q0;
-          break;  
+          break;
       }
-      
+
       Mat44 rotmat = Mat44::from_quaternion(q);
       mat = mat * rotmat;
       nmat = rotmat;
     }
 
     if (translate) {
-      m2_anim_get_frame(&bone->translations, trRange, frame, &idx0, &idx1, &t);
+      m2_anim_get_frame(&bone->translations, trRange, frame, globalFrame, &idx0, &idx1, &t);
       Vec3f tr0 = ((Vec3f *) bone->translations.data)[idx0];
       Vec3f tr;
 
@@ -477,17 +528,17 @@ void m2_calc_bone(M2Model *model, ModelBone *bone, uint32_t animId, uint32_t fra
 
         default:
           tr = tr0;
-          break;  
+          break;
       }
 
       mat = mat * Mat44::translate(tr.x, tr.y, tr.z);
-    }    
+    }
 
     mat = mat * Mat44::translate(bone->pivot.x, bone->pivot.y, bone->pivot.z);
   }
 
   if (bone->parent > -1) {
-    m2_calc_bone(model, &model->bones[bone->parent], animId, frame);
+    m2_calc_bone(model, &model->bones[bone->parent], animId, frame, globalFrame);
     mat = mat * model->bones[bone->parent].matrix;
     nmat = nmat * model->bones[bone->parent].normal_matrix;
   }
@@ -497,18 +548,18 @@ void m2_calc_bone(M2Model *model, ModelBone *bone, uint32_t animId, uint32_t fra
   bone->calculated = true;
 }
 
-void m2_calc_bones(M2Model *model, uint32_t animId, uint32_t frame)
+void m2_calc_bones(M2Model *model, uint32_t animId, uint32_t frame, uint32_t globalFrame)
 {
   m2_reset_bones(model);
 
   for (int i = 0; i < model->bonesCount; i++) {
-    m2_calc_bone(model, &model->bones[i], animId, frame);
+    m2_calc_bone(model, &model->bones[i], animId, frame, globalFrame);
   }
 }
 
-void m2_animate_vertices(M2Model *model, uint32_t animId, uint32_t frame)
+void m2_animate_vertices(M2Model *model, uint32_t animId, uint32_t frame, uint32_t globalFrame)
 {
-  m2_calc_bones(model, animId, frame);
+  m2_calc_bones(model, animId, frame, globalFrame);
 
   for (int rpi = 0; rpi < model->renderPassesCount; rpi++) {
     M2RenderPass pass = model->renderPasses[rpi];
@@ -530,7 +581,7 @@ void m2_animate_vertices(M2Model *model, uint32_t animId, uint32_t frame)
         if (weights[wi].weight > 0) {
           Vec3f v = model->positions[vi] * model->bones[weights[wi].bone].matrix;
           Vec3f n = model->normals[vi] * model->bones[weights[wi].bone].normal_matrix;
-          pos = pos + v * weights[wi].weight; 
+          pos = pos + v * weights[wi].weight;
           normal = normal + n * weights[wi].weight;
         }
       }
