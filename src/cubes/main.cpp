@@ -103,7 +103,7 @@ static Texture *load_texture(State *state, char *filename)
 
   printf("X offset: %d; Y offset: %d; FlipX: %d; FlipY: %d\n",
          header->xOffset, header->yOffset, image.flipX, image.flipY);
-  
+
   Texture *texture = texture_create(state->main_arena, header->width, header->height);
   image.read_into_texture(file.contents, file.size, texture);
   return texture;
@@ -163,7 +163,7 @@ static void write_cube_vertices(Vertex *vertices, Vec3f offset, int textureIdx)
     // Bottom
     {3, 0}, {2, 1}, {1, 2},
     {3, 0}, {1, 2}, {0, 3},
-    
+
     // Front
     {0, 0}, {1, 1}, {5, 2},
     {0, 0}, {5, 2}, {4, 3},
@@ -280,7 +280,7 @@ static void render_cubes(State *state, RenderingContext *ctx)
   for (int i = 0; i < state->verticesCount; i++) {
     int idx = i % 3;
     vertices[idx] = state->vertices[i];
-    
+
 #if CUBES_CORRECT_PERSPECTIVE
     Vec3f cam_pos = vertices[idx].position * ctx->modelview_mat;
     positions[idx] = cam_pos * ctx->projection_mat;

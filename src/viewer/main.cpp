@@ -2,6 +2,7 @@
 
 #include "utils/math.cpp"
 #include "utils/tga.cpp"
+#include "utils/blp.cpp"
 #include "utils/texture.cpp"
 #include "utils/memory.cpp"
 #include "utils/assets.cpp"
@@ -282,9 +283,7 @@ FRAGMENT_FUNC(fragment_debug)
 
   int u = ((int) fu) & d->clampu;
   int v = ((int) fv) & d->clampv;
-  Vec3f tcolor = TEXEL3F(d->texture, u, v);
-
-  *color = {tcolor.r, tcolor.g, tcolor.b, 1.0f};
+  *color = TEXEL4F(d->texture, u, v);
 
   return true;
 }
@@ -327,7 +326,7 @@ static void load_m2_model(State *state, char *filename)
   state->m2model = m2_load(file.contents, file.size, state->main_arena);
 }
 
-static Texture *load_texture(State *state, char *filename)
+static Texture *load_tga_texture(State *state, char *filename)
 {
   LoadedFile file = load_file(state->platform_api, state->main_arena, filename);
   if (!file.size) {
@@ -344,6 +343,26 @@ static Texture *load_texture(State *state, char *filename)
 
   printf("X offset: %d; Y offset: %d; FlipX: %d; FlipY: %d\n",
          header->xOffset, header->yOffset, image.flipX, image.flipY);
+
+  Texture *texture = texture_create(state->main_arena, header->width, header->height);
+  image.read_into_texture(file.contents, file.size, texture);
+  return texture;
+}
+
+static Texture *load_blp_texture(State *state, char *filename)
+{
+  LoadedFile file = load_file(state->platform_api, state->main_arena, filename);
+  if (!file.size) {
+    printf("Failed to load texture: %s\n", filename);
+    return NULL;
+  }
+
+  BlpImage image;
+  image.read_header(file.contents, file.size);
+
+  BlpHeader *header = &image.header;
+  printf("BLP Image width: %d; height: %d; compression: %d\n",
+         header->width, header->height, header->compression);
 
   Texture *texture = texture_create(state->main_arena, header->width, header->height);
   image.read_into_texture(file.contents, file.size, texture);
@@ -681,38 +700,40 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->screenHeight = buffer->height;
 
   load_m2_model(state, (char *) "data/misc/nelf-patched.m2");
-  state->textures[0] = load_texture(state, (char *) "data/misc/nelf_0.tga");
-  state->textures[1] = load_texture(state, (char *) "data/misc/nelf_1.tga");
-  state->textures[2] = load_texture(state, (char *) "data/misc/cape.tga");
-  state->textures[3] = load_texture(state, (char *) "data/misc/nelf_3.tga");
+  state->textures[0] = load_blp_texture(state, (char *) "data/misc/nelf_0.blp");
+  state->textures[1] = load_tga_texture(state, (char *) "data/misc/nelf_1.tga");
+  state->textures[2] = load_tga_texture(state, (char *) "data/misc/cape.tga");
+  state->textures[3] = load_tga_texture(state, (char *) "data/misc/nelf_3.tga");
 
   // load_m2_model(state, (char *) "data/misc/dwarf.m2");
-  // state->textures[0] = load_texture(state, (char *) "data/misc/dwarf_0.tga");
-  // state->textures[1] = load_texture(state, (char *) "data/misc/dwarf_1.tga");
-  // state->textures[2] = load_texture(state, (char *) "data/misc/cape.tga");
-  // state->textures[3] = load_texture(state, (char *) "data/misc/nelf_3.tga");
+  // state->textures[0] = load_tga_texture(state, (char *) "data/misc/dwarf_0.tga");
+  // state->textures[1] = load_tga_texture(state, (char *) "data/misc/dwarf_1.tga");
+  // state->textures[2] = load_tga_texture(state, (char *) "data/misc/cape.tga");
+  // state->textures[3] = load_tga_texture(state, (char *) "data/misc/nelf_3.tga");
 
   // load_m2_model(state, (char *) "data/misc/diablo.m2");
-  // state->textures[0] = load_texture(state, (char *) "data/misc/diablo_D.tga");
+  // state->textures[0] = load_tga_texture(state, (char *) "data/misc/diablo_D.tga");
 
   // load_m2_model(state, (char *) "data/misc/hydra.m2");
-  // state->textures[0] = load_texture(state, (char *) "data/misc/hydra_0.tga");
+  // state->textures[0] = load_tga_texture(state, (char *) "data/misc/hydra_0.tga");
 
   // load_m2_model(state, (char *) "data/misc/gnoll_caster.m2");
-  // state->textures[0] = load_texture(state, (char *) "data/misc/gnoll_caster_0.tga");
-  // state->textures[1] = load_texture(state, (char *) "data/misc/nelf_3.tga");
+  // state->textures[0] = load_tga_texture(state, (char *) "data/misc/gnoll_caster_0.tga");
+  // state->textures[1] = load_tga_texture(state, (char *) "data/misc/nelf_3.tga");
 
   // load_m2_model(state, (char *) "data/misc/ent.m2");
-  // state->textures[0] = load_texture(state, (char *) "data/misc/ent_0.tga");
+  // state->textures[0] = load_tga_texture(state, (char *) "data/misc/ent_0.tga");
   // state->textures[1] = state->textures[0];
 
   // load_m2_model(state, (char *) "data/misc/riding_horse.m2");
-  // state->textures[0] = load_texture(state, (char *) "data/misc/riding_horse_0.tga");
-  // state->textures[1] = load_texture(state, (char *) "data/misc/riding_horse_1.tga");
+  // state->textures[0] = load_tga_texture(state, (char *) "data/misc/riding_horse_0.tga");
+  // state->textures[1] = load_tga_texture(state, (char *) "data/misc/riding_horse_1.tga");
 
   // load_m2_model(state, (char *) "data/misc/murloc.m2");
-  // state->textures[0] = load_texture(state, (char *) "data/misc/murloc_0.tga");
+  // state->textures[0] = load_tga_texture(state, (char *) "data/misc/murloc_0.tga");
   // state->textures[1] = state->textures[0];
+
+  //state->textures[4] = load_blp_texture(state, (char *) "data/misc/test2.blp");
 
   state->xRot = RAD(15.0f);
   state->yRot = 0.0f;
@@ -1060,7 +1081,10 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
     render_debug_texture(state, ctx, state->shadowmap, 10, 10, 400);
   }
 
-  //render_debug_texture(state, ctx, state->textures[0], 10, 410, 400);
+  set_blending(ctx, true);
+  set_blend_mode(ctx, BLEND_MODE_DECAL);
+
+  render_debug_texture(state, ctx, state->textures[0], 10, 410, 400);
 }
 
 #ifdef _WIN32
