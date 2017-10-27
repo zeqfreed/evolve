@@ -19,7 +19,7 @@ static inline Texel blend_decal(Vec4f src, Vec4f dst)
 static inline Vec4f blend_src_alpha_one(Vec4f src, Vec4f dst)
 {
   Vec3f c = src.rgb * src.a + dst.rgb;
-  return Vec4f(c, 1.0f);
+  return Vec4f(c.clamped(), 1.0f);
 }
 
 static void precalculate_matrices(RenderingContext *ctx)
