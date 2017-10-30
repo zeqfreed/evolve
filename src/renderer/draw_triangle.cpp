@@ -15,7 +15,7 @@
   #define DRAW_TRIANGLE_DO_BLEND(CTX, SRC, DST) DRAW_TRIANGLE_TEXEL_TO_COLOR(SRC)
 #endif
 
-#define ALPHA_TEST(A) (A > 0.5f)
+#define ALPHA_TEST(A) (A > 0.0f)
 
 static DRAW_TRIANGLE_FUNC(DRAW_TRIANGLE_FUNC_NAME)
 {
@@ -63,7 +63,7 @@ static DRAW_TRIANGLE_FUNC(DRAW_TRIANGLE_FUNC_NAME)
   float z0 = p0.z;
   float dz1 = p1.z - z0;
   float dz2 = p2.z - z0;
-  
+
   Vec3q w_xinc = {(py[1] - py[2]),
                   (py[2] - py[0]),
                   (py[0] - py[1])}; // * rarea;
@@ -128,9 +128,9 @@ static DRAW_TRIANGLE_FUNC(DRAW_TRIANGLE_FUNC_NAME)
       bool allSame = (inout[0] == inout[1]) && (inout[0] == inout[2]) && (inout[0] == inout[3]);
 #if DRAW_TRIANGLE_CULL
       bool allInside = allSame && (inout[0] == 7);
-#else      
+#else
       bool allInside = allSame && (inout[0] == 7 || inout[0] == 0);
-#endif      
+#endif
       bool allOutside = allSame && !allInside;
 
       if (allOutside) {
@@ -232,8 +232,8 @@ static DRAW_TRIANGLE_FUNC(DRAW_TRIANGLE_FUNC_NAME)
                     *zp = zvalue;
                   }
                 #else
-                  *zp = zvalue;  
-                #endif  
+                  *zp = zvalue;
+                #endif
               }
             }
 
