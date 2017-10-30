@@ -9,6 +9,7 @@
 
 #include "renderer/renderer.cpp"
 
+#include "dresser.cpp"
 #include "model.cpp"
 #include "m2.cpp"
 
@@ -33,8 +34,12 @@ typedef struct State {
   Model *model;
   M2Model *m2model;
   Texture *textures[5];
+  Texture *debugTexture;
   RenderingContext rendering_context;
   Mat44 matShadowMVP;
+
+  Dresser *dresser;
+  CharAppearance appearance;
 
   uint32_t screenWidth;
   uint32_t screenHeight;
@@ -328,7 +333,7 @@ static void load_m2_model(State *state, char *filename)
 
 static Texture *load_tga_texture(State *state, char *filename)
 {
-  LoadedFile file = load_file(state->platform_api, state->main_arena, filename);
+  LoadedFile file = load_file(state->platform_api, state->temp_arena, filename);
   if (!file.size) {
     printf("Failed to load texture: %s\n", filename);
     return NULL;
@@ -343,26 +348,6 @@ static Texture *load_tga_texture(State *state, char *filename)
 
   printf("X offset: %d; Y offset: %d; FlipX: %d; FlipY: %d\n",
          header->xOffset, header->yOffset, image.flipX, image.flipY);
-
-  Texture *texture = texture_create(state->main_arena, header->width, header->height);
-  image.read_into_texture(file.contents, file.size, texture);
-  return texture;
-}
-
-static Texture *load_blp_texture(State *state, char *filename)
-{
-  LoadedFile file = load_file(state->platform_api, state->main_arena, filename);
-  if (!file.size) {
-    printf("Failed to load texture: %s\n", filename);
-    return NULL;
-  }
-
-  BlpImage image;
-  image.read_header(file.contents, file.size);
-
-  BlpHeader *header = &image.header;
-  printf("BLP Image width: %d; height: %d; compression: %d\n",
-         header->width, header->height, header->compression);
 
   Texture *texture = texture_create(state->main_arena, header->width, header->height);
   image.read_into_texture(file.contents, file.size, texture);
@@ -672,6 +657,13 @@ static void enable_submeshes(State *state)
   }
 }
 
+static void set_character_appearance(State *state, CharAppearance appearance)
+{
+  state->dresser->mainArena->discard();
+  state->textures[0] = dresser_get_character_texture(state->dresser, appearance);
+  state->textures[1] = dresser_get_hair_texture(state->dresser, appearance);
+}
+
 static void initialize(State *state, DrawingBuffer *buffer)
 {
   RenderingContext *ctx = &state->rendering_context;
@@ -699,11 +691,18 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->screenWidth = buffer->width;
   state->screenHeight = buffer->height;
 
+  state->dresser = (Dresser *) state->main_arena->allocate(sizeof(Dresser));
+  dresser_init(state->dresser, state->platform_api, state->main_arena);
+
   load_m2_model(state, (char *) "data/misc/nelf-patched.m2");
-  state->textures[0] = load_blp_texture(state, (char *) "data/misc/nelf_0.blp");
-  state->textures[1] = load_tga_texture(state, (char *) "data/misc/nelf_1.tga");
+  // state->textures[0] = load_tga_texture(state, (char *) "data/misc/nelf_0.tga");
+  // state->textures[1] = load_tga_texture(state, (char *) "data/misc/nelf_1.tga");
   state->textures[2] = load_tga_texture(state, (char *) "data/misc/cape.tga");
   state->textures[3] = load_tga_texture(state, (char *) "data/misc/nelf_3.tga");
+
+  state->appearance = {0};
+  state->appearance.facialDetailIdx = MIN_FACIAL_DETAIL_IDX;
+  set_character_appearance(state, state->appearance);
 
   // load_m2_model(state, (char *) "data/misc/dwarf.m2");
   // state->textures[0] = load_tga_texture(state, (char *) "data/misc/dwarf_0.tga");
@@ -751,6 +750,8 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->showBones = false;
   state->showUnitAxes = false;
   state->modelChanged = true;
+
+  state->debugTexture = NULL; // load_blp_texture(state->platform_api, state->main_arena, state->temp_arena, (char *) "data/mpq/Character/NightElf/ScalpLowerHair00_04.blp");
 
   switch_animation(state, 24);
   enable_submeshes(state);
@@ -986,6 +987,53 @@ static void handle_input(State *state)
   if (KEY_WAS_PRESSED(state->keyboard, KB_U)) {
     state->showUnitAxes = !state->showUnitAxes;
   }
+
+  bool appearanceChanged = false;
+  bool shift = KEY_IS_DOWN(state->keyboard, KB_LEFT_SHIFT);
+
+  if (KEY_WAS_PRESSED(state->keyboard, KB_9)) {
+    appearanceChanged = true;
+
+    if (shift) {
+      state->appearance.faceIdx = CLAMP_CYCLE(state->appearance.faceIdx - 1, 0, MAX_FACE_IDX);
+    } else {
+      state->appearance.skinIdx = CLAMP_CYCLE(state->appearance.skinIdx - 1, 0, MAX_SKIN_IDX);
+    }
+  }
+
+  if (KEY_WAS_PRESSED(state->keyboard, KB_0)) {
+    appearanceChanged = true;
+
+    if (shift) {
+      state->appearance.faceIdx = CLAMP_CYCLE(state->appearance.faceIdx + 1, 0, MAX_FACE_IDX);
+    } else {
+      state->appearance.skinIdx = CLAMP_CYCLE(state->appearance.skinIdx + 1, 0, MAX_SKIN_IDX);
+    }
+  }
+
+  if (KEY_WAS_PRESSED(state->keyboard, KB_7)) {
+    appearanceChanged = true;
+
+    if (shift) {
+      state->appearance.facialDetailIdx = CLAMP_CYCLE(state->appearance.facialDetailIdx - 1, MIN_FACIAL_DETAIL_IDX, MAX_FACIAL_DETAIL_IDX);
+    } else {
+      state->appearance.hairColorIdx = CLAMP_CYCLE(state->appearance.hairColorIdx - 1, 0, MAX_HAIR_COLOR_IDX);
+    }
+  }
+
+  if (KEY_WAS_PRESSED(state->keyboard, KB_8)) {
+    appearanceChanged = true;
+
+    if (shift) {
+      state->appearance.facialDetailIdx = CLAMP_CYCLE(state->appearance.facialDetailIdx + 1, MIN_FACIAL_DETAIL_IDX, MAX_FACIAL_DETAIL_IDX);
+    } else {
+      state->appearance.hairColorIdx = CLAMP_CYCLE(state->appearance.hairColorIdx + 1, 0, MAX_HAIR_COLOR_IDX);
+    }
+  }
+
+  if (appearanceChanged) {
+    set_character_appearance(state, state->appearance);
+  }
 }
 
 static inline void clear_buffer(DrawingBuffer *buffer, Vec4f color)
@@ -1084,7 +1132,9 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   set_blending(ctx, true);
   set_blend_mode(ctx, BLEND_MODE_DECAL);
 
-  render_debug_texture(state, ctx, state->textures[0], 10, 410, 400);
+  if (state->debugTexture) {
+    render_debug_texture(state, ctx, state->debugTexture, 10, 410, 400);
+  }
 }
 
 #ifdef _WIN32

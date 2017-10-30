@@ -205,6 +205,12 @@ void m2_load_animation_data(void *bytes, M2Header *header, MemoryArena *arena, M
 {
     ASSERT(block->timestampsCount == block->keyframesCount);
 
+    if (block->timestampsCount == 0) {
+      data->animationsCount = 0;
+      data->keyframesCount = 0;
+      return;
+    }
+
     data->interpolationType = (ModelInterpolationType) block->interpolationType;
     ASSERT(data->interpolationType < 2); // TODO: Support Hermite and Bezier interpolations
 

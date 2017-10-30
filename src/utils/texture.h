@@ -15,4 +15,3 @@ typedef struct Texture{
 #define TEXEL3F(texture, x, y) ((Vec3f)(texture->pixels[(y) * texture->width + (x)]).xyz)
 
 Texture *texture_create(MemoryArena *arena, uint32_t width, uint32_t height);
-static inline void texture_blit(Texture *texture, DrawingBuffer *buffer);

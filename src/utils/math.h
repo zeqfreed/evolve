@@ -10,6 +10,7 @@
 #define MAX3(a, b, c) (MAX(MAX(a, b), c))
 
 #define CLAMP(val, min, max) (MAX(min, MIN(max, val)))
+#define CLAMP_CYCLE(val, min, max) ((val > max) ? (min) : ((val < min) ? (max) : (val)))
 
 #define RAD(x) ((x) * (PI / 180.0f))
 
