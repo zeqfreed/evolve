@@ -7,9 +7,9 @@
 #include "utils/texture.cpp"
 #include "utils/memory.cpp"
 #include "utils/assets.cpp"
+#include "utils/font.cpp"
 
 #include "renderer/renderer.cpp"
-#include "renderer/font.cpp"
 
 #ifndef CUBES_GRID_SIZE
 #define CUBES_GRID_SIZE 6
@@ -34,7 +34,7 @@ typedef struct State {
   Vertex *vertices;
 
   RenderingContext rendering_context;
-  Font font;
+  Font *font;
   Texture *texture;
 
   uint32_t seed;
@@ -109,6 +109,26 @@ static Texture *load_texture(State *state, char *filename)
   return texture;
 }
 
+static Font *load_font(State *state, char *textureFilename)
+{
+  char ftdFilename[1024];
+  if (snprintf(&ftdFilename[0], 1024, "%s.ftd", textureFilename) >= 1024) {
+    return NULL;
+  }
+
+  LoadedFile file = load_file(state->platform_api, state->main_arena, ftdFilename);
+  if (!file.size) {
+    printf("Failed to load font: %s\n", ftdFilename);
+    return NULL;
+  }
+
+  Font *font = (Font *) state->main_arena->allocate(sizeof(Font));
+  font->texture = load_texture(state, textureFilename);
+  font_init(font, file.contents, file.size);
+
+  return font;
+}
+
 static void initialize(State *state, DrawingBuffer *buffer)
 {
   RenderingContext *ctx = &state->rendering_context;
@@ -122,10 +142,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
   state->texture = load_texture(state, (char *) "data/cubes.tga");
 
-  state->font.texture = load_texture(state, (char *) "data/font.tga");
-  state->font.spec.char_width = 19;
-  state->font.spec.char_height = 31;
-  state->font.spec.chars_per_line = 13;
+  state->font = load_font(state, (char *) "data/fonts/firasans.tga");
 
   state->xRot = 0.0f;
   state->yRot = 0.0f;
@@ -255,7 +272,7 @@ static void render_text(State *state, RenderingContext *ctx)
   ctx->model_mat = Mat44::translate(0.0f, 0.0f, 0.0f);
   precalculate_matrices(ctx);
 
-  state->font.render_string(ctx, 10.0f, 10.0f, (char *) "Welcome to the wonderful world of software rendering :)");
+  font_render_text(state->font, ctx, 10.0f, 10.0 + state->font->lineHeight, (uint8_t *) "Welcome to the wonderful world of software rendering :)");
 }
 
 static void render_cubes(State *state, RenderingContext *ctx)
@@ -408,7 +425,13 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   clear_buffer(drawing_buffer, {0.0f, 0.0f, 0.0f, 0.0f});
   clear_zbuffer(ctx);
 
+  set_blending(ctx, false);
+
   render_cubes(state, ctx);
+
+  set_blending(ctx, true);
+  set_blend_mode(ctx, BLEND_MODE_DECAL);
+
   render_text(state, ctx);
 
 #if CUBES_DEBUG_GRID

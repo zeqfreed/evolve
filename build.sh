@@ -66,7 +66,7 @@ function build_exe() {
   exitcode=$?
 }
 
-function build_tools() {
+function build_dbcdump() {
   OBJDIR="$OBJDIR/tools/dbcdump"
   prepare
 
@@ -74,6 +74,19 @@ function build_tools() {
   OBJS="$OBJDIR/main.o"
 
   $CC src/tools/dbcdump/main.cpp $CFLAGS -o $OBJDIR/main.o
+  $CC -o $BINDIR/$EXE $OBJS
+
+  exitcode=$?
+}
+
+function build_mkfont() {
+  OBJDIR="$OBJDIR/tools/mkfont"
+  prepare
+
+  EXE="mkfont"
+  OBJS="$OBJDIR/main.o"
+
+  $CC src/tools/mkfont/main.cpp $CFLAGS -o $OBJDIR/main.o
   $CC -o $BINDIR/$EXE $OBJS
 
   exitcode=$?
@@ -105,7 +118,8 @@ case "$1" in
   "all") build_all;;
   "viewer") build_targets "viewer exe";;
   "cubes") build_targets "cubes exe";;
-  "tools") build_targets "tools";;
+  "dbcdump") build_targets "dbcdump";;
+  "mkfont") build_targets "mkfont";;
   *) echo "Unknown target: $1";;
 esac
 

@@ -6,6 +6,7 @@
 #include "utils/texture.cpp"
 #include "utils/memory.cpp"
 #include "utils/assets.cpp"
+#include "utils/font.cpp"
 
 #include "renderer/renderer.cpp"
 
@@ -37,6 +38,8 @@ typedef struct State {
   Texture *debugTexture;
   RenderingContext rendering_context;
   Mat44 matShadowMVP;
+
+  Font *font;
 
   Dresser *dresser;
   CharAppearance appearance;
@@ -277,7 +280,7 @@ typedef struct DebugShaderData {
   uint32_t clampu;
   uint32_t clampv;
   Texture *texture;
-} FontShaderData;
+} DebugShaderData;
 
 FRAGMENT_FUNC(fragment_debug)
 {
@@ -352,6 +355,26 @@ static Texture *load_tga_texture(State *state, char *filename)
   Texture *texture = texture_create(state->main_arena, header->width, header->height);
   image.read_into_texture(file.contents, file.size, texture);
   return texture;
+}
+
+static Font *load_font(State *state, char *textureFilename)
+{
+  char ftdFilename[1024];
+  if (snprintf(&ftdFilename[0], 1024, "%s.ftd", textureFilename) >= 1024) {
+    return NULL;
+  }
+
+  LoadedFile file = load_file(state->platform_api, state->main_arena, ftdFilename);
+  if (!file.size) {
+    printf("Failed to load font: %s\n", ftdFilename);
+    return NULL;
+  }
+
+  Font *font = (Font *) state->main_arena->allocate(sizeof(Font));
+  font->texture = load_tga_texture(state, textureFilename);
+  font_init(font, file.contents, file.size);
+
+  return font;
 }
 
 static void render_floor(State *state, RenderingContext *ctx)
@@ -550,14 +573,17 @@ static void render_m2_model_bones(State *state, RenderingContext *ctx, M2Model *
   }
 }
 
-static void render_debug_texture(State *state, RenderingContext *ctx, Texture *texture, float x, float y, float width)
+static void enable_ortho(State *state, RenderingContext *ctx)
 {
   ctx->viewport_mat = viewport_matrix((float) state->screenWidth, (float) state->screenHeight, false);
   ctx->projection_mat = orthographic_matrix(0.1f, 100.0f, 0.0f, (float) state->screenHeight, (float) state->screenWidth, 0);
   ctx->view_mat = Mat44::identity();
   ctx->model_mat = Mat44::translate(0, 0, 0);
   precalculate_matrices(ctx);
+}
 
+static void render_debug_texture(State *state, RenderingContext *ctx, Texture *texture, float x, float y, float width)
+{
   const Vec3f texture_coords[4] = {
     {0.0f, 0.0f, 0.0f},
     {(float) texture->width, 0.0f, 0.0f},
@@ -734,6 +760,8 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
   //state->textures[4] = load_blp_texture(state, (char *) "data/misc/test2.blp");
 
+  state->font = load_font(state, (char *) "data/fonts/firasans.tga");
+
   state->xRot = RAD(15.0f);
   state->yRot = 0.0f;
   state->fov = 60.0f;
@@ -751,7 +779,8 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->showUnitAxes = false;
   state->modelChanged = true;
 
-  state->debugTexture = NULL; // load_blp_texture(state->platform_api, state->main_arena, state->temp_arena, (char *) "data/mpq/Character/NightElf/ScalpLowerHair00_04.blp");
+  // load_blp_texture(state->platform_api, state->main_arena, state->temp_arena, (char *) "data/mpq/Character/NightElf/ScalpLowerHair00_04.blp");
+  state->debugTexture = state->textures[1];
 
   switch_animation(state, 24);
   enable_submeshes(state);
@@ -789,6 +818,40 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
     }
   }
 }
+
+#if 0
+static void render_codepoint(State *state, RenderingContext *ctx, uint32_t codepoint, float x, float y)
+{
+  FontShaderData data = {};
+  data.texture = state->font->texture;
+  data.clampu = data.texture->width - 1;
+  data.clampv = data.texture->height - 1;
+
+  FontQuad q = *font_codepoint_quad(state->font, codepoint);
+  // printf("quad: %.03f %.03f %.03f %.03f\n      %.03f %.03f %.03f %.03f\n", q.s0, q.t0, q.s1, q.t1, q.x0, q.y0, q.x1, q.y1);
+
+  Vec3f tex[4] = {};
+  tex[0] = {q.s0, q.t0, 0.0f};
+  tex[1] = {q.s1, q.t0, 0.0f};
+  tex[2] = {q.s1, q.t1, 0.0f};
+  tex[3] = {q.s0, q.t1, 0.0f};
+
+  Vec3f pos[4] = {};
+  pos[0] = Vec3f{q.x0 + x, q.y0 + y, 0.0f} * ctx->mvp_mat;
+  pos[1] = Vec3f{q.x1 + x, q.y0 + y, 0.0f} * ctx->mvp_mat;
+  pos[2] = Vec3f{q.x1 + x, q.y1 + y, 0.0f} * ctx->mvp_mat;
+  pos[3] = Vec3f{q.x0 + x, q.y1 + y, 0.0f} * ctx->mvp_mat;
+
+  data.uv0 = tex[0];
+  data.duv[0] = tex[1] - data.uv0;
+  data.duv[1] = tex[2] - data.uv0;
+  ctx->draw_triangle(ctx, &fragment_text, (void *) &data, pos[0], pos[1], pos[2]);
+
+  data.duv[0] = tex[2] - data.uv0;
+  data.duv[1] = tex[3] - data.uv0;
+  ctx->draw_triangle(ctx, &fragment_text, (void *) &data, pos[0], pos[2], pos[3]);
+}
+#endif
 
 #define Y_RAD_PER_SEC RAD(120.0f)
 #define X_RAD_PER_SEC RAD(120.0f)
@@ -1125,9 +1188,12 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
     render_unit_axes(ctx);
   }
 
-  if (state->render_flags.shadow_mapping) {
-    render_debug_texture(state, ctx, state->shadowmap, 10, 10, 400);
-  }
+  // Render 2D elements
+  enable_ortho(state, ctx);
+
+  // if (state->render_flags.shadow_mapping) {
+  //   render_debug_texture(state, ctx, state->shadowmap, 10, 10, 400);
+  // }
 
   set_blending(ctx, true);
   set_blend_mode(ctx, BLEND_MODE_DECAL);
@@ -1135,6 +1201,13 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   if (state->debugTexture) {
     render_debug_texture(state, ctx, state->debugTexture, 10, 410, 400);
   }
+
+  char text[1024] = {};
+  snprintf(text, 1024, "Animation index: %d", state->animId);
+  float y = 10.0 + state->font->lineHeight;
+  font_render_text(state->font, ctx, 10.0f, y, (uint8_t *) text);
+  snprintf(text, 1024, "Hair index: %d", 0);
+  font_render_text(state->font, ctx, 10.0f, y + state->font->lineHeight, (uint8_t *) text);
 }
 
 #ifdef _WIN32
