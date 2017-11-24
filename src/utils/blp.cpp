@@ -175,7 +175,7 @@ void BlpImage::read_into_texture(void *bytes, size_t size, Texture *texture)
       for (uint32_t x = iter.x; x < iter.x + 4; x++) {
         for (uint32_t y = iter.y; y < iter.y + 4; y++) {
           if (x < header.width && y < header.height) {
-            texture->pixels[y * header.width + x] = colors[idx];
+            texture->pixels[x * header.height + y] = colors[idx];
           }
 
           idx++;
