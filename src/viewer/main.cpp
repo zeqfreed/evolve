@@ -14,6 +14,9 @@
 #include "model.cpp"
 #include "m2.cpp"
 
+#define MIN_HAIR_IDX 2
+#define MAX_HAIR_IDX 8
+
 typedef struct RenderFlags {
   bool gouraud_shading;
   bool texture_mapping;
@@ -43,6 +46,7 @@ typedef struct State {
 
   Dresser *dresser;
   CharAppearance appearance;
+  int32_t hairIdx;
 
   uint32_t screenWidth;
   uint32_t screenHeight;
@@ -664,7 +668,6 @@ static void enable_submeshes(State *state)
   M2Model *model = state->m2model;
 
   uint16_t enabledSubmeshes[] = {
-    5, // Hair style
     401, // Default gloves
     501, // Default boots
     702, // Ears
@@ -688,6 +691,15 @@ static void set_character_appearance(State *state, CharAppearance appearance)
   state->dresser->mainArena->discard();
   state->textures[0] = dresser_get_character_texture(state->dresser, appearance);
   state->textures[1] = dresser_get_hair_texture(state->dresser, appearance);
+
+  M2Model *model = state->m2model;
+  for (int si = 0; si < model->submeshesCount; si++) {
+    if (model->submeshes[si].id > 0 && model->submeshes[si].id < 19) {
+      model->submeshes[si].enabled = (model->submeshes[si].id == state->hairIdx);
+    }
+  }
+
+  animate_model(state);
 }
 
 static void initialize(State *state, DrawingBuffer *buffer)
@@ -728,6 +740,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
   state->appearance = {0};
   state->appearance.facialDetailIdx = MIN_FACIAL_DETAIL_IDX;
+  state->hairIdx = MIN_HAIR_IDX;
   set_character_appearance(state, state->appearance);
 
   // load_m2_model(state, (char *) "data/misc/dwarf.m2");
@@ -1094,6 +1107,18 @@ static void handle_input(State *state)
     }
   }
 
+  if (KEY_WAS_PRESSED(state->keyboard, KB_5)) {
+    state->hairIdx--;
+    if (state->hairIdx < MIN_HAIR_IDX) state->hairIdx = MAX_HAIR_IDX;
+    appearanceChanged = true;
+  }
+
+  if (KEY_WAS_PRESSED(state->keyboard, KB_6)) {
+    state->hairIdx++;
+    if (state->hairIdx > MAX_HAIR_IDX) state->hairIdx = MIN_HAIR_IDX;
+    appearanceChanged = true;
+  }
+
   if (appearanceChanged) {
     set_character_appearance(state, state->appearance);
   }
@@ -1171,7 +1196,7 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
                   Mat44::translate(0.0f, 0.0f, -state->camDistance);
 
   set_target(ctx, state->buffer);
-  clear_buffer(state->buffer, {0.0f, 0.0f, 0.0f, 0.0f});
+  clear_buffer(state->buffer, Vec4f(ctx->clear_color, 0.0f));
   clear_zbuffer(ctx);
 
   render_floor(state, ctx);
@@ -1206,7 +1231,7 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   snprintf(text, 1024, "Animation index: %d", state->animId);
   float y = 10.0 + state->font->lineHeight;
   font_render_text(state->font, ctx, 10.0f, y, (uint8_t *) text);
-  snprintf(text, 1024, "Hair index: %d", 0);
+  snprintf(text, 1024, "Hair index: %d", state->hairIdx);
   font_render_text(state->font, ctx, 10.0f, y + state->font->lineHeight, (uint8_t *) text);
 }
 
