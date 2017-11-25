@@ -114,23 +114,28 @@ Vec4f *BlpBlockIter::next()
   uint16_t c0 = data[0] + data[1] * 256;
   uint16_t c1 = data[2] + data[3] * 256;
 
-  Vec3f c[4] = {};
-  c[0] = rgb565(c0);
-  c[1] = rgb565(c1);
+  Vec4f c[4] = {};
+  c[0] = Vec4f(rgb565(c0), 1.0f);
+  c[1] = Vec4f(rgb565(c1), 1.0f);
 
   if (c0 > c1 || image->header.alphaType == 1) {
     c[2] = c[0] * (2.0f / 3.0f) + c[1] * (1.0f / 3.0f);
     c[3] = c[0] * (1.0f / 3.0f) + c[1] * (2.0f / 3.0f);
   } else {
     c[2] = c[0] * 0.5 + c[1] * 0.5;
-    c[3] = {0.0f, 0.0f, 0.0f};
+    c[3] = (image->header.alphaDepth == 1) ? Vec4f(0.0f, 0.0f, 0.0f, 0.0f) : Vec4f(0.0f, 0.0f, 0.0f, 1.0f);
   }
 
   for (int32_t i = 0; i < 4; i++) {
     for (int32_t j = 0; j < 4; j++) {
       uint8_t codes = data[4 + i];
       uint8_t lookup = (codes >> (j * 2)) & 0x3;
-      colors[i * 4 + j].xyz = c[lookup];
+
+      if (image->header.alphaDepth == 1) {
+        colors[i * 4 + j] = c[lookup];
+      } else {
+        colors[i * 4 + j].xyz = c[lookup].xyz;
+      }
     }
   }
 
