@@ -29,6 +29,7 @@ typedef struct RenderFlags {
 typedef struct State {
   PlatformAPI *platform_api;
   KeyboardState *keyboard;
+  MouseState *mouse;
   MemoryArena *main_arena;
   MemoryArena *temp_arena;
 
@@ -1122,6 +1123,12 @@ static void handle_input(State *state)
   if (appearanceChanged) {
     set_character_appearance(state, state->appearance);
   }
+
+  if (MOUSE_BUTTON_IS_DOWN(state->mouse, MB_LEFT)) {
+    state->rendering_context.clear_color = {0.0f, 1.0f, 1.0f};
+  } else {
+    state->rendering_context.clear_color = {0.0f, 0.0f, 0.0f};
+  }
 }
 
 static inline void clear_buffer(DrawingBuffer *buffer, Vec4f color)
@@ -1150,7 +1157,9 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
     state->main_arena = arena;
     state->temp_arena = arena->subarena(MB(32));
     state->platform_api = &global_state->platform_api;
+
     state->keyboard = global_state->keyboard;
+    state->mouse = global_state->mouse;
 
     initialize(state, drawing_buffer);
     animate_model(state);
@@ -1233,6 +1242,9 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   font_render_text(state->font, ctx, 10.0f, y, (uint8_t *) text);
   snprintf(text, 1024, "Hair index: %d", state->hairIdx);
   font_render_text(state->font, ctx, 10.0f, y + state->font->lineHeight, (uint8_t *) text);
+
+  snprintf(text, 1024, "X: %.03f, Y: %.03f", state->mouse->windowX, state->mouse->windowY);
+  font_render_text(state->font, ctx, 10.0f, y + state->font->lineHeight * 2.0f, (uint8_t *) text);
 }
 
 #ifdef _WIN32

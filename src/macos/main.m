@@ -13,15 +13,17 @@
 #include "fs.h"
 
 #include "keyboard.cpp"
+#include "mouse.cpp"
 
 static KeyboardState keyboardState;
+static MouseState mouseState;
 
 @interface MacOSAppDelegate : NSObject<NSApplicationDelegate, NSWindowDelegate>
 {
 }
 @end
 
-@interface MacOSWindowView : NSView 
+@interface MacOSWindowView : NSView
 {
 }
 - (void) drawRect: (NSRect) bounds;
@@ -153,6 +155,16 @@ static NSOpenGLContext* openGLContext = nil;
 
   // TODO: Update modifier flags
 }
+
+- (void) mouseDown:(NSEvent *)theEvent
+{
+  mouse_state_button_down(&mouseState, MB_LEFT);
+}
+
+- (void) mouseUp:(NSEvent *)theEvent
+{
+  mouse_state_button_up(&mouseState, MB_LEFT);
+}
 @end
 
 @implementation MacOSWindow
@@ -182,7 +194,7 @@ static NSOpenGLContext* openGLContext = nil;
     0
   };
 
-  NSOpenGLPixelFormat* format = [[NSOpenGLPixelFormat alloc] initWithAttributes:pixelFormatAttributes];  
+  NSOpenGLPixelFormat* format = [[NSOpenGLPixelFormat alloc] initWithAttributes:pixelFormatAttributes];
   openGLContext = [[NSOpenGLContext alloc] initWithFormat:format shareContext:NULL];
 
   [openGLContext setView:view];
@@ -237,11 +249,11 @@ void MacOS_CreateWindow()
     [NSApp setDelegate: appDelegate];
     [NSApp setActivationPolicy: NSApplicationActivationPolicyRegular];
     [NSApp finishLaunching];
-    
+
     window = [[MacOSWindow alloc] initWithWidth:WIDTH height:HEIGHT];
     [window setDelegate: appDelegate];
     [window center];
-    
+
     [window setTitle:@"Evolve -.-"];
 
     [window makeKeyAndOrderFront:nil];
@@ -254,9 +266,13 @@ void MacOS_CreateWindow()
 void MacOS_HandleEvents(void)
 {
   keyboard_clear_state_changes(&keyboardState);
+  mouse_state_clear_frame_changes(&mouseState);
+
+  CGPoint pos = (CGPoint) [window mouseLocationOutsideOfEventStream];
+  mouse_state_set_position(&mouseState, pos.x, (float) HEIGHT - pos.y);
 
   @autoreleasepool {
-    while(true) { 
+    while(true) {
       NSEvent *event = [NSApp nextEventMatchingMask:NSAnyEventMask
                               untilDate: [NSDate distantPast]
                               inMode: NSDefaultRunLoopMode
@@ -302,7 +318,7 @@ static void DEBUG_DrawScene() {
   glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 
   glClearColor(1.0, 1.0, 1.0, 1.0);
-  glClear(GL_COLOR_BUFFER_BIT); 
+  glClear(GL_COLOR_BUFFER_BIT);
 
   glColor3f(1.0, 0.0, 0.0);
 
@@ -395,7 +411,7 @@ int main(int argc, char *argv[])
     printf("Usage: %s MODULE\n", argv[0]);
     exit(1);
   };
-  
+
   setup_signal_handlers();
   load_dylib(dylib_path);
 
@@ -434,11 +450,12 @@ int main(int argc, char *argv[])
   state.platform_api.read_file_contents = macos_fs_read;
   state.platform_api.allocate_memory = macos_allocate_memory;
   state.platform_api.terminate = macos_terminate;
-  
+
   state.keyboard = &keyboardState;
+  state.mouse = &mouseState;
 
   gameRunning = true;
-  start = mach_absolute_time();  
+  start = mach_absolute_time();
 
   float targetMsPerFrame = 1000 / 60.0;
   double lastFrameTotal = targetMsPerFrame;

@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 #include "keyboard.h"
+#include "mouse.h"
 
 #ifdef __cplusplus
     #define C_LINKAGE extern "C"
@@ -65,6 +66,7 @@ typedef struct PlatformAPI {
 typedef struct GlobalState {
   PlatformAPI platform_api;
   KeyboardState *keyboard;
+  MouseState *mouse;
   void *state;
 } GlobalState;
 
