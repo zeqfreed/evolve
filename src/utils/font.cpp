@@ -33,6 +33,7 @@ void font_init(Font *font, void *bytes, size_t size) {
   FTDHeader *header = (FTDHeader *) bytes;
   font->fontSize = header->fontSize;
   font->lineHeight = (float) header->lineHeight;
+  font->capHeight = header->capHeight;
   font->codepointsCount = header->codepointsCount;
   font->rangesCount = header->rangesCount;
   font->ranges = (uint32_t *) ((uint8_t *) bytes + header->rangesOffset);
@@ -75,6 +76,32 @@ inline FontQuad *font_codepoint_quad(Font *font, uint32_t codepoint0, uint32_t c
   }
 
   return &font->quads[idx0];
+}
+
+static float font_get_text_width(Font *font, uint8_t *text)
+{
+  ASSERT(font);
+
+  float result = 0.0f;
+
+  uint32_t codepoint;
+  uint8_t *c = text;
+  while (*c) {
+    codepoint = (uint32_t) *c;
+    c++;
+
+    float kerning = 0.0f;
+    FontQuad q = *font_codepoint_quad(font, codepoint, (uint32_t) *c, &kerning);
+
+    if (codepoint == 0x20) {
+      result += kerning;
+      continue;
+    }
+
+    result += kerning;
+  }
+
+  return result;
 }
 
 static void font_render_text(Font *font, RenderingContext *ctx, float x, float y, uint8_t *text)

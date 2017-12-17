@@ -129,6 +129,7 @@ inline static q8 edge_funcq(q8 x0, q8 y0, q8 x1, q8 y1)
 #define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba4f_noblend_nocull_nofrag
 #define DRAW_TRIANGLE_BLEND 0
 #define DRAW_TRIANGLE_CULL 0
+#define DRAW_TRIANGLE_ZTEST 1
 #define DRAW_TRIANGLE_FRAG 0
 #include "draw_triangle.cpp"
 
@@ -141,6 +142,18 @@ inline static q8 edge_funcq(q8 x0, q8 y0, q8 x1, q8 y1)
 #define DRAW_TRIANGLE_TEXEL_TO_COLOR(V) (rgba_color(V))
 #define DRAW_TRIANGLE_BLEND 1
 #define DRAW_TRIANGLE_CULL 0
+#define DRAW_TRIANGLE_ZTEST 1
+#define DRAW_TRIANGLE_FRAG 1
+#include "draw_triangle.cpp"
+
+#define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba32_blend_nocull_noz_frag
+#define DRAW_TRIANGLE_TARGET_TYPE DrawingBuffer
+#define DRAW_TRIANGLE_TEXEL_TYPE uint32_t
+#define DRAW_TRIANGLE_COLOR_TO_TEXEL(V) (color_rgba(V))
+#define DRAW_TRIANGLE_TEXEL_TO_COLOR(V) (rgba_color(V))
+#define DRAW_TRIANGLE_BLEND 1
+#define DRAW_TRIANGLE_CULL 0
+#define DRAW_TRIANGLE_ZTEST 0
 #define DRAW_TRIANGLE_FRAG 1
 #include "draw_triangle.cpp"
 
@@ -151,6 +164,7 @@ inline static q8 edge_funcq(q8 x0, q8 y0, q8 x1, q8 y1)
 #define DRAW_TRIANGLE_TEXEL_TO_COLOR(V) (rgba_color(V))
 #define DRAW_TRIANGLE_BLEND 0
 #define DRAW_TRIANGLE_CULL 0
+#define DRAW_TRIANGLE_ZTEST 1
 #define DRAW_TRIANGLE_FRAG 1
 #include "draw_triangle.cpp"
 
@@ -161,6 +175,7 @@ inline static q8 edge_funcq(q8 x0, q8 y0, q8 x1, q8 y1)
 #define DRAW_TRIANGLE_TEXEL_TO_COLOR(V) (rgba_color(V))
 #define DRAW_TRIANGLE_BLEND 0
 #define DRAW_TRIANGLE_CULL 1
+#define DRAW_TRIANGLE_ZTEST 1
 #define DRAW_TRIANGLE_FRAG 1
 #include "draw_triangle.cpp"
 
@@ -197,7 +212,11 @@ static void change_draw_func(RenderingContext *ctx)
 
     case TARGET_TYPE_RGBA32:
       if (ctx->blending) {
-        ctx->draw_triangle = &draw_triangle_rgba32_blend_nocull_frag;
+        if (ctx->ztest) {
+          ctx->draw_triangle = &draw_triangle_rgba32_blend_nocull_frag;
+        } else {
+          ctx->draw_triangle = &draw_triangle_rgba32_blend_nocull_noz_frag;
+        }
       } else {
         if (ctx->culling) {
           ctx->draw_triangle = &draw_triangle_rgba32_noblend_cull_frag;
@@ -223,6 +242,16 @@ static inline void set_culling(RenderingContext *ctx, bool enabled)
 {
   bool wasEnabled = ctx->culling;
   ctx->culling = enabled;
+
+  if (wasEnabled != enabled) {
+    change_draw_func(ctx);
+  }
+}
+
+static inline void set_ztest(RenderingContext *ctx, bool enabled)
+{
+  bool wasEnabled = ctx->ztest;
+  ctx->ztest = enabled;
 
   if (wasEnabled != enabled) {
     change_draw_func(ctx);

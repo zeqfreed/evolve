@@ -7,6 +7,7 @@
 #include "utils/memory.cpp"
 #include "utils/assets.cpp"
 #include "utils/font.cpp"
+#include "utils/ui.cpp"
 
 #include "renderer/renderer.cpp"
 
@@ -44,6 +45,7 @@ typedef struct State {
   Mat44 matShadowMVP;
 
   Font *font;
+  UIContext ui;
 
   Dresser *dresser;
   CharAppearance appearance;
@@ -776,6 +778,8 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
   state->font = load_font(state, (char *) "data/fonts/firasans.tga");
 
+  ui_init(&state->ui, &state->rendering_context, state->font, state->keyboard, state->mouse);
+
   state->xRot = RAD(15.0f);
   state->yRot = 0.0f;
   state->fov = 60.0f;
@@ -1205,6 +1209,8 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
                   Mat44::translate(0.0f, 0.0f, -state->camDistance);
 
   set_target(ctx, state->buffer);
+  set_ztest(ctx, true);
+
   clear_buffer(state->buffer, Vec4f(ctx->clear_color, 0.0f));
   clear_zbuffer(ctx);
 
@@ -1236,6 +1242,8 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
     render_debug_texture(state, ctx, state->debugTexture, 10, 410, 400);
   }
 
+  set_ztest(ctx, false);
+
   char text[1024] = {};
   snprintf(text, 1024, "Animation index: %d", state->animId);
   float y = 10.0 + state->font->lineHeight;
@@ -1245,6 +1253,10 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
 
   snprintf(text, 1024, "X: %.03f, Y: %.03f", state->mouse->windowX, state->mouse->windowY);
   font_render_text(state->font, ctx, 10.0f, y + state->font->lineHeight * 2.0f, (uint8_t *) text);
+
+  state->ui.x = 10.0f;
+  state->ui.y = y + state->font->lineHeight * 3.0f;
+  ui_button(&state->ui, 150, 34, (uint8_t *) "Click me!");
 }
 
 #ifdef _WIN32

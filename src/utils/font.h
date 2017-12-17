@@ -6,6 +6,7 @@ typedef struct FTDHeader {
   char magic[4];
   float fontSize;
   uint32_t lineHeight;
+  float capHeight;
   uint32_t codepointsCount;
   uint32_t rangesCount;
   uint32_t rangesOffset;
@@ -26,6 +27,7 @@ typedef struct Font {
   Texture *texture;
   float fontSize;
   float lineHeight;
+  float capHeight;
   uint32_t rangesCount;
   uint32_t codepointsCount;
   uint32_t *ranges;

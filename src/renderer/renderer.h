@@ -13,7 +13,6 @@
 typedef uint16_t zval_t;
 #define ZBUFFER_MIN 0
 #define ZBUFFER_MAX 0xFFFF
-#define ZTEST(new, old) ((new > old))
 
 #define WHITE {1.0f, 1.0f, 1.0f}
 #define BLACK {0.0f, 0.0f, 0.0f}
@@ -64,6 +63,7 @@ typedef struct RenderingContext {
 
   bool blending;
   bool culling;
+  bool ztest;
 
   Vec3f clear_color;
   Vec3f light;

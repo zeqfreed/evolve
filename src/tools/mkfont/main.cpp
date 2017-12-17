@@ -101,6 +101,7 @@ typedef struct FTDHeader {
   char magic[4];
   float fontSize;
   uint32_t lineHeight;
+  float capHeight;
   uint32_t codepointsCount;
   uint32_t rangesCount;
   uint32_t rangesOffset;
@@ -109,6 +110,8 @@ typedef struct FTDHeader {
   uint32_t kernPairsCount;
   uint32_t kernPairsOffset;
 } __attribute__((packed)) FTDHeader;
+
+#define FONT_SIZE 32
 
 bool write_ftd(char *ftdfile, stbtt_fontinfo *font, int size, size_t w, size_t h, stbtt_pack_range *packRanges, size_t numRanges)
 {
@@ -206,6 +209,10 @@ bool write_ftd(char *ftdfile, stbtt_fontinfo *font, int size, size_t w, size_t h
   header.fontSize = size;
   header.lineHeight = scale * (ascent - descent + lineGap);
 
+  int x0, y0, x1, y1;
+  stbtt_GetCodepointBox(font, 'M', &x0, &y0, &x1, &y1);
+  header.capHeight = scale * (float) (y1 - y0);
+
   header.codepointsCount = numCodepoints;
   header.rangesCount = numRanges;
   header.rangesOffset = sizeof(FTDHeader);
@@ -226,8 +233,6 @@ bool write_ftd(char *ftdfile, stbtt_fontinfo *font, int size, size_t w, size_t h
   free(kernPairs);
   return true;
 }
-
-#define FONT_SIZE 32
 
 int mkfont(char *fontfile, char *outfile) {
   uint8_t *data = (uint8_t *) read_file(fontfile);
