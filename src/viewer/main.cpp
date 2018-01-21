@@ -1127,12 +1127,6 @@ static void handle_input(State *state)
   if (appearanceChanged) {
     set_character_appearance(state, state->appearance);
   }
-
-  if (MOUSE_BUTTON_IS_DOWN(state->mouse, MB_LEFT)) {
-    state->rendering_context.clear_color = {0.0f, 1.0f, 1.0f};
-  } else {
-    state->rendering_context.clear_color = {0.0f, 0.0f, 0.0f};
-  }
 }
 
 static inline void clear_buffer(DrawingBuffer *buffer, Vec4f color)
@@ -1256,7 +1250,9 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
 
   state->ui.x = 10.0f;
   state->ui.y = y + state->font->lineHeight * 3.0f;
-  ui_button(&state->ui, 150, 34, (uint8_t *) "Click me!");
+  if (ui_button(&state->ui, 150, 34, (uint8_t *) "Click me!") == UI_BUTTON_RESULT_CLICKED) {
+    state->rendering_context.clear_color = state->rendering_context.clear_color + Vec3f(0.1f, 0.1f, 0.1f);
+  }
 }
 
 #ifdef _WIN32
