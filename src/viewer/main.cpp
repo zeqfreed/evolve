@@ -1272,6 +1272,24 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   if (ui_button(&state->ui, 150, 34, (uint8_t *) "Click me!") == UI_BUTTON_RESULT_CLICKED) {
     state->rendering_context.clear_color = state->rendering_context.clear_color + Vec3f(0.1f, 0.1f, 0.1f);
   }
+
+  ui_begin(&state->ui, 6.0f, 180.0f);
+
+  for (size_t i = 0; i < 5; i++) {
+    ui_layout_begin_row(&state->ui, 200.0f, 40.0f);
+
+    ui_button(&state->ui, 34.0f, 34.0f, (uint8_t *) "<");
+
+    ui_layout_pull_right(&state->ui);
+    ui_button(&state->ui, 34.0f, 34.0f, (uint8_t *) ">");
+
+    ui_layout_fill(&state->ui);
+    ui_button(&state->ui, 0, 34.0f, (uint8_t *) "Test");
+
+    ui_layout_end_row(&state->ui);
+  }
+
+  ui_end(&state->ui);
 }
 
 #ifdef _WIN32

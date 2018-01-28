@@ -27,6 +27,10 @@ static void ui_init(UIContext *ctx, RenderingContext *renderingContext, Font *fo
   ctx->x = 100.0f;
   ctx->y = 100.0f;
   ctx->spacing = 0.0f;
+
+  ctx->layout.mode = UI_LM_NORMAL;
+  ctx->layout.xspacing = 4.0f;
+  ctx->layout.yspacing = 8.0f;
 }
 
 static inline bool ui_is_hovering_rect(UIContext *ctx, UIRect r)
@@ -113,11 +117,15 @@ typedef uint32_t ui_button_result;
 #define UI_BUTTON_RESULT_PRESSED 2
 #define UI_BUTTON_RESULT_CLICKED 3
 
+UIRect ui_layout_calc_rect(UIContext *ctx, UIRect rect);
+void ui_layout_shrink_row(UIContext *ctx, UIRect rect);
+
 ui_button_result ui_button(UIContext *ctx, float width, float height, uint8_t *text)
 {
   uint32_t hash = ui_hash(UI_BUTTON_TYPE, text);
 
-  UIRect rect = {ctx->x, ctx->y, ctx->x + width, ctx->y + height};
+  UIRect rect = ui_layout_calc_rect(ctx, {0, 0, width, height});
+  ui_layout_shrink_row(ctx, rect);
 
   bool hover = ui_is_hovering_rect(ctx, rect);
   bool mouseWasPressed = MOUSE_BUTTON_WAS_PRESSED(ctx->mouseState, MB_LEFT);
@@ -152,10 +160,109 @@ ui_button_result ui_button(UIContext *ctx, float width, float height, uint8_t *t
   ui_rect(ctx, rect, color);
 
   float textWidth = font_get_text_width(ctx->font, text);
-  float xOffset = 0.5 * (width - textWidth);
+  float xOffset = 0.5 * (rect.x1 - rect.x0 - textWidth);
   float yOffset = height - 0.5f * ctx->font->capHeight;
 
   font_render_text(ctx->font, ctx->renderingContext, rect.x0 + xOffset, rect.y0 + yOffset, text);
 
   return result;
+}
+
+void ui_begin(UIContext *ctx, float x, float y)
+{
+  ASSERT(ctx != NULL);
+  ctx->x = x;
+  ctx->y = y;
+}
+
+void ui_end(UIContext *ctx)
+{
+  return;
+}
+
+void ui_layout_begin_row(UIContext *ctx, float width, float height)
+{
+  ASSERT(ctx != NULL);
+
+  if (ctx->layout.isRow) {
+    return;
+  }
+
+  ctx->layout.isRow = true;
+  ctx->layout.row = {ctx->x, ctx->y, ctx->x + width, ctx->y + height};
+  ctx->layout.mode = UI_LM_NORMAL;
+
+  return;
+}
+
+void ui_layout_end_row(UIContext *ctx, float spacing = 8.0f)
+{
+  ASSERT(ctx != NULL);
+
+  if (!ctx->layout.isRow) {
+    return;
+  }
+
+  ctx->layout.isRow = false;
+  ctx->y += (ctx->layout.row.y1 - ctx->layout.row.y0 + ctx->layout.yspacing);
+}
+
+void ui_layout_pull_right(UIContext *ctx)
+{
+  ASSERT(ctx != NULL);
+  ctx->layout.mode = UI_LM_PULL_RIGHT;
+}
+
+void ui_layout_fill(UIContext *ctx)
+{
+  ASSERT(ctx != NULL);
+  ctx->layout.mode = UI_LM_FILL;
+}
+
+UIRect ui_layout_calc_rect(UIContext *ctx, UIRect rect)
+{
+  ASSERT(ctx != NULL);
+
+  if (!ctx->layout.isRow) {
+    return {rect.x0 + ctx->x, rect.y0 + ctx->y, rect.x1 + ctx->x, rect.y1 + ctx->y};
+  }
+
+  switch (ctx->layout.mode) {
+    case UI_LM_NORMAL: {
+      float offset = ctx->layout.row.x0 + ctx->layout.xspacing;
+      return {rect.x0 + offset, rect.y0 + ctx->y, rect.x1 + offset, rect.y1 + ctx->y};
+    }
+
+    case UI_LM_PULL_RIGHT: {
+      float width = rect.x1 - rect.x0;
+      return {ctx->layout.row.x1 - width - ctx->layout.xspacing, rect.y0 + ctx->y, ctx->layout.row.x1 - ctx->layout.xspacing, rect.y1 + ctx->y};
+    }
+
+    case UI_LM_FILL: {
+      return {ctx->layout.row.x0 + ctx->layout.xspacing, rect.y0 + ctx->y, ctx->layout.row.x1 - ctx->layout.xspacing, rect.y1 + ctx->y};
+    }
+  }
+}
+
+void ui_layout_shrink_row(UIContext *ctx, UIRect rect)
+{
+  ASSERT(UIContext *ctx);
+
+  if (!ctx->layout.isRow) {
+    return;
+  }
+
+  switch (ctx->layout.mode) {
+  case UI_LM_NORMAL:
+    ctx->layout.row.x0 += (rect.x1 - rect.x0) + ctx->layout.xspacing;
+    break;
+  case UI_LM_PULL_RIGHT:
+    ctx->layout.row.x1 -= (rect.x1 - rect.x0) + ctx->layout.xspacing;
+    break;
+  case UI_LM_FILL:
+    float halfway = 0.5f * (ctx->layout.row.x0 + ctx->layout.row.x1);
+    ctx->layout.row.x0 = halfway;
+    ctx->layout.row.x1 = halfway;
+    break;
+  }
 }
