@@ -364,12 +364,23 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
   model->animationsCount = header->animationsCount;
   model->animations = (ModelAnimation *) arena->allocate(sizeof(ModelAnimation) * header->animationsCount);
   for (int ai = 0; ai < header->animationsCount; ai++) {
+    model->animations[ai].id = -1;
     model->animations[ai].startFrame = animations[ai].timeStart;
     model->animations[ai].endFrame = animations[ai].timeEnd;
     model->animations[ai].speed = animations[ai].moveSpeed;
   }
 
-  // int16_t *animationLookups = (int16_t *) ((uint8_t *) bytes + header->animationLookupsOffset);
+  int16_t *animLookups = (int16_t *) ((uint8_t *) bytes + header->animationLookupsOffset);
+  model->animationLookupsCount = header->animationLookupsCount;
+  model->animationLookups = (int16_t *) arena->allocate(sizeof(int32_t) * model->animationLookupsCount);
+  for (size_t ali = 0; ali < model->animationLookupsCount; ali++) {
+    int16_t anim_id = animLookups[ali];
+    model->animationLookups[ali] = anim_id;
+
+    if (anim_id >= 0 && anim_id < model->animationsCount) {
+      model->animations[anim_id].id = ali; // Reverse lookup
+    }
+  }
 
   model->bonesCount = header->bonesCount;
   model->bones = (ModelBone *) arena->allocate(sizeof(ModelBone) * header->bonesCount);

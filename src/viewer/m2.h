@@ -207,6 +207,7 @@ typedef struct M2Face {
 } M2Face;
 
 typedef struct ModelAnimation {
+  int32_t id;
   uint32_t startFrame;
   uint32_t endFrame;
   float speed;
@@ -232,6 +233,8 @@ typedef struct M2Model {
   ModelSubmesh *submeshes;
   uint32_t bonesCount;
   ModelBone *bones;
+  uint32_t animationLookupsCount;
+  int16_t *animationLookups;
   uint32_t animationsCount;
   ModelAnimation *animations;
   uint32_t renderFlagsCount;

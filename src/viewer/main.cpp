@@ -8,6 +8,7 @@
 #include "utils/assets.cpp"
 #include "utils/font.cpp"
 #include "utils/ui.cpp"
+#include "utils/dbc.cpp"
 
 #include "renderer/renderer.cpp"
 
@@ -46,6 +47,7 @@ typedef struct State {
 
   Font *font;
   UIContext ui;
+  DBCData *dbc_anim_data;
 
   Dresser *dresser;
   CharAppearance appearance;
@@ -68,6 +70,7 @@ typedef struct State {
   DrawingBuffer *buffer;
 
   uint32_t animId;
+  char *animName;
   uint32_t startFrame;
   uint32_t endFrame;
   uint32_t currentFrame;
@@ -663,7 +666,19 @@ static void switch_animation(State *state, int32_t animId)
 
   animate_model(state);
 
-  printf("Switched animation to: %d\n", state->animId);
+
+  int16_t anim_id = state->m2model->animations[state->animId].id;
+  state->animName = (char *) "N/A";
+
+  if (anim_id >= 0) {
+    DBCRecord *anim_record = dbc_get_record(state->dbc_anim_data, anim_id);
+    printf("anim record: id = %d, name = %s\n", anim_record->id, anim_record->name);
+    if (anim_record) {
+      state->animName = anim_record->name;
+    }
+  }
+
+  printf("Switched animation to: %s (%d)\n", state->animName, state->animId);
 }
 
 static void enable_submeshes(State *state)
@@ -731,6 +746,10 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->buffer = buffer;
   state->screenWidth = buffer->width;
   state->screenHeight = buffer->height;
+
+  AssetLoader loader;
+  asset_loader_init(&loader, state->platform_api, state->temp_arena, state->main_arena);
+  state->dbc_anim_data = dbc_load_animation_data(&loader, (char *) "data/mpq/DBFilesClient/AnimationData.dbc");
 
   state->dresser = (Dresser *) state->main_arena->allocate(sizeof(Dresser));
   dresser_init(state->dresser, state->platform_api, state->main_arena);
@@ -1239,7 +1258,7 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   set_ztest(ctx, false);
 
   char text[1024] = {};
-  snprintf(text, 1024, "Animation index: %d", state->animId);
+  snprintf(text, 1024, "Animation: %s (%d)", state->animName, state->animId);
   float y = 10.0 + state->font->lineHeight;
   font_render_text(state->font, ctx, 10.0f, y, (uint8_t *) text);
   snprintf(text, 1024, "Hair index: %d", state->hairIdx);
