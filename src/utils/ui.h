@@ -31,4 +31,5 @@ typedef struct UIContext {
   float y;
   float spacing;
   uint32_t active_hash;
+  uint32_t group_hash;
 } UIContext;

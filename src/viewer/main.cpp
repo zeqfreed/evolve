@@ -1160,6 +1160,102 @@ static inline void clear_buffer(DrawingBuffer *buffer, Vec4f color)
   }
 }
 
+bool render_appearance_switcher(UIContext *ui, int32_t *value, int32_t min, int32_t max, char *fmt)
+{
+  float h = 30.0f;
+
+  ui_group_begin(ui, fmt);
+  ui_layout_row_begin(ui, 200.0f, h);
+
+  bool result = false;
+
+  if (ui_button(ui, h, h, (uint8_t *) "<") == UI_BUTTON_RESULT_CLICKED) {
+    *value = CLAMP_CYCLE(*value - 1, min, max);
+    result = true;
+  };
+
+  //ui_layout_pull_right(ui);
+  if (ui_button(ui, h, h, (uint8_t *) ">") == UI_BUTTON_RESULT_CLICKED) {
+    *value = CLAMP_CYCLE(*value + 1, min, max);
+    result = true;
+  }
+
+  ui_layout_fill(ui);
+  char buf[255];
+  snprintf(buf, sizeof(buf) * sizeof(buf[0]), fmt, *value - min + 1);
+  ui_label(ui, 0, h, (uint8_t *) &buf);
+
+  ui_layout_row_end(ui);
+  ui_group_end(ui);
+
+  return result;
+}
+
+void render_ui(State *state)
+{
+  RenderingContext *ctx = &state->rendering_context;
+  UIContext *ui = &state->ui;
+
+  set_ztest(ctx, false);
+
+  char buf[255];
+
+  snprintf(buf, 255, "X: %.03f, Y: %.03f", state->mouse->windowX, state->mouse->windowY);
+  font_render_text(state->font, ctx, 10.0f, 40.0f, (uint8_t *) buf);
+
+  // Animation controls
+
+  font_render_text(state->font, ctx, 10.0f, 40.0f + state->font->lineHeight, (uint8_t *) "Animation");
+
+  ui_begin(ui, 120.0f, 47.0f);
+
+  ui_group_begin(ui, (char *) "anim");
+  ui_layout_row_begin(ui, 500.0f, 30.0f);
+
+  if (ui_button(ui, 30.0f, 30.0f, (uint8_t *) "<") == UI_BUTTON_RESULT_CLICKED) {
+    switch_animation(state, state->animId - 1);
+  };
+
+  if (ui_button(ui, 30.0f, 30.0f, (uint8_t *) ">") == UI_BUTTON_RESULT_CLICKED) {
+    switch_animation(state, state->animId + 1);
+  }
+
+  ui_layout_pull_right(ui);
+
+  if (ui_button(ui, 100.0f, 30.0f, (uint8_t *) (state->playing ? "Pause" : "Play")) == UI_BUTTON_RESULT_CLICKED) {
+    state->playing = !state->playing;
+  }
+
+  ui_layout_fill(ui);
+  snprintf(buf, sizeof(buf) * sizeof(buf[0]), "%s (%d)", state->animName, state->animId);
+  ui_label(ui, 0, 30.0f, (uint8_t *) &buf);
+
+  ui_layout_row_end(ui);
+  ui_group_end(ui);
+
+  ui_end(ui);
+
+  // Appearance controls
+
+  bool changed = false;
+
+  ui_begin(ui, 6.0f, 85.0f);
+
+  changed |= render_appearance_switcher(ui, &state->appearance.faceIdx, 0, MAX_FACE_IDX, (char *) "Face %d");
+  changed |= render_appearance_switcher(ui, &state->appearance.skinIdx, 0, MAX_SKIN_IDX, (char *) "Skin %d");
+  changed |= render_appearance_switcher(ui, &state->hairIdx, MIN_HAIR_IDX, MAX_HAIR_IDX, (char *) "Hair %d");
+  changed |= render_appearance_switcher(ui, &state->appearance.hairColorIdx, 0, MAX_HAIR_COLOR_IDX, (char *) "Hair color %d");
+  changed |= render_appearance_switcher(ui, &state->appearance.facialDetailIdx,
+                                        MIN_FACIAL_DETAIL_IDX, MAX_FACIAL_DETAIL_IDX, (char *) "Detail %d");
+
+
+  ui_end(ui);
+
+  if (changed) {
+    set_character_appearance(state, state->appearance);
+  }
+}
+
 C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer, float dt)
 {
   State *state = (State *) global_state->state;
@@ -1248,48 +1344,14 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   //   render_debug_texture(state, ctx, state->shadowmap, 10, 10, 400);
   // }
 
-  set_blending(ctx, true);
-  set_blend_mode(ctx, BLEND_MODE_DECAL);
+  // set_blending(ctx, true);
+  // set_blend_mode(ctx, BLEND_MODE_DECAL);
 
-  if (state->debugTexture) {
-    render_debug_texture(state, ctx, state->debugTexture, 10, 410, 400);
-  }
+  // if (state->debugTexture) {
+  //   render_debug_texture(state, ctx, state->debugTexture, 10, 410, 400);
+  // }
 
-  set_ztest(ctx, false);
-
-  char text[1024] = {};
-  snprintf(text, 1024, "Animation: %s (%d)", state->animName, state->animId);
-  float y = 10.0 + state->font->lineHeight;
-  font_render_text(state->font, ctx, 10.0f, y, (uint8_t *) text);
-  snprintf(text, 1024, "Hair index: %d", state->hairIdx);
-  font_render_text(state->font, ctx, 10.0f, y + state->font->lineHeight, (uint8_t *) text);
-
-  snprintf(text, 1024, "X: %.03f, Y: %.03f", state->mouse->windowX, state->mouse->windowY);
-  font_render_text(state->font, ctx, 10.0f, y + state->font->lineHeight * 2.0f, (uint8_t *) text);
-
-  state->ui.x = 10.0f;
-  state->ui.y = y + state->font->lineHeight * 3.0f;
-  if (ui_button(&state->ui, 150, 34, (uint8_t *) "Click me!") == UI_BUTTON_RESULT_CLICKED) {
-    state->rendering_context.clear_color = state->rendering_context.clear_color + Vec3f(0.1f, 0.1f, 0.1f);
-  }
-
-  ui_begin(&state->ui, 6.0f, 180.0f);
-
-  for (size_t i = 0; i < 5; i++) {
-    ui_layout_begin_row(&state->ui, 200.0f, 40.0f);
-
-    ui_button(&state->ui, 34.0f, 34.0f, (uint8_t *) "<");
-
-    ui_layout_pull_right(&state->ui);
-    ui_button(&state->ui, 34.0f, 34.0f, (uint8_t *) ">");
-
-    ui_layout_fill(&state->ui);
-    ui_button(&state->ui, 0, 34.0f, (uint8_t *) "Test");
-
-    ui_layout_end_row(&state->ui);
-  }
-
-  ui_end(&state->ui);
+  render_ui(state);
 }
 
 #ifdef _WIN32

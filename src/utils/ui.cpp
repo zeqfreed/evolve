@@ -23,6 +23,7 @@ static void ui_init(UIContext *ctx, RenderingContext *renderingContext, Font *fo
   ctx->keyboardState = keyboardState;
   ctx->mouseState = mouseState;
   ctx->renderingContext = renderingContext;
+  ctx->group_hash = 0;
 
   ctx->x = 100.0f;
   ctx->y = 100.0f;
@@ -30,7 +31,7 @@ static void ui_init(UIContext *ctx, RenderingContext *renderingContext, Font *fo
 
   ctx->layout.mode = UI_LM_NORMAL;
   ctx->layout.xspacing = 4.0f;
-  ctx->layout.yspacing = 8.0f;
+  ctx->layout.yspacing = 4.0f;
 }
 
 static inline bool ui_is_hovering_rect(UIContext *ctx, UIRect r)
@@ -65,9 +66,9 @@ static void ui_rect(UIContext *ctx, UIRect rect, Vec4f color)
 #define FNV_PRIME 16777619
 #define FNV_START 0x811c9dc5
 
-static inline uint32_t fnv_hash(void *bytes, size_t size)
+static inline uint32_t fnv_hash_add_data(uint32_t start, void *bytes, size_t size)
 {
-  uint32_t result = FNV_START;
+  uint32_t result = start;
 
   for (int i = 0; i < size; i++) {
     result ^= *((uint8_t *) bytes + i);
@@ -77,9 +78,15 @@ static inline uint32_t fnv_hash(void *bytes, size_t size)
   return result;
 }
 
-static inline uint32_t fnv_string_hash_add(uint32_t current, char *string)
+static inline uint32_t fnv_hash(void *bytes, size_t size)
 {
-  uint32_t result = FNV_START;
+  return fnv_hash_add_data(FNV_START, bytes, size);
+}
+
+static inline uint32_t fnv_hash_add_string(uint32_t current, char *string)
+{
+  uint32_t result = current;
+
   while (uint8_t b = (uint8_t) *string++) {
     result ^= b;
     result *= FNV_PRIME;
@@ -94,10 +101,18 @@ static inline uint32_t fnv_string_hash_add(uint32_t current, char *string)
 #define UI_BUTTON_COLOR_HOVER (Vec4f{0.7f, 0.7f, 0.7f, 1.0f})
 #define UI_BUTTON_COLOR_PRESSED (Vec4f{0.3f, 0.3f, 0.3f, 1.0f})
 
-static uint32_t ui_hash(uint8_t type, uint8_t *label)
+static uint32_t ui_hash(UIContext *ctx, uint8_t type, uint8_t *label)
 {
-  uint32_t result = fnv_hash((void *) &type, 1);
-  return fnv_string_hash_add(result, (char *) label);
+  ASSERT(ctx != NULL);
+
+  uint32_t result;
+  if (ctx->group_hash != 0) {
+    result = fnv_hash_add_data(ctx->group_hash, (void *) &type, sizeof(type));
+  } else {
+    result = fnv_hash((void *) &type, 1);
+  }
+
+  return fnv_hash_add_string(result, (char *) label);
 }
 
 static void ui_set_active(UIContext *ctx, uint32_t hash)
@@ -117,15 +132,15 @@ typedef uint32_t ui_button_result;
 #define UI_BUTTON_RESULT_PRESSED 2
 #define UI_BUTTON_RESULT_CLICKED 3
 
-UIRect ui_layout_calc_rect(UIContext *ctx, UIRect rect);
-void ui_layout_shrink_row(UIContext *ctx, UIRect rect);
+UIRect ui_layout__calc_rect(UIContext *ctx, UIRect rect);
+void ui_layout__shrink_row(UIContext *ctx, UIRect rect);
 
 ui_button_result ui_button(UIContext *ctx, float width, float height, uint8_t *text)
 {
-  uint32_t hash = ui_hash(UI_BUTTON_TYPE, text);
+  uint32_t hash = ui_hash(ctx, UI_BUTTON_TYPE, text);
 
-  UIRect rect = ui_layout_calc_rect(ctx, {0, 0, width, height});
-  ui_layout_shrink_row(ctx, rect);
+  UIRect rect = ui_layout__calc_rect(ctx, {0, 0, width, height});
+  ui_layout__shrink_row(ctx, rect);
 
   bool hover = ui_is_hovering_rect(ctx, rect);
   bool mouseWasPressed = MOUSE_BUTTON_WAS_PRESSED(ctx->mouseState, MB_LEFT);
@@ -168,6 +183,20 @@ ui_button_result ui_button(UIContext *ctx, float width, float height, uint8_t *t
   return result;
 }
 
+void ui_label(UIContext *ctx, float width, float height, uint8_t *text)
+{
+  UIRect rect = ui_layout__calc_rect(ctx, {0, 0, width, height});
+  ui_layout__shrink_row(ctx, rect);
+
+  ui_rect(ctx, rect, Vec4f(0.1f, 0.1f, 0.1f, 1.0f));
+
+  float textWidth = font_get_text_width(ctx->font, text);
+  float xOffset = 0.5 * (rect.x1 - rect.x0 - textWidth);
+  float yOffset = height - 0.5f * ctx->font->capHeight;
+
+  font_render_text(ctx->font, ctx->renderingContext, rect.x0 + xOffset, rect.y0 + yOffset, text);
+}
+
 void ui_begin(UIContext *ctx, float x, float y)
 {
   ASSERT(ctx != NULL);
@@ -180,7 +209,7 @@ void ui_end(UIContext *ctx)
   return;
 }
 
-void ui_layout_begin_row(UIContext *ctx, float width, float height)
+void ui_layout_row_begin(UIContext *ctx, float width, float height)
 {
   ASSERT(ctx != NULL);
 
@@ -195,7 +224,7 @@ void ui_layout_begin_row(UIContext *ctx, float width, float height)
   return;
 }
 
-void ui_layout_end_row(UIContext *ctx, float spacing = 8.0f)
+void ui_layout_row_end(UIContext *ctx, float spacing = 8.0f)
 {
   ASSERT(ctx != NULL);
 
@@ -219,7 +248,7 @@ void ui_layout_fill(UIContext *ctx)
   ctx->layout.mode = UI_LM_FILL;
 }
 
-UIRect ui_layout_calc_rect(UIContext *ctx, UIRect rect)
+UIRect ui_layout__calc_rect(UIContext *ctx, UIRect rect)
 {
   ASSERT(ctx != NULL);
 
@@ -244,9 +273,9 @@ UIRect ui_layout_calc_rect(UIContext *ctx, UIRect rect)
   }
 }
 
-void ui_layout_shrink_row(UIContext *ctx, UIRect rect)
+void ui_layout__shrink_row(UIContext *ctx, UIRect rect)
 {
-  ASSERT(UIContext *ctx);
+  ASSERT(ctx != NULL);
 
   if (!ctx->layout.isRow) {
     return;
@@ -265,4 +294,25 @@ void ui_layout_shrink_row(UIContext *ctx, UIRect rect)
     ctx->layout.row.x1 = halfway;
     break;
   }
+}
+
+void ui_group_begin(UIContext *ctx, void *data, size_t size)
+{
+  ASSERT(ctx != NULL);
+  ASSERT(ctx->group_hash == 0);
+
+  ctx->group_hash = fnv_hash(data, size);
+}
+
+void ui_group_begin(UIContext *ctx, char *string)
+{
+  ctx->group_hash = fnv_hash_add_string(FNV_START, string);
+}
+
+void ui_group_end(UIContext *ctx)
+{
+  ASSERT(ctx != NULL);
+  ASSERT(ctx->group_hash != 0);
+
+  ctx->group_hash = 0;
 }
