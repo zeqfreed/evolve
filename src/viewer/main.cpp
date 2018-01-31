@@ -896,6 +896,9 @@ static void render_codepoint(State *state, RenderingContext *ctx, uint32_t codep
 #define CAM_DIST_PER_SEC 1.0f
 #define HUE_PER_SEC 120.0f
 #define SATURATION_PER_SEC RAD(120.0f)
+#define MOUSE_SENSE 0.5f
+#define Y_RAD_PER_PX RAD(0.5f)
+#define X_RAD_PER_PX RAD(0.5f)
 
 static bool update_animation(State *state, float dt)
 {
@@ -942,6 +945,10 @@ static void update_camera(State *state, float dt)
     da *= 3.0;
   }
 
+  if (MOUSE_BUTTON_IS_DOWN(state->mouse, MB_LEFT)) {
+    da -= Y_RAD_PER_PX * state->mouse->frameDx * MOUSE_SENSE;
+  }
+
   state->yRot += da;
   if (state->yRot > 2*PI) {
     state->yRot -= 2*PI;
@@ -954,6 +961,10 @@ static void update_camera(State *state, float dt)
 
   if (KEY_IS_DOWN(state->keyboard, KB_DOWN_ARROW)) {
     da -= X_RAD_PER_SEC * dt;
+  }
+
+  if (MOUSE_BUTTON_IS_DOWN(state->mouse, MB_LEFT)) {
+    da += X_RAD_PER_PX * state->mouse->frameDy * MOUSE_SENSE;
   }
 
   state->xRot += da;
