@@ -97,6 +97,12 @@ static DRAW_TRIANGLE_FUNC(DRAW_TRIANGLE_FUNC_NAME)
   Vec3q c = {(qmul(px[1], py[2]) - qmul(py[1], px[2])),
              (qmul(px[2], py[0]) - qmul(py[2], px[0])),
              (qmul(px[0], py[1]) - qmul(py[0], px[1]))}; // + (Vec3q){1, 1, 1};
+
+#define TOPLEFT(a, b) (((b.y == a.y) && (b.x < a.x)) || (b.y < a.y))
+  if (!TOPLEFT(p1, p2)) { c.x -= 1; };
+  if (!TOPLEFT(p2, p0)) { c.y -= 1; };
+  if (!TOPLEFT(p0, p1)) { c.z -= 1; };
+
   Vec3q basew = c + w_xinc * to_q8(blkminx) + w_yinc * to_q8(blkminy);
 
   float t1dx = to_float(w_xinc.y) * rarea;
