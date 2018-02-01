@@ -135,7 +135,18 @@ inline static q8 edge_funcq(q8 x0, q8 y0, q8 x1, q8 y1)
 
 /* DrawingBuffer target */
 
-#define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba32_blend_nocull_frag
+#define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba32_blend_cull_frag_z
+#define DRAW_TRIANGLE_TARGET_TYPE DrawingBuffer
+#define DRAW_TRIANGLE_TEXEL_TYPE uint32_t
+#define DRAW_TRIANGLE_COLOR_TO_TEXEL(V) (color_rgba(V))
+#define DRAW_TRIANGLE_TEXEL_TO_COLOR(V) (rgba_color(V))
+#define DRAW_TRIANGLE_BLEND 1
+#define DRAW_TRIANGLE_CULL 1
+#define DRAW_TRIANGLE_ZTEST 1
+#define DRAW_TRIANGLE_FRAG 1
+#include "draw_triangle.cpp"
+
+#define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba32_blend_nocull_frag_z
 #define DRAW_TRIANGLE_TARGET_TYPE DrawingBuffer
 #define DRAW_TRIANGLE_TEXEL_TYPE uint32_t
 #define DRAW_TRIANGLE_COLOR_TO_TEXEL(V) (color_rgba(V))
@@ -146,7 +157,7 @@ inline static q8 edge_funcq(q8 x0, q8 y0, q8 x1, q8 y1)
 #define DRAW_TRIANGLE_FRAG 1
 #include "draw_triangle.cpp"
 
-#define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba32_blend_nocull_noz_frag
+#define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba32_blend_nocull_frag_noz
 #define DRAW_TRIANGLE_TARGET_TYPE DrawingBuffer
 #define DRAW_TRIANGLE_TEXEL_TYPE uint32_t
 #define DRAW_TRIANGLE_COLOR_TO_TEXEL(V) (color_rgba(V))
@@ -157,7 +168,7 @@ inline static q8 edge_funcq(q8 x0, q8 y0, q8 x1, q8 y1)
 #define DRAW_TRIANGLE_FRAG 1
 #include "draw_triangle.cpp"
 
-#define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba32_noblend_nocull_frag
+#define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba32_noblend_nocull_frag_z
 #define DRAW_TRIANGLE_TARGET_TYPE DrawingBuffer
 #define DRAW_TRIANGLE_TEXEL_TYPE uint32_t
 #define DRAW_TRIANGLE_COLOR_TO_TEXEL(V) (color_rgba(V))
@@ -168,7 +179,7 @@ inline static q8 edge_funcq(q8 x0, q8 y0, q8 x1, q8 y1)
 #define DRAW_TRIANGLE_FRAG 1
 #include "draw_triangle.cpp"
 
-#define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba32_noblend_cull_frag
+#define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba32_noblend_cull_frag_z
 #define DRAW_TRIANGLE_TARGET_TYPE DrawingBuffer
 #define DRAW_TRIANGLE_TEXEL_TYPE uint32_t
 #define DRAW_TRIANGLE_COLOR_TO_TEXEL(V) (color_rgba(V))
@@ -179,7 +190,47 @@ inline static q8 edge_funcq(q8 x0, q8 y0, q8 x1, q8 y1)
 #define DRAW_TRIANGLE_FRAG 1
 #include "draw_triangle.cpp"
 
+#define DRAW_TRIANGLE_FUNC_NAME draw_triangle_rgba32_noblend_nocull_frag_noz
+#define DRAW_TRIANGLE_TARGET_TYPE DrawingBuffer
+#define DRAW_TRIANGLE_TEXEL_TYPE uint32_t
+#define DRAW_TRIANGLE_COLOR_TO_TEXEL(V) (color_rgba(V))
+#define DRAW_TRIANGLE_TEXEL_TO_COLOR(V) (rgba_color(V))
+#define DRAW_TRIANGLE_BLEND 0
+#define DRAW_TRIANGLE_CULL 0
+#define DRAW_TRIANGLE_ZTEST 0
+#define DRAW_TRIANGLE_FRAG 1
+#include "draw_triangle.cpp"
+
 #include <emmintrin.h>
+
+static void change_draw_func(RenderingContext *ctx)
+{
+  static DrawTriangleFuncLookup funcs[] = {
+    {0b0100, &draw_triangle_rgba32_noblend_nocull_frag_noz},
+    {0b0101, &draw_triangle_rgba32_blend_nocull_frag_noz},
+    {0b1100, &draw_triangle_rgba32_noblend_nocull_frag_z},
+    {0b1101, &draw_triangle_rgba32_blend_nocull_frag_z},
+    {0b1110, &draw_triangle_rgba32_noblend_cull_frag_z},
+    {0b1111, &draw_triangle_rgba32_blend_cull_frag_z},
+  };
+
+  switch (ctx->target_type) {
+    case TARGET_TYPE_TEXTURE:
+      ctx->draw_triangle = &draw_triangle_rgba4f_noblend_nocull_nofrag;
+      break;
+
+    case TARGET_TYPE_RGBA32:
+      ctx->draw_triangle = &draw_triangle_rgba32_blend_cull_frag_z;
+
+      for (size_t i = 0; i < sizeof(funcs) / sizeof(funcs[0]); i++) {
+        if ((funcs[i].flags & ctx->flags) == ctx->flags) {
+          ctx->draw_triangle = funcs[i].func;
+          break;
+        }
+      }
+      break;
+  }
+}
 
 static void set_target(RenderingContext *ctx, Texture *texture)
 {
@@ -187,9 +238,10 @@ static void set_target(RenderingContext *ctx, Texture *texture)
   ctx->target_type = TARGET_TYPE_TEXTURE;
   ctx->target_width = texture->width;
   ctx->target_height = texture->height;
-  ctx->draw_triangle = &draw_triangle_rgba4f_noblend_nocull_nofrag;
+
   ctx->draw_line = &draw_line_rgba4f;
   ctx->blend_func = &blend_src_copy;
+  change_draw_func(ctx);
 }
 
 static void set_target(RenderingContext *ctx, DrawingBuffer *buffer)
@@ -198,67 +250,45 @@ static void set_target(RenderingContext *ctx, DrawingBuffer *buffer)
   ctx->target_type = TARGET_TYPE_RGBA32;
   ctx->target_width = buffer->width;
   ctx->target_height = buffer->height;
-  ctx->draw_triangle = &draw_triangle_rgba32_blend_nocull_frag;
+
+  ctx->flags = 0xF;
+
   ctx->draw_line = &draw_line_rgba32;
   ctx->blend_func = &blend_src_copy;
+  change_draw_func(ctx);
 }
 
-static void change_draw_func(RenderingContext *ctx)
+static inline void renderer_set_flags(RenderingContext *ctx, uint32_t flags)
 {
-  switch (ctx->target_type) {
-    case TARGET_TYPE_TEXTURE:
-      ctx->draw_triangle = &draw_triangle_rgba4f_noblend_nocull_nofrag;
-      break;
+  uint32_t prevFlags = ctx->flags;
+  ctx->flags = flags;
 
-    case TARGET_TYPE_RGBA32:
-      if (ctx->blending) {
-        if (ctx->ztest) {
-          ctx->draw_triangle = &draw_triangle_rgba32_blend_nocull_frag;
-        } else {
-          ctx->draw_triangle = &draw_triangle_rgba32_blend_nocull_noz_frag;
-        }
-      } else {
-        if (ctx->culling) {
-          ctx->draw_triangle = &draw_triangle_rgba32_noblend_cull_frag;
-        } else {
-          ctx->draw_triangle = &draw_triangle_rgba32_noblend_nocull_frag;
-        }
-      }
-      break;
-  }
-}
-
-static inline void set_blending(RenderingContext *ctx, bool enabled)
-{
-  bool wasEnabled = ctx->blending;
-  ctx->blending = enabled;
-
-  if (wasEnabled != enabled) {
+  if (ctx->flags != prevFlags) {
     change_draw_func(ctx);
   }
 }
 
-static inline void set_culling(RenderingContext *ctx, bool enabled)
+static inline void renderer_enable(RenderingContext *ctx, uint32_t flags)
 {
-  bool wasEnabled = ctx->culling;
-  ctx->culling = enabled;
+  uint32_t prevFlags = ctx->flags;
+  ctx->flags |= flags;
 
-  if (wasEnabled != enabled) {
+  if (ctx->flags != prevFlags) {
     change_draw_func(ctx);
   }
 }
 
-static inline void set_ztest(RenderingContext *ctx, bool enabled)
+static inline void renderer_disable(RenderingContext *ctx, uint32_t flags)
 {
-  bool wasEnabled = ctx->ztest;
-  ctx->ztest = enabled;
+  uint32_t prevFlags = ctx->flags;
+  ctx->flags &= ~flags;
 
-  if (wasEnabled != enabled) {
+  if (ctx->flags != prevFlags) {
     change_draw_func(ctx);
   }
 }
 
-static void set_blend_mode(RenderingContext *ctx, BlendMode blend_mode)
+static void renderer_set_blend_mode(RenderingContext *ctx, BlendMode blend_mode)
 {
   switch (blend_mode) {
     case BLEND_MODE_DECAL:

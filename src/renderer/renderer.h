@@ -34,6 +34,11 @@ typedef DRAW_LINE_FUNC(DrawLineFunc);
 #define BLEND_FUNC(name) Vec4f name(Vec4f src, Vec4f dst);
 typedef BLEND_FUNC(BlendFunc);
 
+typedef struct DrawTriangleFuncLookup {
+  uint32_t flags;
+  DrawTriangleFunc *func;
+} DrawTriangleFuncLookup;
+
 typedef enum TargetType {
   TARGET_TYPE_RGBA32,
   TARGET_TYPE_TEXTURE
@@ -49,6 +54,11 @@ typedef struct ShaderContext {
   Vec3f positions[3];
 } ShaderContext;
 
+#define RENDER_BLENDING (1 << 0)
+#define RENDER_CULLING (1 << 1)
+#define RENDER_SHADING (1 << 2)
+#define RENDER_ZTEST (1 << 3)
+
 typedef struct RenderingContext {
   void *target;
   TargetType target_type;
@@ -61,9 +71,7 @@ typedef struct RenderingContext {
   DrawLineFunc *draw_line;
   BlendFunc *blend_func;
 
-  bool blending;
-  bool culling;
-  bool ztest;
+  uint32_t flags;
 
   Vec3f clear_color;
   Vec3f light;

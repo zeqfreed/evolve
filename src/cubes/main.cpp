@@ -425,12 +425,12 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   clear_buffer(drawing_buffer, {0.0f, 0.0f, 0.0f, 0.0f});
   clear_zbuffer(ctx);
 
-  set_blending(ctx, false);
+  renderer_disable(ctx, RENDER_BLENDING);
 
   render_cubes(state, ctx);
 
-  set_blending(ctx, true);
-  set_blend_mode(ctx, BLEND_MODE_DECAL);
+  renderer_set_flags(ctx, RENDER_BLENDING | RENDER_SHADING | RENDER_ZTEST);
+  renderer_set_blend_mode(ctx, BLEND_MODE_DECAL);
 
   render_text(state, ctx);
 

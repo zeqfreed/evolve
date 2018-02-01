@@ -17,11 +17,12 @@
 
 #if DRAW_TRIANGLE_ZTEST
   #define ZTEST(NEW, OLD) ((NEW > OLD))
+  #define ALPHA_TEST(A) (A > 0.5f)
 #else
   #define ZTEST(...) (true)
+  #define ALPHA_TEST(...) (true)
 #endif
 
-#define ALPHA_TEST(A) (A > 0.0f)
 
 static DRAW_TRIANGLE_FUNC(DRAW_TRIANGLE_FUNC_NAME)
 {

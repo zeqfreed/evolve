@@ -530,20 +530,24 @@ static void render_m2_model(State *state, RenderingContext *ctx, M2Model *model,
 
     M2RenderFlag *rf = &model->renderFlags[pass->renderFlagIndex];
 
-    set_culling(ctx, (rf->flags & 0x04) != 0x04);
+    if ((rf->flags & 0x04) != 0x04) {
+      renderer_enable(ctx, RENDER_CULLING);
+    } else {
+      renderer_disable(ctx, RENDER_CULLING);
+    }
 
     switch (mode) {
       case RENDER_MODE_OPAQUE:
         if (rf->blendingMode != 0) {
           continue;
         }
-        set_blending(ctx, false);
+        renderer_disable(ctx, RENDER_BLENDING);
         break;
 
       case RENDER_MODE_TRANSPARENT:
         if (rf->blendingMode > 0) {
-          set_blending(ctx, true);
-          set_blend_mode(ctx, map_blending_mode(rf->blendingMode));
+          renderer_enable(ctx, RENDER_BLENDING);
+          renderer_set_blend_mode(ctx, map_blending_mode(rf->blendingMode));
         } else {
           continue;
         }
@@ -1207,7 +1211,8 @@ void render_ui(State *state)
   RenderingContext *ctx = &state->rendering_context;
   UIContext *ui = &state->ui;
 
-  set_ztest(ctx, false);
+  renderer_set_flags(ctx, RENDER_BLENDING | RENDER_SHADING);
+  renderer_set_blend_mode(ctx, BLEND_MODE_DECAL);
 
   char buf[255];
 
@@ -1329,7 +1334,7 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
                   Mat44::translate(0.0f, 0.0f, -state->camDistance);
 
   set_target(ctx, state->buffer);
-  set_ztest(ctx, true);
+  renderer_enable(ctx, RENDER_ZTEST);
 
   clear_buffer(state->buffer, Vec4f(ctx->clear_color, 0.0f));
   clear_zbuffer(ctx);
