@@ -176,7 +176,7 @@ ui_button_result ui_button(UIContext *ctx, float width, float height, uint8_t *t
 
   float textWidth = font_get_text_width(ctx->font, text);
   float xOffset = 0.5 * (rect.x1 - rect.x0 - textWidth);
-  float yOffset = height - 0.5f * ctx->font->capHeight;
+  float yOffset = 0.5 * (rect.y1 - rect.y0) + 0.5 * ctx->font->capHeight;
 
   font_render_text(ctx->font, ctx->renderingContext, rect.x0 + xOffset, rect.y0 + yOffset, text);
 
@@ -192,7 +192,7 @@ void ui_label(UIContext *ctx, float width, float height, uint8_t *text)
 
   float textWidth = font_get_text_width(ctx->font, text);
   float xOffset = 0.5 * (rect.x1 - rect.x0 - textWidth);
-  float yOffset = height - 0.5f * ctx->font->capHeight;
+  float yOffset = 0.5 * (rect.y1 - rect.y0) + 0.5 * ctx->font->capHeight;
 
   font_render_text(ctx->font, ctx->renderingContext, rect.x0 + xOffset, rect.y0 + yOffset, text);
 }
