@@ -1175,6 +1175,20 @@ static inline void clear_buffer(DrawingBuffer *buffer, Vec4f color)
   }
 }
 
+#include <stdlib.h>
+
+#define RANDOM(a, b) (rand() % b + a)
+
+CharAppearance random_appearance()
+{
+  CharAppearance result = {};
+  result.skinIdx = RANDOM(0, MAX_SKIN_IDX);
+  result.faceIdx = RANDOM(0, MAX_FACE_IDX);
+  result.hairColorIdx = RANDOM(0, MAX_HAIR_COLOR_IDX);
+  result.facialDetailIdx = RANDOM(MIN_FACIAL_DETAIL_IDX, MAX_FACIAL_DETAIL_IDX);
+  return result;
+}
+
 bool render_appearance_switcher(UIContext *ui, int32_t *value, int32_t min, int32_t max, char *fmt)
 {
   float h = 30.0f;
@@ -1264,6 +1278,19 @@ void render_ui(State *state)
   changed |= render_appearance_switcher(ui, &state->appearance.facialDetailIdx,
                                         MIN_FACIAL_DETAIL_IDX, MAX_FACIAL_DETAIL_IDX, (char *) "Detail %d");
 
+
+  // Randomize button
+
+  ui_layout_row_begin(ui, 200.0f, 30.0f);
+
+  ui_layout_fill(ui);
+  if (ui_button(ui, 0, 30.0f, (uint8_t *) "Randomize") == UI_BUTTON_RESULT_CLICKED) {
+    state->appearance = random_appearance();
+    state->hairIdx = RANDOM(MIN_HAIR_IDX, MAX_HAIR_IDX);
+    changed = true;
+  };
+
+  ui_layout_row_end(ui);
 
   ui_end(ui);
 
