@@ -24,6 +24,7 @@ static void ui_init(UIContext *ctx, RenderingContext *renderingContext, Font *fo
   ctx->mouseState = mouseState;
   ctx->renderingContext = renderingContext;
   ctx->group_hash = 0;
+  ctx->disabled = false;
 
   ctx->x = 100.0f;
   ctx->y = 100.0f;
@@ -100,6 +101,7 @@ static inline uint32_t fnv_hash_add_string(uint32_t current, char *string)
 #define UI_BUTTON_COLOR_NORMAL (Vec4f{0.55f, 0.55f, 0.55f, 1.0f})
 #define UI_BUTTON_COLOR_HOVER (Vec4f{0.7f, 0.7f, 0.7f, 1.0f})
 #define UI_BUTTON_COLOR_PRESSED (Vec4f{0.3f, 0.3f, 0.3f, 1.0f})
+#define UI_BUTTON_COLOR_DISABLED (Vec4f{0.35f, 0.35f, 0.35f, 1.0f})
 
 static uint32_t ui_hash(UIContext *ctx, uint8_t type, uint8_t *label)
 {
@@ -132,6 +134,9 @@ typedef uint32_t ui_button_result;
 #define UI_BUTTON_RESULT_PRESSED 2
 #define UI_BUTTON_RESULT_CLICKED 3
 
+#define UI_FONT_TINT_DISABLED (Vec4f(0.45f, 0.45f, 0.45f, 1.0f))
+#define UI_FONT_TINT_NONE (Vec4f(1.0f, 1.0f, 1.0f, 1.0f))
+
 UIRect ui_layout__calc_rect(UIContext *ctx, UIRect rect);
 void ui_layout__shrink_row(UIContext *ctx, UIRect rect);
 
@@ -157,19 +162,21 @@ ui_button_result ui_button(UIContext *ctx, float width, float height, uint8_t *t
     clicked = hover;
   }
 
-  Vec4f color = UI_BUTTON_COLOR_NORMAL;
+  Vec4f color = ctx->disabled ? UI_BUTTON_COLOR_DISABLED : UI_BUTTON_COLOR_NORMAL;
   ui_button_result result = UI_BUTTON_RESULT_NONE;
 
-  if (active) {
-    color = UI_BUTTON_COLOR_PRESSED;
-    if (mouseIsDown) {
-      result = UI_BUTTON_RESULT_PRESSED;
-    } else {
-      result = hover ? UI_BUTTON_RESULT_CLICKED : UI_BUTTON_RESULT_NONE;
+  if (!ctx->disabled) {
+    if (active) {
+      color = UI_BUTTON_COLOR_PRESSED;
+      if (mouseIsDown) {
+        result = UI_BUTTON_RESULT_PRESSED;
+      } else {
+        result = hover ? UI_BUTTON_RESULT_CLICKED : UI_BUTTON_RESULT_NONE;
+      }
+    } else if (hover) {
+      color = UI_BUTTON_COLOR_HOVER;
+      result = UI_BUTTON_RESULT_HOVERED;
     }
-  } else if (hover) {
-    color = UI_BUTTON_COLOR_HOVER;
-    result = UI_BUTTON_RESULT_HOVERED;
   }
 
   ui_rect(ctx, rect, color);
@@ -178,23 +185,34 @@ ui_button_result ui_button(UIContext *ctx, float width, float height, uint8_t *t
   float xOffset = 0.5 * (rect.x1 - rect.x0 - textWidth);
   float yOffset = 0.5 * (rect.y1 - rect.y0) + 0.5 * ctx->font->capHeight;
 
-  font_render_text(ctx->font, ctx->renderingContext, rect.x0 + xOffset, rect.y0 + yOffset, text);
+  Vec4f tint = ctx->disabled ? UI_FONT_TINT_DISABLED : UI_FONT_TINT_NONE;
+  font_render_text(ctx->font, ctx->renderingContext, rect.x0 + xOffset, rect.y0 + yOffset, text, tint);
 
   return result;
 }
 
-void ui_label(UIContext *ctx, float width, float height, uint8_t *text)
+void ui_label(UIContext *ctx, float width, float height, uint8_t *text, UIAlign align = UI_ALIGN_LEFT, Vec4f bgcolor = UI_COLOR_LABEL_BG)
 {
-  UIRect rect = ui_layout__calc_rect(ctx, {0, 0, width, height});
+  float textWidth = font_get_text_width(ctx->font, text);
+
+  UIRect rect = ui_layout__calc_rect(ctx, {0, 0, MAX(width, textWidth + ctx->layout.xspacing * 2.0f), height});
   ui_layout__shrink_row(ctx, rect);
 
-  ui_rect(ctx, rect, Vec4f(0.1f, 0.1f, 0.1f, 1.0f));
+  if (bgcolor.a > 0.0f) {
+    ui_rect(ctx, rect, bgcolor);
+  }
 
-  float textWidth = font_get_text_width(ctx->font, text);
-  float xOffset = 0.5 * (rect.x1 - rect.x0 - textWidth);
+  float xOffset = ctx->layout.xspacing;
+  if (align == UI_ALIGN_CENTER) {
+    xOffset = 0.5 * (rect.x1 - rect.x0 - textWidth);
+  } else if (align == UI_ALIGN_RIGHT) {
+    xOffset = (rect.x1 - rect.x0 - ctx->layout.xspacing) - textWidth;
+  }
+
   float yOffset = 0.5 * (rect.y1 - rect.y0) + 0.5 * ctx->font->capHeight;
 
-  font_render_text(ctx->font, ctx->renderingContext, rect.x0 + xOffset, rect.y0 + yOffset, text);
+  Vec4f tint = ctx->disabled ? UI_FONT_TINT_DISABLED : UI_FONT_TINT_NONE;
+  font_render_text(ctx->font, ctx->renderingContext, rect.x0 + xOffset, rect.y0 + yOffset, text, tint);
 }
 
 void ui_begin(UIContext *ctx, float x, float y)
@@ -202,11 +220,17 @@ void ui_begin(UIContext *ctx, float x, float y)
   ASSERT(ctx != NULL);
   ctx->x = x;
   ctx->y = y;
+  ctx->disabled = false;
 }
 
 void ui_end(UIContext *ctx)
 {
   return;
+}
+
+void ui_set_disabled(UIContext *ctx, bool disabled)
+{
+  ctx->disabled = disabled;
 }
 
 void ui_layout_row_begin(UIContext *ctx, float width, float height)
@@ -234,6 +258,11 @@ void ui_layout_row_end(UIContext *ctx, float spacing = 8.0f)
 
   ctx->layout.isRow = false;
   ctx->y += (ctx->layout.row.y1 - ctx->layout.row.y0 + ctx->layout.yspacing);
+}
+
+void ui_layout_spacer(UIContext *ctx, float x, float y)
+{
+  ctx->y += y;
 }
 
 void ui_layout_pull_right(UIContext *ctx)

@@ -108,6 +108,7 @@ typedef union Vec4f {
   float length();
   Vec4f normalized();
   float dot(Vec4f v);
+  Vec4f clamped(float min = 0.0f, float max = 1.0f);
 
   constexpr Vec4f(): x(0.0f), y(0.0f), z(0.0f), w(0.0f) {};
   constexpr Vec4f(Vec3f xyz, float w = 0.0f): x(xyz.x), y(xyz.y), z(xyz.z), w(w) {};

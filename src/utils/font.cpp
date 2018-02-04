@@ -9,6 +9,7 @@ typedef struct FontShaderData {
   int clampu;
   int clampv;
   Texture *texture;
+  Vec4f tint;
 } FontShaderData;
 
 FRAGMENT_FUNC(fragment_text)
@@ -21,7 +22,8 @@ FRAGMENT_FUNC(fragment_text)
   int u = ((int) fu) & d->clampu;
   int v = ((int) fv) & d->clampv;
 
-  *color = TEXEL4F(d->texture, u, v);
+  Vec4f texel = TEXEL4F(d->texture, u, v);
+  *color = Vec4f(texel.x * d->tint.x, texel.y * d->tint.y, texel.z * d->tint.z, texel.w * d->tint.w).clamped();
 
   return true;
 }
@@ -104,7 +106,9 @@ static float font_get_text_width(Font *font, uint8_t *text)
   return result;
 }
 
-static void font_render_text(Font *font, RenderingContext *ctx, float x, float y, uint8_t *text)
+#define DEFAULT_FONT_TINT (Vec4f(1.0f, 1.0f, 1.0f, 1.0f))
+
+static void font_render_text(Font *font, RenderingContext *ctx, float x, float y, uint8_t *text, Vec4f tint = DEFAULT_FONT_TINT)
 {
   ASSERT(font);
 
@@ -112,6 +116,7 @@ static void font_render_text(Font *font, RenderingContext *ctx, float x, float y
   data.texture = font->texture;
   data.clampu = data.texture->width - 1;
   data.clampv = data.texture->height - 1;
+  data.tint = tint;
 
   float x0 = x;
 

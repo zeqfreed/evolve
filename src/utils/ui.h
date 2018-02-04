@@ -32,4 +32,14 @@ typedef struct UIContext {
   float spacing;
   uint32_t active_hash;
   uint32_t group_hash;
+  bool disabled;
 } UIContext;
+
+#define UI_COLOR_NONE (Vec4f(0.0f, 0.0f, 0.0f, 0.0f))
+#define UI_COLOR_LABEL_BG (Vec4f(0.1f, 0.1f, 0.1f, 1.0f))
+
+typedef enum UIAlign {
+  UI_ALIGN_LEFT,
+  UI_ALIGN_CENTER,
+  UI_ALIGN_RIGHT
+} UIAlign;

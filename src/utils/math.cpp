@@ -137,6 +137,17 @@ inline Vec4f Vec4f::normalized()
   return *this * factor;
 }
 
+inline Vec4f Vec4f::clamped(float min, float max)
+{
+  Vec4f result = {};
+  result.x = CLAMP(x, min, max);
+  result.y = CLAMP(y, min, max);
+  result.z = CLAMP(z, min, max);
+  result.w = CLAMP(w, min, max);
+
+  return result;
+}
+
 inline Vec4f operator*(Vec4f v, Mat44 mat)
 {
   Vec4f result = {};
@@ -170,7 +181,7 @@ Mat44 Mat44::identity()
     result.k = 1.0f;
     result.p = 1.0f;
 
-    return result;    
+    return result;
 }
 
 Mat44 Mat44::scale(float x, float y, float z)
@@ -182,7 +193,7 @@ Mat44 Mat44::scale(float x, float y, float z)
     result.k = z;
     result.p = 1.0;
 
-    return result;    
+    return result;
 }
 
 Mat44 Mat44::rotate_z(float angle)
@@ -349,7 +360,7 @@ Mat44 Mat44::from_quaternion(Quaternion q)
   float yz = q.y * q.z;
   float yw = q.y * q.w;
   float wz = q.z * q.w;
-  
+
   result.a = 1.0f - 2.0f * yy - 2.0f * zz;
   result.b = 2.0f * xy + 2.0f * wz;
   result.c = 2.0f * xz - 2.0f * yw;
@@ -494,7 +505,7 @@ inline Vec3f operator*(Vec3f v, Quaternion b)
   Quaternion a;
   a.v = v;
   a.w = 0;
-  
+
   return (a*b).v;
 }
 
@@ -530,6 +541,6 @@ inline Quaternion lerp(Quaternion a, Quaternion b, float t)
     result.z = v.z;
     result.w = v.w;
   }
-  
+
   return result;
 }
