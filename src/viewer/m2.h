@@ -51,11 +51,11 @@ typedef struct M2Header {
 } M2Header;
 
 typedef struct M2Vertex {
-	Vec3f pos;
-	uint8_t weights[4];
-	uint8_t bones[4];
-	Vec3f normal;
-	float texcoords[2];
+  Vec3f pos;
+  uint8_t weights[4];
+  uint8_t bones[4];
+  Vec3f normal;
+  float texcoords[2];
   uint32_t reserved1;
   uint32_t reserved2;
 } M2Vertex;
@@ -102,61 +102,59 @@ typedef struct M2View {
 } M2View;
 
 typedef struct M2Geoset {
-	uint32_t id;
-	uint16_t verticesStart;
-	uint16_t verticesCount;
-	uint16_t indicesStart;
-	uint16_t indicesCount;
-	uint16_t skinnedBonesCount;
-	uint16_t bonesStart;
-	uint16_t rootBone;
-	uint16_t bonesCount;
-	Vec3f boundingBox;
-	//float radius;
+  uint32_t id;
+  uint16_t verticesStart;
+  uint16_t verticesCount;
+  uint16_t indicesStart;
+  uint16_t indicesCount;
+  uint16_t skinnedBonesCount;
+  uint16_t bonesStart;
+  uint16_t rootBone;
+  uint16_t bonesCount;
+  Vec3f boundingBox;
+  //float radius;
   //uint16_t _padding;
   //uint16_t unknown[6]; // 12 bytes
 } M2Geoset;
 
 typedef struct M2Animation {
-	uint32_t id;
-	uint32_t timeStart;
-	uint32_t timeEnd;
-	float moveSpeed;
-	uint32_t flags;
-	int16_t probability;
-	uint16_t _padding;
-	uint32_t replayMin;
-	uint32_t replayMax;
-	uint32_t blendTime;
-	Vec3f minBounds;
+  uint32_t id;
+  uint32_t timeStart;
+  uint32_t timeEnd;
+  float moveSpeed;
+  uint32_t flags;
+  int16_t probability;
+  uint16_t _padding;
+  uint32_t replayMin;
+  uint32_t replayMax;
+  uint32_t blendTime;
+  Vec3f minBounds;
   Vec3f maxBounds;
   float radius;
-	int16_t nextAnimation;
-	uint16_t aliasedAnimation;
+  int16_t nextAnimation;
+  uint16_t aliasedAnimation;
 } M2Animation;
 
 typedef struct M2AnimationBlock {
-	uint16_t interpolationType;
-	int16_t globalSequence;
+  uint16_t interpolationType;
+  int16_t globalSequence;
   uint32_t lookupsCount;
   uint32_t lookupsOffset;
-	uint32_t timestampsCount;
-	uint32_t timestampsOffset;
-	uint32_t keyframesCount;
-	uint32_t keyframesOffset;
+  uint32_t timestampsCount;
+  uint32_t timestampsOffset;
+  uint32_t keyframesCount;
+  uint32_t keyframesOffset;
 } M2AnimationBlock;
 
 typedef struct M2Bone {
-	int32_t keybone;
-	uint32_t flags;
-	int16_t parent;
-	int16_t geoid;
-  // int16_t _unknown1;
-  // int16_t _unknown2;
-	M2AnimationBlock translation;
-	M2AnimationBlock rotation;
-	M2AnimationBlock scaling;
-	Vec3f pivot;
+  int32_t keybone;
+  uint32_t flags;
+  int16_t parent;
+  int16_t geoid;
+  M2AnimationBlock translation;
+  M2AnimationBlock rotation;
+  M2AnimationBlock scaling;
+  Vec3f pivot;
 } M2Bone;
 
 typedef struct ModelSubmesh {
@@ -233,6 +231,8 @@ typedef struct M2Model {
   ModelSubmesh *submeshes;
   uint32_t bonesCount;
   ModelBone *bones;
+  uint32_t keybonesCount;
+  int16_t *keybones;
   uint32_t animationLookupsCount;
   int16_t *animationLookups;
   uint32_t animationsCount;
@@ -242,6 +242,43 @@ typedef struct M2Model {
   uint32_t renderPassesCount;
   M2RenderPass *renderPasses;
 } M2Model;
+
+typedef enum M2Keybone {
+  M2_KEYBONE_ARM_L = 0,
+  M2_KEYBONE_ARM_R,
+  M2_KEYBONE_SHOULDER_L,
+  M2_KEYBONE_SHOULDER_R,
+  M2_KEYBONE_STOMACH,
+  M2_KEYBONE_WAIST,
+  M2_KEYBONE_HEAD,
+  M2_KEYBONE_JAW,
+  M2_KEYBONE_FINGER1_R,
+  M2_KEYBONE_FINGER2_R,
+  M2_KEYBONE_FINGER3_R,
+  M2_KEYBONE_FINGER4_R,
+  M2_KEYBONE_THUMB_R,
+  M2_KEYBONE_FINGER1_L,
+  M2_KEYBONE_FINGER2_L,
+  M2_KEYBONE_FINGER3_L,
+  M2_KEYBONE_FINGER4_L,
+  M2_KEYBONE_THUMB_L,
+  M2_KEYBONE_BTH,
+  M2_KEYBONE_CSR,
+  M2_KEYBONE_CSL,
+  M2_KEYBONE_BREATH,
+  M2_KEYBONE_NAME,
+  M2_KEYBONE_NAMEMOUNT,
+  M2_KEYBONE_CHD,
+  M2_KEYBONE_CCH,
+  M2_KEYBONE_ROOT
+} M2Keybone;
+
+typedef struct ModelBoneSet {
+  uint32_t set[8];
+} BoneSet;
+
+#define MODEL_BONESET_SET(BS, IDX) (BS.set[IDX / 32] |= (1 << (IDX % 32)))
+#define MODEL_PBONESET_ISSET(PBS, IDX) ((PBS->set[IDX / 32] & (1 << (IDX % 32))) > 0)
 
 #pragma pack(pop)
 

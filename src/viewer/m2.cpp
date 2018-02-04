@@ -399,6 +399,14 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
     model->bones[i] = bone;
   }
 
+  model->keybonesCount = header->keyBoneLookupsCount;
+  model->keybones = (int16_t *) arena->allocate(sizeof(int16_t) * header->keyBoneLookupsCount);
+
+  int16_t *keybones = (int16_t *) ((uint8_t *) bytes + header->keyBoneLookupsOffset);
+  for (size_t bli = 0; bli < header->keyBoneLookupsCount; bli++) {
+    model->keybones[bli] = keybones[bli];
+  }
+
   return model;
 }
 
@@ -565,19 +573,31 @@ void m2_calc_bone(M2Model *model, ModelBone *bone, uint32_t animId, uint32_t fra
   bone->calculated = true;
 }
 
-void m2_calc_bones(M2Model *model, uint32_t animId, uint32_t frame, uint32_t globalFrame)
+void m2_calc_bones(M2Model *model, ModelBoneSet *boneset, uint32_t animId, uint32_t frame, uint32_t globalFrame)
 {
-  m2_reset_bones(model);
+  if (boneset != NULL) {
+    for (size_t i = 0; i < sizeof(boneset->set) / sizeof(boneset->set[0]); i++) {
+      uint32_t boneIdx = 32 * i;
+      uint32_t set = boneset->set[i];
 
-  for (int i = 0; i < model->bonesCount; i++) {
-    m2_calc_bone(model, &model->bones[i], animId, frame, globalFrame);
+      while (set > 0) {
+        if (set & 0x1) {
+          m2_calc_bone(model, &model->bones[boneIdx], animId, frame, globalFrame);
+        }
+
+        boneIdx++;
+        set = set >> 1;
+      }
+    }
+  } else {
+    for (size_t i = 0; i < model->bonesCount; i++) {
+      m2_calc_bone(model, &model->bones[i], animId, frame, globalFrame);
+    }
   }
 }
 
-void m2_animate_vertices(M2Model *model, uint32_t animId, uint32_t frame, uint32_t globalFrame)
+void m2_animate_vertices(M2Model *model)
 {
-  m2_calc_bones(model, animId, frame, globalFrame);
-
   for (int rpi = 0; rpi < model->renderPassesCount; rpi++) {
     M2RenderPass pass = model->renderPasses[rpi];
     ModelSubmesh submesh = model->submeshes[pass.submesh];
@@ -607,4 +627,54 @@ void m2_animate_vertices(M2Model *model, uint32_t animId, uint32_t frame, uint32
       model->animatedNormals[vi] = normal;
     }
   }
+}
+
+ModelBoneSet m2_character_core_boneset(M2Model *model)
+{
+  ModelBoneSet result = {};
+
+  if (model->keybones[M2_KEYBONE_ROOT] > -1) {
+    for (size_t i = 0; i <= model->keybones[M2_KEYBONE_ROOT]; i++) {
+      MODEL_BONESET_SET(result, i);
+    }
+  }
+
+  return result;
+}
+
+ModelBoneSet m2_character_upper_body_boneset(M2Model *model)
+{
+  ModelBoneSet result = {};
+
+  for (size_t i = 0; i < M2_KEYBONE_WAIST; i++) {
+    if (model->keybones[i] > -1) {
+      MODEL_BONESET_SET(result, model->keybones[i]);
+    }
+  }
+
+  if (model->keybones[M2_KEYBONE_HEAD] > -1) {
+    MODEL_BONESET_SET(result, model->keybones[M2_KEYBONE_HEAD]);
+  }
+
+  if (model->keybones[M2_KEYBONE_JAW] > -1) {
+    MODEL_BONESET_SET(result, model->keybones[M2_KEYBONE_JAW]);
+  }
+
+  for (size_t i = M2_KEYBONE_BTH; i <= M2_KEYBONE_ROOT; i++) {
+    if (model->keybones[i] > -1) {
+      MODEL_BONESET_SET(result, model->keybones[i]);
+    }
+  }
+
+  for (size_t i = 0; i < 5; i++) {
+    if (model->keybones[M2_KEYBONE_FINGER1_R + i] > -1) {
+      MODEL_BONESET_SET(result, model->keybones[M2_KEYBONE_FINGER1_L + i]);
+    }
+
+    if (model->keybones[M2_KEYBONE_FINGER1_L + i] > -1) {
+      MODEL_BONESET_SET(result, model->keybones[M2_KEYBONE_FINGER1_R + i]);
+    }
+  }
+
+  return result;
 }

@@ -28,6 +28,15 @@ typedef struct RenderFlags {
   bool lighting;
 } RenderFlags;
 
+typedef struct Animation {
+  char *name;
+  int32_t id;
+  uint32_t startFrame;
+  uint32_t endFrame;
+  float fps;
+  float currentFrame;
+} Animation;
+
 typedef struct State {
   PlatformAPI *platform_api;
   KeyboardState *keyboard;
@@ -69,15 +78,13 @@ typedef struct State {
 
   DrawingBuffer *buffer;
 
-  uint32_t animId;
-  char *animName;
-  uint32_t startFrame;
-  uint32_t endFrame;
-  uint32_t currentFrame;
-  double currentFracFrame;
-  double currentAnimFPS;
-  uint32_t currentGlobalFrame;
-  double currentGlobalFracFrame;
+  ModelBoneSet core_boneset;
+  ModelBoneSet upper_boneset;
+  Animation upperAnim;
+  Animation lowerAnim;
+  bool lower_anim_enabled;
+  double currentGlobalFrame;
+
   bool playing;
   bool showBones;
   bool showUnitAxes;
@@ -646,43 +653,44 @@ static void render_unit_axes(RenderingContext *ctx)
 
 static void animate_model(State *state)
 {
-  m2_animate_vertices(state->m2model, state->animId, state->currentFrame, state->currentGlobalFrame);
+  M2Model *model = state->m2model;
+
+  m2_reset_bones(model);
+
+  if (state->lower_anim_enabled && (state->upperAnim.id != state->lowerAnim.id)) {
+    m2_calc_bones(model, &state->core_boneset, state->lowerAnim.id, state->lowerAnim.currentFrame, 0);
+    m2_calc_bones(model, &state->upper_boneset, state->upperAnim.id, state->upperAnim.currentFrame, 0);
+    m2_calc_bones(model, NULL, state->lowerAnim.id, state->lowerAnim.currentFrame, 0);
+  } else {
+    m2_calc_bones(model, NULL, state->upperAnim.id, state->upperAnim.currentFrame, 0);
+  }
+
+  m2_animate_vertices(state->m2model);
+
   state->modelChanged = true;
 }
 
-static void switch_animation(State *state, int32_t animId)
+static void switch_animation(State *state, Animation *anim, int32_t inc)
 {
-  if (animId < 0) {
-    animId = state->m2model->animationsCount - 1;
-  }
+  uint32_t newId = CLAMP_CYCLE((int32_t) anim->id + inc, (int32_t) 0, (int32_t) state->m2model->animationsCount - 1);
+  anim->id = newId;
+  anim->startFrame = state->m2model->animations[newId].startFrame;
+  anim->endFrame = state->m2model->animations[newId].endFrame;
+  anim->fps = 1000.0;
+  anim->currentFrame = anim->startFrame;
+  anim->name = (char *) "N/A";
 
-  if (animId >= state->m2model->animationsCount) {
-    animId = 0;
-  }
-
-  state->animId = animId;
-  ModelAnimation animation = state->m2model->animations[state->animId];
-  state->startFrame = animation.startFrame;
-  state->endFrame = animation.endFrame;
-  state->currentFrame = animation.startFrame;
-  state->currentFracFrame = (double) state->currentFrame;
-  state->currentAnimFPS = 1000.0;
-
-  animate_model(state);
-
-
-  int16_t anim_id = state->m2model->animations[state->animId].id;
-  state->animName = (char *) "N/A";
-
-  if (anim_id >= 0) {
-    DBCRecord *anim_record = dbc_get_record(state->dbc_anim_data, anim_id);
-    printf("anim record: id = %d, name = %s\n", anim_record->id, anim_record->name);
+  int16_t dbId = state->m2model->animations[newId].id;
+  if (dbId >= 0) {
+    DBCRecord *anim_record = dbc_get_record(state->dbc_anim_data, dbId);
     if (anim_record) {
-      state->animName = anim_record->name;
+      anim->name = anim_record->name;
     }
   }
 
-  printf("Switched animation to: %s (%d)\n", state->animName, state->animId);
+  printf("Switched animation to: %s (%d)\n", anim->name, anim->id);
+
+  animate_model(state);
 }
 
 static void enable_submeshes(State *state)
@@ -759,6 +767,8 @@ static void initialize(State *state, DrawingBuffer *buffer)
   dresser_init(state->dresser, state->platform_api, state->main_arena);
 
   load_m2_model(state, (char *) "data/misc/nelf-patched.m2");
+  state->core_boneset = m2_character_core_boneset(state->m2model);
+  state->upper_boneset = m2_character_upper_body_boneset(state->m2model);
   // state->textures[0] = load_tga_texture(state, (char *) "data/misc/nelf_0.tga");
   // state->textures[1] = load_tga_texture(state, (char *) "data/misc/nelf_1.tga");
   state->textures[2] = load_tga_texture(state, (char *) "data/misc/cape.tga");
@@ -823,7 +833,9 @@ static void initialize(State *state, DrawingBuffer *buffer)
   // load_blp_texture(state->platform_api, state->main_arena, state->temp_arena, (char *) "data/mpq/Character/NightElf/ScalpLowerHair00_04.blp");
   state->debugTexture = state->textures[1];
 
-  switch_animation(state, 24);
+  switch_animation(state, &state->upperAnim, 24);
+  switch_animation(state, &state->lowerAnim, 0);
+  state->lower_anim_enabled = false;
   enable_submeshes(state);
 
   state->temp_arena->discard();
@@ -904,35 +916,25 @@ static void render_codepoint(State *state, RenderingContext *ctx, uint32_t codep
 #define Y_RAD_PER_PX RAD(0.5f)
 #define X_RAD_PER_PX RAD(0.5f)
 
-static bool update_animation(State *state, float dt)
+#define GLOBAL_ANIM_FPS 1000.0
+
+static void update_animation(Animation *animation, float dt)
 {
-  float dframe = dt * state->currentAnimFPS;
-  state->currentFracFrame += dframe;
-  state->currentGlobalFracFrame += dframe;
-
-  bool result = false;
-
-  uint32_t globalFrame = (uint32_t) state->currentGlobalFracFrame;
-  if (globalFrame != state->currentGlobalFrame) {
-    state->currentGlobalFrame = globalFrame;
-    result = true;
+  animation->currentFrame += dt * animation->fps;
+  if (animation->currentFrame > animation->endFrame) {
+    animation->currentFrame = animation->startFrame;
   }
+}
 
-  uint32_t frame = (uint32_t) state->currentFracFrame;
-  if (frame != state->currentFrame) {
-    result = true;
-    state->currentFrame = frame;
-  }
+static void update_animations(State *state, float dt)
+{
+  float dframe = dt * GLOBAL_ANIM_FPS;
+  state->currentGlobalFrame += dframe;
 
-  if (result) {
-    animate_model(state);
-  }
+  update_animation(&state->upperAnim, dt);
+  update_animation(&state->lowerAnim, dt);
 
-  if (state->currentFracFrame > state->endFrame) {
-    state->currentFracFrame = state->startFrame;
-  }
-
-  return result;
+  animate_model(state);
 }
 
 static void update_camera(State *state, float dt)
@@ -1011,33 +1013,33 @@ static void update_camera(State *state, float dt)
   }
 
   bool update_anim = false;
-  int step = 1;
+  float step = 1.0f;
   bool loop = false;
 
   if (KEY_IS_DOWN(state->keyboard, KB_LEFT_SHIFT)) {
-    step = 15;
+    step = 15.0f;
     loop = true;
   }
 
   if (KEY_IS_DOWN(state->keyboard, KB_Z)) {
-    state->currentFrame -= step;
-    if (state->currentFrame < state->startFrame) {
+    state->upperAnim.currentFrame -= step;
+    if (state->upperAnim.currentFrame < state->upperAnim.startFrame) {
       if (loop) {
-        state->currentFrame = state->endFrame;
+        state->upperAnim.currentFrame = state->upperAnim.endFrame;
       } else {
-        state->currentFrame = state->startFrame;
+        state->upperAnim.currentFrame = state->upperAnim.startFrame;
       }
     }
     update_anim = true;
   }
 
   if (KEY_IS_DOWN(state->keyboard, KB_X)) {
-    state->currentFrame += step;
-    if (state->currentFrame > state->endFrame) {
+    state->upperAnim.currentFrame += step;
+    if (state->upperAnim.currentFrame > state->upperAnim.endFrame) {
       if (loop) {
-        state->currentFrame = state->startFrame;
+        state->upperAnim.currentFrame = state->upperAnim.startFrame;
       } else {
-        state->currentFrame = state->endFrame;
+        state->upperAnim.currentFrame = state->upperAnim.endFrame;
       }
     }
     update_anim = true;
@@ -1084,11 +1086,11 @@ static void handle_input(State *state)
   }
 
   if (KEY_WAS_PRESSED(state->keyboard, KB_Q)) {
-    switch_animation(state, state->animId - 1);
+    switch_animation(state, &state->upperAnim, -1);
   }
 
   if (KEY_WAS_PRESSED(state->keyboard, KB_W)) {
-    switch_animation(state, state->animId + 1);
+    switch_animation(state, &state->upperAnim, 1);
   }
 
   if (KEY_WAS_PRESSED(state->keyboard, KB_P)) {
@@ -1228,26 +1230,29 @@ void render_ui(State *state)
   renderer_set_flags(ctx, RENDER_BLENDING | RENDER_SHADING);
   renderer_set_blend_mode(ctx, BLEND_MODE_DECAL);
 
+  ui_begin(ui, 10.0f, 10.0f);
+
   char buf[255];
-
   snprintf(buf, 255, "X: %.03f, Y: %.03f", state->mouse->windowX, state->mouse->windowY);
-  font_render_text(state->font, ctx, 10.0f, 40.0f, (uint8_t *) buf);
+  ui_layout_row_begin(ui, 0.0f, 30.0f);
+  ui_label(ui, 0.0f, 30.0f, (uint8_t *) buf, UI_ALIGN_LEFT, UI_COLOR_NONE);
+  ui_layout_row_end(ui);
 
-  // Animation controls
+  ui_layout_spacer(ui, 0.0f, 10.0f);
 
-  font_render_text(state->font, ctx, 10.0f, 40.0f + state->font->lineHeight, (uint8_t *) "Animation");
+  // Upper body animation controls
 
-  ui_begin(ui, 120.0f, 47.0f);
+  ui_group_begin(ui, (char *) "UBAC");
+  ui_layout_row_begin(ui, 600.0f, 30.0f);
 
-  ui_group_begin(ui, (char *) "anim");
-  ui_layout_row_begin(ui, 500.0f, 30.0f);
+  ui_label(ui, 150.0f, 30.0f, (uint8_t *) "Upper body", UI_ALIGN_LEFT, UI_COLOR_NONE);
 
   if (ui_button(ui, 30.0f, 30.0f, (uint8_t *) "<") == UI_BUTTON_RESULT_CLICKED) {
-    switch_animation(state, state->animId - 1);
+    switch_animation(state, &state->upperAnim, -1);
   };
 
   if (ui_button(ui, 30.0f, 30.0f, (uint8_t *) ">") == UI_BUTTON_RESULT_CLICKED) {
-    switch_animation(state, state->animId + 1);
+    switch_animation(state, &state->upperAnim, 1);
   }
 
   ui_layout_pull_right(ui);
@@ -1257,19 +1262,52 @@ void render_ui(State *state)
   }
 
   ui_layout_fill(ui);
-  snprintf(buf, sizeof(buf) * sizeof(buf[0]), "%s (%d)", state->animName, state->animId);
-  ui_label(ui, 0, 30.0f, (uint8_t *) &buf);
+  snprintf(buf, sizeof(buf) * sizeof(buf[0]), "%s (%d)", state->upperAnim.name, state->upperAnim.id);
+  ui_label(ui, 0, 30.0f, (uint8_t *) &buf, UI_ALIGN_CENTER);
 
   ui_layout_row_end(ui);
   ui_group_end(ui);
 
-  ui_end(ui);
+  // Lower body animation controls
+
+  ui_group_begin(ui, (char *) "LBAC");
+  ui_layout_row_begin(ui, 600.0f, 30.0f);
+
+  ui_label(ui, 150.0f, 30.0f, (uint8_t *) "Lower body", UI_ALIGN_LEFT, UI_COLOR_NONE);
+
+  ui_set_disabled(ui, !state->lower_anim_enabled);
+
+  if (ui_button(ui, 30.0f, 30.0f, (uint8_t *) "<") == UI_BUTTON_RESULT_CLICKED) {
+    switch_animation(state, &state->lowerAnim, -1);
+  };
+
+  if (ui_button(ui, 30.0f, 30.0f, (uint8_t *) ">") == UI_BUTTON_RESULT_CLICKED) {
+    switch_animation(state, &state->lowerAnim, 1);
+  }
+
+  ui_layout_pull_right(ui);
+
+  ui_set_disabled(ui, false);
+  if (ui_button(ui, 100.0f, 30.0f, (uint8_t *) (state->lower_anim_enabled ? "Disable" : "Enable")) == UI_BUTTON_RESULT_CLICKED) {
+    state->lower_anim_enabled = !state->lower_anim_enabled;
+  }
+
+  ui_set_disabled(ui, !state->lower_anim_enabled);
+
+  ui_layout_fill(ui);
+  snprintf(buf, sizeof(buf) * sizeof(buf[0]), "%s (%d)", state->lowerAnim.name, state->lowerAnim.id);
+  ui_label(ui, 0, 30.0f, (uint8_t *) &buf, UI_ALIGN_CENTER);
+
+  ui_set_disabled(ui, false);
+
+  ui_layout_row_end(ui);
+  ui_group_end(ui);
+
+  ui_layout_spacer(ui, 0.0f, 10.0f);
 
   // Appearance controls
 
   bool changed = false;
-
-  ui_begin(ui, 6.0f, 85.0f);
 
   changed |= render_appearance_switcher(ui, &state->appearance.faceIdx, 0, MAX_FACE_IDX, (char *) "Face %d");
   changed |= render_appearance_switcher(ui, &state->appearance.skinIdx, 0, MAX_SKIN_IDX, (char *) "Skin %d");
@@ -1337,7 +1375,7 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   }
 
   if (state->playing) {
-    update_animation(state, dt);
+    update_animations(state, dt);
   }
 
   if (state->modelChanged) {
