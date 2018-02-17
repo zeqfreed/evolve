@@ -30,10 +30,6 @@ DBCData *dbc_load_animation_data(AssetLoader *loader, char *filename)
     result->records[i].name = &result->strings[rec[1]];
   }
 
-  for (size_t i = 0; i < result->count; i++) {
-    printf("%d\t%s\n", result->records[i].id, result->records[i].name);
-  }
-
   return result;
 }
 
