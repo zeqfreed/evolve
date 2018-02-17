@@ -762,6 +762,24 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->screenWidth = buffer->width;
   state->screenHeight = buffer->height;
 
+  LoadedAsset asset = state->platform_api->load_asset((char *) "Spells/Intellect_128.blp");
+  if (asset.data != NULL) {
+    printf("Loaded asset of size: %zu\n", asset.size);
+
+    BlpImage image;
+    image.read_header(asset.data, asset.size);
+
+    BlpHeader *header = &image.header;
+    printf("BLP Image width: %d; height: %d; compression: %d\nAlpha depth: %d, alpha type: %d\n",
+           header->width, header->height, header->compression, header->alphaDepth, header->alphaType);
+
+    Texture *texture = texture_create(state->main_arena, header->width, header->height);
+    image.read_into_texture(asset.data, asset.size, texture);
+
+    state->debugTexture = texture;
+    state->platform_api->release_asset(&asset);
+  }
+
   AssetLoader loader;
   asset_loader_init(&loader, state->platform_api, state->temp_arena, state->main_arena);
   state->dbc_anim_data = dbc_load_animation_data(&loader, (char *) "data/mpq/DBFilesClient/AnimationData.dbc");

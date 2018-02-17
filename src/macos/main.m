@@ -10,7 +10,6 @@
 #include <signal.h>
 
 #include "platform/platform.h"
-#include "fs.h"
 
 #include "keyboard.cpp"
 #include "mouse.cpp"
@@ -388,6 +387,11 @@ C_LINKAGE void *macos_allocate_memory(size_t size)
   return result;
 }
 
+C_LINKAGE void macos_free_memory(void *memory)
+{
+  free(memory);
+}
+
 C_LINKAGE void macos_terminate()
 {
   gameRunning = false;
@@ -446,10 +450,7 @@ int main(int argc, char *argv[])
   drawing_buffer.bytes_per_pixel = 4;
 
   GlobalState state = {};
-  state.platform_api.get_file_size = macos_fs_size;
-  state.platform_api.read_file_contents = macos_fs_read;
-  state.platform_api.allocate_memory = macos_allocate_memory;
-  state.platform_api.terminate = macos_terminate;
+  state.platform_api = PLATFORM_API;
 
   state.keyboard = &keyboardState;
   state.mouse = &mouseState;
@@ -463,6 +464,8 @@ int main(int argc, char *argv[])
   int frames = 0;
   float averageFps = 0;
   float acc = 0;
+
+  mpq_registry_init(&MPQ_REGISTRY, (char *) "data/misc");
 
   while(gameRunning) {
     if (frames >= 100) {

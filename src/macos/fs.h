@@ -1,6 +1,20 @@
 #pragma once
 
-#include "platform/platform.h"
+#include <stdio.h>
+#include <dirent.h>
+#include <stdint.h>
 
-C_LINKAGE int32_t macos_fs_read(char *filename, void *memory, uint32_t size);
-C_LINKAGE int32_t macos_fs_size(char *filename);
+#define DIRECTORY_SEPARATOR ('/')
+
+typedef struct MacosOpenFile {
+  int32_t fd;
+} MacosOpenFile;
+
+typedef struct MacosDirectoryListingIter {
+  DIR *dp;
+} MacosDirectoryListingIter;
+
+typedef struct MacosDirectoryListingEntry {
+  char *name;
+  bool is_dir;
+} MacosDirectoryListingEntry;
