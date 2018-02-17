@@ -65,8 +65,11 @@ typedef struct State {
   uint32_t screenWidth;
   uint32_t screenHeight;
 
-  float xRot;
-  float yRot;
+  float xrot;
+  float xrot_target;
+  float yrot;
+  float yrot_target;
+
   float fov;
   float camDistance;
 
@@ -813,8 +816,11 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
   ui_init(&state->ui, &state->rendering_context, state->font, state->keyboard, state->mouse);
 
-  state->xRot = RAD(15.0f);
-  state->yRot = 0.0f;
+  state->xrot = RAD(15.0f);
+  state->xrot_target = state->xrot;
+  state->yrot = 0.0f;
+  state->yrot_target = state->yrot;
+
   state->fov = 60.0f;
   state->camDistance = 1.0f;
 
@@ -912,9 +918,8 @@ static void render_codepoint(State *state, RenderingContext *ctx, uint32_t codep
 #define CAM_DIST_PER_SEC 1.0f
 #define HUE_PER_SEC 120.0f
 #define SATURATION_PER_SEC RAD(120.0f)
-#define MOUSE_SENSE 0.5f
-#define Y_RAD_PER_PX RAD(0.5f)
-#define X_RAD_PER_PX RAD(0.5f)
+#define MOUSE_SENSE_X 0.8f
+#define MOUSE_SENSE_Y 0.8f
 
 #define GLOBAL_ANIM_FPS 1000.0
 
@@ -937,6 +942,17 @@ static void update_animations(State *state, float dt)
   animate_model(state);
 }
 
+static float clamp_angle(float rad)
+{
+  if (rad > 2*PI) {
+    return rad - 2 * PI * (int) (rad / (2*PI));
+  } else if (rad < -2*PI) {
+    return rad - 2 * PI * (int) (rad / (2*PI));
+  }
+
+  return rad;
+}
+
 static void update_camera(State *state, float dt)
 {
   float da = 0.0;
@@ -951,16 +967,9 @@ static void update_camera(State *state, float dt)
     da *= 3.0;
   }
 
-  if (MOUSE_BUTTON_IS_DOWN(state->mouse, MB_LEFT)) {
-    da -= Y_RAD_PER_PX * state->mouse->frameDx * MOUSE_SENSE;
-  }
+  state->yrot_target += da;
 
-  state->yRot += da;
-  if (state->yRot > 2*PI) {
-    state->yRot -= 2*PI;
-  }
-
-  da = 0.0;
+  da = 0.0f;
   if (KEY_IS_DOWN(state->keyboard, KB_UP_ARROW)) {
     da += X_RAD_PER_SEC * dt;
   }
@@ -969,15 +978,28 @@ static void update_camera(State *state, float dt)
     da -= X_RAD_PER_SEC * dt;
   }
 
-  if (MOUSE_BUTTON_IS_DOWN(state->mouse, MB_LEFT)) {
-    da += X_RAD_PER_PX * state->mouse->frameDy * MOUSE_SENSE;
+  if (KEY_IS_DOWN(state->keyboard, KB_LEFT_SHIFT)) {
+    da *= 3.0;
   }
 
-  state->xRot += da;
-  //state->xRot = CLAMP(state->xRot, -PI, PI);
-  if (state->xRot > 2*PI) {
-    state->xRot -= 2*PI;
+  state->xrot_target += da;
+
+  if (MOUSE_BUTTON_IS_DOWN(state->mouse, MB_LEFT)) {
+    state->xrot_target += state->mouse->frameDy * RAD(360.0f) / state->screenHeight * MOUSE_SENSE_Y;
+    state->yrot_target -= state->mouse->frameDx * RAD(720.0f) / state->screenWidth * MOUSE_SENSE_X;
   }
+
+  float clamped = clamp_angle(state->xrot_target);
+  state->xrot += clamped - state->xrot_target;
+  state->xrot_target = clamped;
+
+  clamped = clamp_angle(state->yrot_target);
+  state->yrot += clamped - state->yrot_target;
+  state->yrot_target = clamped;
+
+  float t = dt / 0.1f;
+  state->xrot += (state->xrot_target - state->xrot) * t;
+  state->yrot += (state->yrot_target - state->yrot) * t;
 
   da = 0.0;
   if (KEY_IS_DOWN(state->keyboard, KB_PLUS)) {
@@ -1393,9 +1415,9 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   ctx->projection_mat = perspective_matrix(0.1f, 10.0f, state->fov);
 
   //ctx->view_mat = look_at_matrix((Vec3f){0, 0, 1}, (Vec3f){0, 0.35, 0}, (Vec3f){0, 1, 0});
-  ctx->view_mat = Mat44::rotate_y(-state->yRot) *
+  ctx->view_mat = Mat44::rotate_y(-state->yrot) *
                   Mat44::translate(0.0f, -0.5f, 0.0f) *
-                  Mat44::rotate_x(-state->xRot) *
+                  Mat44::rotate_x(-state->xrot) *
                   Mat44::translate(0.0f, 0.0f, -state->camDistance);
 
   set_target(ctx, state->buffer);
