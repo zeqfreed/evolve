@@ -609,10 +609,10 @@ static void enable_ortho(State *state, RenderingContext *ctx)
 static void render_debug_texture(State *state, RenderingContext *ctx, Texture *texture, float x, float y, float width)
 {
   const Vec3f texture_coords[4] = {
-    {0.0f, 0.0f, 0.0f},
-    {(float) texture->width, 0.0f, 0.0f},
+    {0, (float) texture->height, 0.0f},
     {(float) texture->width, (float) texture->height, 0.0f},
-    {0, (float) texture->height, 0.0f}
+    {(float) texture->width, 0.0f, 0.0f},
+    {0.0f, 0.0f, 0.0f}
   };
 
   float height = width * ((float) texture->height / (float) texture->width);
@@ -837,7 +837,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->modelChanged = true;
 
   // load_blp_texture(state->platform_api, state->main_arena, state->temp_arena, (char *) "data/mpq/Character/NightElf/ScalpLowerHair00_04.blp");
-  state->debugTexture = state->textures[1];
+  // state->debugTexture = state->textures[1];
 
   switch_animation(state, &state->upperAnim, 24);
   switch_animation(state, &state->lowerAnim, 0);
@@ -1447,12 +1447,12 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   //   render_debug_texture(state, ctx, state->shadowmap, 10, 10, 400);
   // }
 
-  // set_blending(ctx, true);
-  // set_blend_mode(ctx, BLEND_MODE_DECAL);
+  if (state->debugTexture) {
+    renderer_set_flags(ctx, RENDER_BLENDING);
+    renderer_set_blend_mode(ctx, BLEND_MODE_DECAL);
 
-  // if (state->debugTexture) {
-  //   render_debug_texture(state, ctx, state->debugTexture, 10, 410, 400);
-  // }
+    render_debug_texture(state, ctx, state->debugTexture, 10, 410, 400);
+  }
 
   render_ui(state);
 }
