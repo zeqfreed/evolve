@@ -1,11 +1,9 @@
 #pragma once
 
-#include "utils/memory.h"
+#include "utils/assets.h"
 
 typedef struct Dresser {
-  PlatformAPI *platformAPI;
-  MemoryArena *mainArena;
-  MemoryArena *tempArena;
+  AssetLoader *loader;
 } Dresser;
 
 #define MAX_SKIN_IDX 8

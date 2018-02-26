@@ -282,4 +282,4 @@ typedef struct ModelBoneSet {
 
 #pragma pack(pop)
 
-M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena);
+M2Model *m2_load(MemoryAllocator *allocator, void *bytes, size_t size);

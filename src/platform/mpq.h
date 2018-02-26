@@ -43,7 +43,14 @@ typedef struct MPQRegistry {
   MPQArchive archives[MPQ_MAX_ARCHIVES];
 } MPQRegistry;
 
+typedef struct MPQFileId {
+  uint32_t hash;
+  uint32_t check1;
+  uint32_t check2;
+} MPQFileId;
+
 typedef struct MPQFile {
+  MPQFileId id;
   void *data;
   size_t size;
 } MPQFile;

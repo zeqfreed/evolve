@@ -184,12 +184,20 @@ static bool mpq_archive_init(MPQArchive *archive, char *filename)
   return true;
 }
 
+static MPQFileId mpq_file_id(char *name)
+{
+  MPQFileId result = {};
+  result.hash = mpq_string_hash(name, MPQ_HASH_TYPE_OFFSET);
+  result.check1 = mpq_string_hash(name, MPQ_HASH_TYPE_CHECK1);
+  result.check2 = mpq_string_hash(name, MPQ_HASH_TYPE_CHECK2);
+
+  return result;
+}
+
 static MPQHashEntry *mpq_archive_find_entry(MPQArchive *archive, char *name)
 {
-  uint32_t hash = mpq_string_hash(name, MPQ_HASH_TYPE_OFFSET);
-  uint32_t check1 = mpq_string_hash(name, MPQ_HASH_TYPE_CHECK1);
-  uint32_t check2 = mpq_string_hash(name, MPQ_HASH_TYPE_CHECK2);
-  uint32_t start_idx = hash & (archive->header.hash_table_size - 1);
+  MPQFileId file_id = mpq_file_id(name);
+  uint32_t start_idx = file_id.hash & (archive->header.hash_table_size - 1);
 
   MPQHashEntry *table = archive->hash_table;
   MPQHashEntry *result = NULL;
@@ -204,7 +212,7 @@ static MPQHashEntry *mpq_archive_find_entry(MPQArchive *archive, char *name)
     MPQHashEntry *entry = &table[idx];
 
     if (entry->block_index != MPQ_HASH_ENTRY_DELETED) {
-      if (entry->check1 == check1 && entry->check2 == check2) {
+      if (entry->check1 == file_id.check1 && entry->check2 == file_id.check2) {
         result = entry;
         break;
       }
@@ -280,6 +288,8 @@ MPQFile mpq_load_file(MPQRegistry *registry, char *name)
       // First byte denotes the compression method used
       uint8_t compression = buf[0];
       sector_data = (void *) &buf[1];
+
+      ASSERT(compression == 2);
 
       inflate(sector_data,
               sector_size,

@@ -1,4 +1,4 @@
-#include "utils/blp.h"
+#include "blp.h"
 
 void BlpImage::read_header(void *bytes, size_t size)
 {

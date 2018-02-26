@@ -201,7 +201,7 @@ void m2_dump_anim_quaternion(uint32_t timestamp, void *value)
   printf("%d\t%.03f %.03f %.03f %.03f\n", timestamp, q->x, q->y, q->z, q->w);
 }
 
-void m2_load_animation_data(void *bytes, M2Header *header, MemoryArena *arena, ModelAnimationData *data, M2AnimationBlock *block, uint32_t elSize, ModelLoadAnimValueFunc *func)
+void m2_load_animation_data(void *bytes, M2Header *header, MemoryAllocator *allocator, ModelAnimationData *data, M2AnimationBlock *block, uint32_t elSize, ModelLoadAnimValueFunc *func)
 {
     ASSERT(block->timestampsCount == block->keyframesCount);
 
@@ -219,7 +219,7 @@ void m2_load_animation_data(void *bytes, M2Header *header, MemoryArena *arena, M
 
       data->isGlobal = true;
       data->animationsCount = 0;
-      data->animationRanges = (ModelAnimationRange *) arena->allocate(sizeof(ModelAnimationRange));
+      data->animationRanges = ALLOCATE_ONE(allocator, ModelAnimationRange);
       data->animationRanges[0].start = 0;
       data->animationRanges[0].end = globalSequences[block->globalSequence];
 
@@ -228,7 +228,7 @@ void m2_load_animation_data(void *bytes, M2Header *header, MemoryArena *arena, M
 
       data->isGlobal = false;
       data->animationsCount = block->lookupsCount;
-      data->animationRanges = (ModelAnimationRange *) arena->allocate(sizeof(ModelAnimationRange) * block->lookupsCount);
+      data->animationRanges = ALLOCATE_MANY(allocator, ModelAnimationRange, block->lookupsCount);
 
       for (uint32_t li = 0; li < block->lookupsCount; li++) {
         ModelAnimationRange range;
@@ -242,8 +242,8 @@ void m2_load_animation_data(void *bytes, M2Header *header, MemoryArena *arena, M
     void *values = (void *) ((uint8_t *) bytes + block->keyframesOffset);
 
     data->keyframesCount = block->keyframesCount;
-    data->timestamps = (uint32_t *) arena->allocate(sizeof(uint32_t) * block->keyframesCount);
-    data->data = arena->allocate(elSize * block->keyframesCount);
+    data->timestamps = ALLOCATE_MANY(allocator, uint32_t, block->keyframesCount);
+    data->data = ALLOCATE_SIZE(allocator, elSize * block->keyframesCount);
 
     for (uint32_t ki = 0; ki < block->keyframesCount; ki++) {
       uint32_t ts = timestamps[ki];
@@ -253,7 +253,7 @@ void m2_load_animation_data(void *bytes, M2Header *header, MemoryArena *arena, M
     }
 }
 
-M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
+M2Model *m2_load(MemoryAllocator *allocator, void *bytes, size_t size)
 {
   M2Header *header = (M2Header *) bytes;
   m2_dump_header(header, bytes);
@@ -268,16 +268,16 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
   //   printf("Texture unit lookup %d: %d\n", tui, texUnitLookups[tui]);
   // }
 
-  M2Model *model = (M2Model *) arena->allocate(sizeof(M2Model));
+  M2Model *model = ALLOCATE_ONE(allocator, M2Model);
   model->verticesCount = header->verticesCount;
-  model->positions = (Vec3f *) arena->allocate(sizeof(Vec3f) * header->verticesCount);
-  model->animatedPositions = (Vec3f *) arena->allocate(sizeof(Vec3f) * header->verticesCount);
-  model->normals = (Vec3f *) arena->allocate(sizeof(Vec3f) * header->verticesCount);
-  model->animatedNormals = (Vec3f *) arena->allocate(sizeof(Vec3f) * header->verticesCount);
-  model->textureCoords = (Vec3f *) arena->allocate(sizeof(Vec3f) * header->verticesCount);
+  model->positions = ALLOCATE_MANY(allocator, Vec3f, header->verticesCount);
+  model->animatedPositions = ALLOCATE_MANY(allocator, Vec3f, header->verticesCount);
+  model->normals = ALLOCATE_MANY(allocator, Vec3f,  header->verticesCount);
+  model->animatedNormals = ALLOCATE_MANY(allocator, Vec3f, header->verticesCount);
+  model->textureCoords = ALLOCATE_MANY(allocator, Vec3f, header->verticesCount);
 
   model->weightsPerVertex = 4;
-  model->weights = (ModelVertexWeight *) arena->allocate(sizeof(ModelVertexWeight) * model->weightsPerVertex * header->verticesCount);
+  model->weights = ALLOCATE_MANY(allocator, ModelVertexWeight, model->weightsPerVertex * header->verticesCount);
 
   static Mat44 worldMat = {
     1.0f, 0.0f, 0.0f, 0.0f,
@@ -306,10 +306,10 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
   m2_dump_view(view);
 
   model->renderPassesCount = view->renderPassesCount;
-  model->renderPasses = (M2RenderPass *) arena->allocate(sizeof(M2RenderPass) * view->renderPassesCount);
+  model->renderPasses = ALLOCATE_MANY(allocator, M2RenderPass, view->renderPassesCount);
 
   model->renderFlagsCount = header->renderFlagsCount;
-  model->renderFlags = (M2RenderFlag *) arena->allocate(sizeof(M2RenderFlag) * header->renderFlagsCount);
+  model->renderFlags = ALLOCATE_MANY(allocator, M2RenderFlag, header->renderFlagsCount);
   M2RenderFlag *renderFlags = (M2RenderFlag *) ((uint8_t *) bytes + header->renderFlagsOffset);
   for (int rfi = 0; rfi < header->renderFlagsCount; rfi++) {
     model->renderFlags[rfi] = renderFlags[rfi];
@@ -323,14 +323,14 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
     // printf("Render pass %d: flags: %d; submesh: %d, render flags index = %d\n", rpi, renderPasses[rpi].flags, renderPasses[rpi].submesh, renderPasses[rpi].renderFlagIndex);
   }
 
-  // M2Texture *textures = (M2Texture *) ((uint8_t *) bytes + header->texturesOffset);
-  // for (int ti = 0; ti < header->texturesCount; ti++) {
-  //   m2_dump_texture(&textures[ti], bytes);
-  // }
+  M2Texture *textures = (M2Texture *) ((uint8_t *) bytes + header->texturesOffset);
+  for (int ti = 0; ti < header->texturesCount; ti++) {
+    m2_dump_texture(&textures[ti], bytes);
+  }
 
   M2Geoset *geosets = (M2Geoset *) ((uint8_t *) bytes + view->submeshesOffset);
   model->submeshesCount = view->submeshesCount;
-  model->submeshes = (ModelSubmesh *) arena->allocate(sizeof(ModelSubmesh) * view->submeshesCount);
+  model->submeshes = ALLOCATE_MANY(allocator, ModelSubmesh, view->submeshesCount);
   for (int i = 0; i < view->submeshesCount; i++) {
     //m2_dump_geoset(&geosets[i]);
     ModelSubmesh submesh;
@@ -349,7 +349,7 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
 
   uint32_t facesCount = view->facesCount / 3;
   model->facesCount = facesCount;
-  model->faces = (M2Face *) arena->allocate(sizeof(M2Face) * facesCount);
+  model->faces = ALLOCATE_MANY(allocator, M2Face, facesCount);
   for (int i = 0; i < facesCount; i++) {
     M2Face face;
 
@@ -362,7 +362,7 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
 
   M2Animation *animations = (M2Animation *) ((uint8_t *) bytes + header->animationsOffset);
   model->animationsCount = header->animationsCount;
-  model->animations = (ModelAnimation *) arena->allocate(sizeof(ModelAnimation) * header->animationsCount);
+  model->animations = ALLOCATE_MANY(allocator, ModelAnimation, header->animationsCount);
   for (int ai = 0; ai < header->animationsCount; ai++) {
     model->animations[ai].id = -1;
     model->animations[ai].startFrame = animations[ai].timeStart;
@@ -372,7 +372,7 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
 
   int16_t *animLookups = (int16_t *) ((uint8_t *) bytes + header->animationLookupsOffset);
   model->animationLookupsCount = header->animationLookupsCount;
-  model->animationLookups = (int16_t *) arena->allocate(sizeof(int32_t) * model->animationLookupsCount);
+  model->animationLookups = (int16_t *) ALLOCATE_MANY(allocator, int32_t, model->animationLookupsCount);
   for (size_t ali = 0; ali < model->animationLookupsCount; ali++) {
     int16_t anim_id = animLookups[ali];
     model->animationLookups[ali] = anim_id;
@@ -383,7 +383,7 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
   }
 
   model->bonesCount = header->bonesCount;
-  model->bones = (ModelBone *) arena->allocate(sizeof(ModelBone) * header->bonesCount);
+  model->bones = ALLOCATE_MANY(allocator, ModelBone, header->bonesCount);
 
   M2Bone *bones = (M2Bone *) ((uint8_t *) bytes + header->bonesOffset);
   for (int i = 0; i < header->bonesCount; i++) {
@@ -392,15 +392,15 @@ M2Model *m2_load(void *bytes, size_t size, MemoryArena *arena)
     bone.parent = bones[i].parent;
     bone.keybone = bones[i].keybone;
 
-    m2_load_animation_data(bytes, header, arena, &bone.translations, &bones[i].translation, sizeof(Vec3f), m2_load_translation);
-    m2_load_animation_data(bytes, header, arena, &bone.rotations, &bones[i].rotation, sizeof(Quaternion), m2_load_rotation);
-    m2_load_animation_data(bytes, header, arena, &bone.scalings, &bones[i].scaling, sizeof(Vec3f), m2_load_scaling);
+    m2_load_animation_data(bytes, header, allocator, &bone.translations, &bones[i].translation, sizeof(Vec3f), m2_load_translation);
+    m2_load_animation_data(bytes, header, allocator, &bone.rotations, &bones[i].rotation, sizeof(Quaternion), m2_load_rotation);
+    m2_load_animation_data(bytes, header, allocator, &bone.scalings, &bones[i].scaling, sizeof(Vec3f), m2_load_scaling);
 
     model->bones[i] = bone;
   }
 
   model->keybonesCount = header->keyBoneLookupsCount;
-  model->keybones = (int16_t *) arena->allocate(sizeof(int16_t) * header->keyBoneLookupsCount);
+  model->keybones = ALLOCATE_MANY(allocator, int16_t,  header->keyBoneLookupsCount);
 
   int16_t *keybones = (int16_t *) ((uint8_t *) bytes + header->keyBoneLookupsOffset);
   for (size_t bli = 0; bli < header->keyBoneLookupsCount; bli++) {

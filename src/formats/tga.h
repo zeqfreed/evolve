@@ -1,6 +1,6 @@
 #pragma once
 
-#include "texture.h"
+#include "utils/texture.h"
 
 #define TGA_ATTRIBUTES_PER_PIXEL_MASK 0b111
 
@@ -55,5 +55,5 @@ typedef struct TgaPixelIter {
   Vec4f next();
 
 private:
- 
+
 } TgaPixelIter;

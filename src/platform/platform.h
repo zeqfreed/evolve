@@ -35,6 +35,7 @@ typedef void *(* AllocateMemoryFunc)(size_t size);
 typedef void *(* FreeMemoryFunc)(void *memory);
 typedef void ( *TerminateFunc)();
 
+typedef AssetId ( *GetAssetIdFunc)(char *name);
 typedef LoadedAsset ( *LoadAssetFunc)(char *name);
 typedef void ( *ReleaseAssetFunc)(LoadedAsset *asset);
 
@@ -51,6 +52,7 @@ typedef struct PlatformAPI {
   AllocateMemoryFunc allocate_memory;
   FreeMemoryFunc free_memory;
   TerminateFunc terminate;
+  GetAssetIdFunc get_asset_id;
   LoadAssetFunc load_asset;
   ReleaseAssetFunc release_asset;
   FileOpenFunc file_open;

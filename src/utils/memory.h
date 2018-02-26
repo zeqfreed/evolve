@@ -14,3 +14,12 @@ typedef struct MemoryArena {
   MemoryArena *subarena(size_t size);
   void discard();
 } MemoryArena;
+
+typedef struct MemoryAllocator {
+  PlatformAPI *papi;
+  uint32_t total_allocated;
+} MemoryAllocator;
+
+#define ALLOCATE_SIZE(A, S) (memory_allocate(A, S))
+#define ALLOCATE_MANY(A, T, C) ((T *) (memory_allocate(A, sizeof(T) * C)))
+#define ALLOCATE_ONE(A, T) ALLOCATE_MANY(A, T, 1)

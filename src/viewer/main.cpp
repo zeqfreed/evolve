@@ -1,20 +1,21 @@
 #include "platform/platform.h"
 
 #include "utils/math.cpp"
-#include "utils/tga.cpp"
-#include "utils/blp.cpp"
 #include "utils/texture.cpp"
 #include "utils/memory.cpp"
 #include "utils/assets.cpp"
 #include "utils/font.cpp"
 #include "utils/ui.cpp"
-#include "utils/dbc.cpp"
+
+#include "formats/tga.cpp"
+#include "formats/blp.cpp"
+#include "formats/dbc.cpp"
+#include "formats/m2.cpp"
 
 #include "renderer/renderer.cpp"
 
 #include "dresser.cpp"
 #include "model.cpp"
-#include "m2.cpp"
 
 #define MIN_HAIR_IDX 2
 #define MAX_HAIR_IDX 8
@@ -56,8 +57,9 @@ typedef struct State {
 
   Font *font;
   UIContext ui;
-  DBCData *dbc_anim_data;
+  DBCFile *dbc_anim_data;
 
+  AssetLoader loader;
   Dresser *dresser;
   CharAppearance appearance;
   int32_t hairIdx;
@@ -345,13 +347,10 @@ static Model *load_model(State *state, char *filename)
 
 static void load_m2_model(State *state, char *filename)
 {
-  LoadedFile file = load_file(state->platform_api, state->temp_arena, filename);
-  if (!file.size) {
-    printf("Failed to load file: %s\n", filename);
-    return;
+  Asset *asset = asset_loader_get_model(&state->loader, filename);
+  if (asset != NULL) {
+    state->m2model = asset->model;
   }
-
-  state->m2model = m2_load(file.contents, file.size, state->main_arena);
 }
 
 static Texture *load_tga_texture(State *state, char *filename)
@@ -687,7 +686,7 @@ static void switch_animation(State *state, Animation *anim, int32_t inc)
   if (dbId >= 0) {
     DBCRecord *anim_record = dbc_get_record(state->dbc_anim_data, dbId);
     if (anim_record) {
-      anim->name = anim_record->name;
+      anim->name = DBC_STRING(state->dbc_anim_data, anim_record->name_offset);
     }
   }
 
@@ -701,6 +700,9 @@ static void enable_submeshes(State *state)
   M2Model *model = state->m2model;
 
   uint16_t enabledSubmeshes[] = {
+    101, // Facial1 (beard)
+    201, // Facial2 (mustache)
+    301, // Facial3 (sideburs)
     401, // Default gloves
     501, // Default boots
     702, // Ears
@@ -721,9 +723,18 @@ static void enable_submeshes(State *state)
 
 static void set_character_appearance(State *state, CharAppearance appearance)
 {
-  state->dresser->mainArena->discard();
-  state->textures[0] = dresser_get_character_texture(state->dresser, appearance);
-  state->textures[1] = dresser_get_hair_texture(state->dresser, appearance);
+  Texture *texture = dresser_get_character_texture(state->dresser, appearance);
+  if (texture != NULL) {
+    state->textures[0] = texture;
+  }
+
+  texture = dresser_get_hair_texture(state->dresser, appearance);
+  if (texture != NULL) {
+    state->textures[1] = texture;
+  }
+
+  Asset *asset = asset_loader_get_texture(&state->loader, (char *) "Character/NightElf/Female/NightElfFemaleEyeGlow.blp");
+  state->textures[3] = asset->texture;
 
   M2Model *model = state->m2model;
   for (int si = 0; si < model->submeshesCount; si++) {
@@ -762,38 +773,35 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->screenWidth = buffer->width;
   state->screenHeight = buffer->height;
 
-  LoadedAsset asset = state->platform_api->load_asset((char *) "Spells/Intellect_128.blp");
-  if (asset.data != NULL) {
-    printf("Loaded asset of size: %zu\n", asset.size);
+  // LoadedAsset asset = state->platform_api->load_asset((char *) "Spells/Intellect_128.blp");
+  // if (asset.data != NULL) {
+  //   printf("Loaded asset of size: %zu\n", asset.size);
 
-    BlpImage image;
-    image.read_header(asset.data, asset.size);
+  //   BlpImage image;
+  //   image.read_header(asset.data, asset.size);
 
-    BlpHeader *header = &image.header;
-    printf("BLP Image width: %d; height: %d; compression: %d\nAlpha depth: %d, alpha type: %d\n",
-           header->width, header->height, header->compression, header->alphaDepth, header->alphaType);
+  //   BlpHeader *header = &image.header;
+  //   printf("BLP Image width: %d; height: %d; compression: %d\nAlpha depth: %d, alpha type: %d\n",
+  //          header->width, header->height, header->compression, header->alphaDepth, header->alphaType);
 
-    Texture *texture = texture_create(state->main_arena, header->width, header->height);
-    image.read_into_texture(asset.data, asset.size, texture);
+  //   Texture *texture = texture_create(state->main_arena, header->width, header->height);
+  //   image.read_into_texture(asset.data, asset.size, texture);
 
-    state->debugTexture = texture;
-    state->platform_api->release_asset(&asset);
-  }
+  //   state->debugTexture = texture;
+  //   state->platform_api->release_asset(&asset);
+  // }
 
-  AssetLoader loader;
-  asset_loader_init(&loader, state->platform_api, state->temp_arena, state->main_arena);
-  state->dbc_anim_data = dbc_load_animation_data(&loader, (char *) "data/mpq/DBFilesClient/AnimationData.dbc");
+  asset_loader_init(&state->loader, state->platform_api);
+  Asset *dbc_asset = asset_loader_get_dbc(&state->loader, (char *) "DBFilesClient/AnimationData.dbc");
+  state->dbc_anim_data = dbc_asset->dbc;
 
   state->dresser = (Dresser *) state->main_arena->allocate(sizeof(Dresser));
-  dresser_init(state->dresser, state->platform_api, state->main_arena);
+  dresser_init(state->dresser, &state->loader);
 
-  load_m2_model(state, (char *) "data/misc/nelf-patched.m2");
+  load_m2_model(state, (char *) "Character/NightElf/Female/NightElfFemale.m2");
+  // load_m2_model(state, (char *) "Character/Human/Male/HumanMale.m2");
   state->core_boneset = m2_character_core_boneset(state->m2model);
   state->upper_boneset = m2_character_upper_body_boneset(state->m2model);
-  // state->textures[0] = load_tga_texture(state, (char *) "data/misc/nelf_0.tga");
-  // state->textures[1] = load_tga_texture(state, (char *) "data/misc/nelf_1.tga");
-  state->textures[2] = load_tga_texture(state, (char *) "data/misc/cape.tga");
-  state->textures[3] = load_tga_texture(state, (char *) "data/misc/nelf_3.tga");
 
   state->appearance = {0};
   state->appearance.facialDetailIdx = MIN_FACIAL_DETAIL_IDX;
@@ -1368,6 +1376,12 @@ void render_ui(State *state)
     changed = true;
   };
 
+  ui_layout_row_end(ui);
+
+  ui_layout_row_begin(ui, 200.0f, 30.0f);
+  snprintf(buf, 255, "%.3f MB", (float) state->loader.allocator.total_allocated / 1048576.0f);
+  ui_label(ui, 0.0f, 30.0f, (uint8_t *) "Asset memory usage: ", UI_ALIGN_LEFT, UI_COLOR_NONE);
+  ui_label(ui, 0.0f, 30.0f, (uint8_t *) buf);
   ui_layout_row_end(ui);
 
   ui_end(ui);

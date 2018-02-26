@@ -40,3 +40,26 @@ void MemoryArena::discard()
 {
   taken = 0;
 }
+
+void memory_allocator_init(MemoryAllocator *allocator, PlatformAPI *papi)
+{
+  allocator->papi = papi;
+  allocator->total_allocated = 0;
+}
+
+void *memory_allocate(MemoryAllocator *allocator, uint32_t size)
+{
+  size += sizeof(uint32_t);
+  uint32_t *memory = (uint32_t *) allocator->papi->allocate_memory(size);
+  memory[0] = size;
+  allocator->total_allocated += size;
+
+  return (void *) &memory[1];
+}
+
+void memory_free(MemoryAllocator *allocator, void *memory)
+{
+  uint32_t size = *((uint32_t *) memory - 1);
+  allocator->total_allocated -= size;
+  allocator->papi->free_memory(memory);
+}
