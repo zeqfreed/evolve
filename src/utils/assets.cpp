@@ -163,6 +163,9 @@ static Asset *asset_loader_get_texture(AssetLoader *loader, char *name)
   image.read_header(asset_file.data, asset_file.size);
 
   BlpHeader *header = &image.header;
+  //printf("BLP %s\n%ux%u version %u, compression %u, alphaDepth %u, alphaType %u\n",
+  //       name, header->width, header->height, header->version, header->compression,
+  //       header->alphaDepth, header->alphaType);
 
   size_t data_size = sizeof(Texel) * header->width * header->height;
   size_t total_size = sizeof(AssetNode) + sizeof(Texture) + data_size;

@@ -17,9 +17,6 @@
 #include "dresser.cpp"
 #include "model.cpp"
 
-#define MIN_HAIR_IDX 2
-#define MAX_HAIR_IDX 8
-
 typedef struct RenderFlags {
   bool gouraud_shading;
   bool texture_mapping;
@@ -32,6 +29,7 @@ typedef struct RenderFlags {
 typedef struct Animation {
   char *name;
   int32_t id;
+  uint32_t dbc_id;
   uint32_t startFrame;
   uint32_t endFrame;
   float fps;
@@ -61,8 +59,10 @@ typedef struct State {
 
   AssetLoader loader;
   Dresser *dresser;
-  CharAppearance appearance;
-  int32_t hairIdx;
+  uint32_t race;
+  uint32_t sex;
+  DresserCharacterAppearance appearance;
+  DresserCustomizationLimits appearance_limits;
 
   uint32_t screenWidth;
   uint32_t screenHeight;
@@ -345,14 +345,6 @@ static Model *load_model(State *state, char *filename)
   return model;
 }
 
-static void load_m2_model(State *state, char *filename)
-{
-  Asset *asset = asset_loader_get_model(&state->loader, filename);
-  if (asset != NULL) {
-    state->m2model = asset->model;
-  }
-}
-
 static Texture *load_tga_texture(State *state, char *filename)
 {
   LoadedFile file = load_file(state->platform_api, state->temp_arena, filename);
@@ -480,7 +472,8 @@ static inline void render_m2_pass(State *state, RenderingContext *ctx, M2Model *
   shader_data.flags = &state->render_flags;
   Vec3f positions[3];
 
-  shader_data.texture = state->textures[pass->textureId];
+  uint32_t texture_index = model->textureLookups[pass->textureId];
+  shader_data.texture = state->textures[texture_index];
 
   uint32_t faceStart = submesh->facesStart;
   uint32_t faceEnd = faceStart + submesh->facesCount;
@@ -527,6 +520,10 @@ static BlendMode map_blending_mode(uint16_t blendingMode)
 
 static void render_m2_model(State *state, RenderingContext *ctx, M2Model *model, RenderMode mode = RENDER_MODE_ANY)
 {
+  if (model == NULL) {
+    return;
+  }
+
   ctx->model_mat = Mat44::rotate_y(-RAD(90)) * Mat44::scale(state->scale, state->scale, state->scale);
   precalculate_matrices(ctx);
 
@@ -656,6 +653,9 @@ static void render_unit_axes(RenderingContext *ctx)
 static void animate_model(State *state)
 {
   M2Model *model = state->m2model;
+  if (model == NULL) {
+    return;
+  }
 
   m2_reset_bones(model);
 
@@ -672,9 +672,8 @@ static void animate_model(State *state)
   state->modelChanged = true;
 }
 
-static void switch_animation(State *state, Animation *anim, int32_t inc)
+static void set_animation(State *state, Animation *anim, uint32_t newId)
 {
-  uint32_t newId = CLAMP_CYCLE((int32_t) anim->id + inc, (int32_t) 0, (int32_t) state->m2model->animationsCount - 1);
   anim->id = newId;
   anim->startFrame = state->m2model->animations[newId].startFrame;
   anim->endFrame = state->m2model->animations[newId].endFrame;
@@ -687,6 +686,7 @@ static void switch_animation(State *state, Animation *anim, int32_t inc)
     DBCRecord *anim_record = dbc_get_record(state->dbc_anim_data, dbId);
     if (anim_record) {
       anim->name = DBC_STRING(state->dbc_anim_data, anim_record->name_offset);
+      anim->dbc_id = dbId;
     }
   }
 
@@ -695,55 +695,145 @@ static void switch_animation(State *state, Animation *anim, int32_t inc)
   animate_model(state);
 }
 
-static void enable_submeshes(State *state)
+static void switch_animation(State *state, Animation *anim, int32_t inc)
 {
-  M2Model *model = state->m2model;
+  uint32_t newId = CLAMP_CYCLE((int32_t) anim->id + inc, (int32_t) 0, (int32_t) state->m2model->animationsCount - 1);
+  set_animation(state, anim, newId);
+}
 
-  uint16_t enabledSubmeshes[] = {
-    101, // Facial1 (beard)
-    201, // Facial2 (mustache)
-    301, // Facial3 (sideburs)
-    401, // Default gloves
-    501, // Default boots
-    702, // Ears
-    1101, // Default pants
-    1301, // Default pants
-    1501, // Default back/cloak
-    1701 // Eyeglow
-  };
+static void update_character_appearance(State *state)
+{
+  Asset *asset = asset_loader_get_texture(&state->loader, (char *) "World/Scale/1_Null.blp");
+  Texture *placeholder = asset->texture; // TODO: Generate procedurally
 
-  for (int si = 0; si < model->submeshesCount; si++) {
-    for (int esi = 0; esi < sizeof(enabledSubmeshes) / sizeof(enabledSubmeshes[0]); esi++) {
-      if (model->submeshes[si].id == enabledSubmeshes[esi]) {
-        model->submeshes[si].enabled = true;
+  DresserCharacterTextures textures = dresser_load_character_textures(state->dresser, state->race, state->sex, state->appearance);
+
+  for (size_t i = 0; i < state->m2model->texturesCount; i++) {
+    printf("Model texture #%zu: type %u name %s\n", i, state->m2model->textures[i].type, state->m2model->textures[i].name);
+
+    ModelTexture *model_texture = &state->m2model->textures[i];
+    Texture *texture = NULL;
+
+    switch (model_texture->type) {
+    case MTT_INLINE: {
+      Asset *texture_asset = asset_loader_get_texture(state->dresser->loader, model_texture->name);
+      if (texture_asset != NULL) {
+        texture = texture_asset->texture;
+      }
+    } break;
+    case MTT_SKIN:
+      texture = textures.skin;
+      break;
+    case MTT_CHAR_HAIR:
+      texture = textures.hair;
+      break;
+    case MTT_SKIN_EXTRA:
+      texture = textures.skin_extra;
+      break;
+    }
+
+    if (texture != NULL) {
+      state->textures[i] = texture;
+    } else {
+      state->textures[i] = placeholder;
+    }
+  }
+
+  //                             SIC!
+  uint32_t geosets[7] = {1, 101, 301, 201}; // Default hair / feature geosets
+
+  asset = asset_loader_get_dbc(&state->loader, (char *) "DBFilesClient/CharHairGeosets.dbc");
+  if (asset != NULL) {
+    for (size_t i = 0; i < asset->dbc->header.records_count; i++) {
+      DBCCharHairGeosetRecord *rec = DBC_RECORD(asset->dbc, DBCCharHairGeosetRecord, i);
+
+      if (rec->race == state->race + 1 && rec->sex == state->sex && rec->variant == state->appearance.hair) {
+        if (rec->is_bald || rec->geoset == 0) {
+          geosets[0] = 1; // Default hair option
+        } else {
+          geosets[0] = rec->geoset;
+        }
+        break;
       }
     }
   }
-}
 
-static void set_character_appearance(State *state, CharAppearance appearance)
-{
-  Texture *texture = dresser_get_character_texture(state->dresser, appearance);
-  if (texture != NULL) {
-    state->textures[0] = texture;
-  }
+  asset = asset_loader_get_dbc(&state->loader, (char *) "DBFilesClient/CharacterFacialHairStyles.dbc");
+  if (asset != NULL) {
+    for (size_t i = 0; i < asset->dbc->header.records_count; i++) {
+      DBCCharacterFacialHairStylesRecord *rec = DBC_RECORD(asset->dbc, DBCCharacterFacialHairStylesRecord, i);
 
-  texture = dresser_get_hair_texture(state->dresser, appearance);
-  if (texture != NULL) {
-    state->textures[1] = texture;
-  }
-
-  Asset *asset = asset_loader_get_texture(&state->loader, (char *) "Character/NightElf/Female/NightElfFemaleEyeGlow.blp");
-  state->textures[3] = asset->texture;
-
-  M2Model *model = state->m2model;
-  for (int si = 0; si < model->submeshesCount; si++) {
-    if (model->submeshes[si].id > 0 && model->submeshes[si].id < 19) {
-      model->submeshes[si].enabled = (model->submeshes[si].id == state->hairIdx);
+      if (rec->race == state->race + 1 && rec->sex == state->sex && rec->variant == state->appearance.facial) {
+        if (rec->geosets[3] > 0) { geosets[1] = rec->geosets[3] + 100; }
+        if (rec->geosets[4] > 0) { geosets[2] = rec->geosets[4] + 300; } // SIC! Second group is 3XX
+        if (rec->geosets[5] > 0) { geosets[3] = rec->geosets[5] + 200; }
+        break;
+      }
     }
   }
 
+  printf("Features geosets: %u %u %u %u\n", geosets[0], geosets[1], geosets[2], geosets[3]);
+
+  M2Model *model = state->m2model;
+  for (int si = 0; si < model->submeshesCount; si++) {
+    if (model->submeshes[si].id == 0) {
+      continue;
+    }
+
+    bool enable = false;
+
+    if (model->submeshes[si].id < 400) {
+      for (size_t gi = 0; gi < sizeof(geosets) / sizeof(geosets[0]); gi++) {
+        if (model->submeshes[si].id == geosets[gi]) {
+          enable = true;
+          break;
+        }
+      }
+    } else if (model->submeshes[si].id == 702) {
+      enable = true; // Enable ears
+    } else {
+      enable = (model->submeshes[si].id % 100 == 1); // Enable default geosets in each group starting from 4
+    }
+
+    model->submeshes[si].enabled = enable;
+  }
+
   animate_model(state);
+}
+
+static void set_character_model(State *state, int32_t race, int32_t sex)
+{
+  race = CLAMP_CYCLE(race, 0, (int32_t) state->dresser->races_count);
+  sex = sex & 1;
+
+  state->race = race;
+  state->sex = sex;
+
+  state->m2model = dresser_load_character_model(state->dresser, race, sex);
+  if (state->m2model == NULL) {
+    return;
+  }
+
+  state->appearance = dresser_get_character_appearance(state->dresser, race, sex);
+  state->appearance_limits = dresser_get_customization_limits(state->dresser, race, sex);
+
+  state->core_boneset = m2_character_core_boneset(state->m2model);
+  state->upper_boneset = m2_character_upper_body_boneset(state->m2model);
+
+  if (state->m2model->animationLookups[state->upperAnim.dbc_id] > -1) {
+    set_animation(state, &state->upperAnim, state->m2model->animationLookups[state->upperAnim.dbc_id]);
+  } else {
+    set_animation(state, &state->upperAnim, 0);
+  }
+
+  if (state->m2model->animationLookups[state->lowerAnim.dbc_id] > -1) {
+    set_animation(state, &state->lowerAnim, state->m2model->animationLookups[state->lowerAnim.dbc_id]);
+  } else {
+    set_animation(state, &state->lowerAnim, 0);
+  }
+
+  animate_model(state);
+  update_character_appearance(state);
 }
 
 static void initialize(State *state, DrawingBuffer *buffer)
@@ -795,18 +885,20 @@ static void initialize(State *state, DrawingBuffer *buffer)
   Asset *dbc_asset = asset_loader_get_dbc(&state->loader, (char *) "DBFilesClient/AnimationData.dbc");
   state->dbc_anim_data = dbc_asset->dbc;
 
+  // Asset *asset = asset_loader_get_texture(&state->loader, (char *) "Character/Troll/Female/TrollFemaleSkin00_108.blp");
+  // Asset *asset = asset_loader_get_texture(&state->loader, (char *) "Character/Troll/Female/TrollFemaleFaceLower00_05.blp");
+  // Asset *asset = asset_loader_get_texture(&state->loader, (char *) "Character/Troll/ScalpLowerHair02_00.blp");
+  // Asset *asset = asset_loader_get_texture(&state->loader, (char *) "Character/NightElf/FacialUpperHair01_00.blp");
+  // Asset *asset = asset_loader_get_texture(&state->loader, (char *) "Character/Scourge/FacialUpperHair03_00.blp");
+  // Asset *asset = asset_loader_get_texture(&state->loader, (char *) "Character/Orc/FacialUpperHair02_01.blp");
+  // state->debugTexture = asset->texture;
+
   state->dresser = (Dresser *) state->main_arena->allocate(sizeof(Dresser));
   dresser_init(state->dresser, &state->loader);
 
-  load_m2_model(state, (char *) "Character/NightElf/Female/NightElfFemale.m2");
-  // load_m2_model(state, (char *) "Character/Human/Male/HumanMale.m2");
-  state->core_boneset = m2_character_core_boneset(state->m2model);
-  state->upper_boneset = m2_character_upper_body_boneset(state->m2model);
-
-  state->appearance = {0};
-  state->appearance.facialDetailIdx = MIN_FACIAL_DETAIL_IDX;
-  state->hairIdx = MIN_HAIR_IDX;
-  set_character_appearance(state, state->appearance);
+  state->race = 0;
+  state->sex = 0;
+  set_character_model(state, state->race, state->sex);
 
   // load_m2_model(state, (char *) "data/misc/dwarf.m2");
   // state->textures[0] = load_tga_texture(state, (char *) "data/misc/dwarf_0.tga");
@@ -865,10 +957,9 @@ static void initialize(State *state, DrawingBuffer *buffer)
   // load_blp_texture(state->platform_api, state->main_arena, state->temp_arena, (char *) "data/mpq/Character/NightElf/ScalpLowerHair00_04.blp");
   // state->debugTexture = state->textures[1];
 
-  switch_animation(state, &state->upperAnim, 24);
-  switch_animation(state, &state->lowerAnim, 0);
+  // set_animation(state, &state->upperAnim, 0);
+  // set_animation(state, &state->lowerAnim, 0);
   state->lower_anim_enabled = false;
-  enable_submeshes(state);
 
   state->temp_arena->discard();
 }
@@ -1156,6 +1247,7 @@ static void handle_input(State *state)
   bool appearanceChanged = false;
   bool shift = KEY_IS_DOWN(state->keyboard, KB_LEFT_SHIFT);
 
+#if 0
   if (KEY_WAS_PRESSED(state->keyboard, KB_9)) {
     appearanceChanged = true;
 
@@ -1211,6 +1303,7 @@ static void handle_input(State *state)
   if (appearanceChanged) {
     set_character_appearance(state, state->appearance);
   }
+#endif
 }
 
 static inline void clear_buffer(DrawingBuffer *buffer, Vec4f color)
@@ -1227,29 +1320,31 @@ static inline void clear_buffer(DrawingBuffer *buffer, Vec4f color)
 
 #include <stdlib.h>
 
-#define RANDOM(a, b) (rand() % b + a)
+#define RANDOM(a, b) (b > 0 ? (rand() % b + a) : a)
 
-CharAppearance random_appearance()
+DresserCharacterAppearance random_appearance(DresserCustomizationLimits lims)
 {
-  CharAppearance result = {};
-  result.skinIdx = RANDOM(0, MAX_SKIN_IDX);
-  result.faceIdx = RANDOM(0, MAX_FACE_IDX);
-  result.hairColorIdx = RANDOM(0, MAX_HAIR_COLOR_IDX);
-  result.facialDetailIdx = RANDOM(MIN_FACIAL_DETAIL_IDX, MAX_FACIAL_DETAIL_IDX);
+  DresserCharacterAppearance result = {};
+  result.skin_color = RANDOM(lims.skin_color[0], lims.skin_color[1]);
+  result.face = RANDOM(lims.face[0], lims.face[1]);
+  result.hair_color = RANDOM(lims.hair_color[0], lims.hair_color[1]);
+  result.hair = RANDOM(lims.hair[0], lims.hair[1]);
+  result.facial = RANDOM(lims.facial[0], lims.facial[1]);
+
   return result;
 }
 
-bool render_appearance_switcher(UIContext *ui, int32_t *value, int32_t min, int32_t max, char *fmt)
+bool render_appearance_switcher(UIContext *ui, uint32_t *value, uint32_t min, uint32_t max, char *fmt)
 {
   float h = 30.0f;
 
   ui_group_begin(ui, fmt);
-  ui_layout_row_begin(ui, 200.0f, h);
+  ui_layout_row_begin(ui, 215.0f, h);
 
   bool result = false;
 
   if (ui_button(ui, h, h, (uint8_t *) "<") == UI_BUTTON_RESULT_CLICKED) {
-    *value = CLAMP_CYCLE(*value - 1, min, max);
+    *value = CLAMP_CYCLE((int32_t) *value - 1, (int32_t) min, (int32_t) max);
     result = true;
   };
 
@@ -1284,6 +1379,24 @@ void render_ui(State *state)
   snprintf(buf, 255, "X: %.03f, Y: %.03f", state->mouse->windowX, state->mouse->windowY);
   ui_layout_row_begin(ui, 0.0f, 30.0f);
   ui_label(ui, 0.0f, 30.0f, (uint8_t *) buf, UI_ALIGN_LEFT, UI_COLOR_NONE);
+  ui_layout_row_end(ui);
+
+  bool model_changed = false;
+
+  ui_layout_row_begin(ui, 0.0f, 30.0f);
+  if (ui_button(ui, 30.0f, 30.0f, (uint8_t *) "<") == UI_BUTTON_RESULT_CLICKED) {
+    state->race = CLAMP_CYCLE((int32_t) state->race - 1, 0, (int32_t) state->dresser->races_count - 1);
+    model_changed = true;
+  }
+  if (ui_button(ui, 30.0f, 30.0f, (uint8_t *) ">") == UI_BUTTON_RESULT_CLICKED) {
+    state->race = CLAMP_CYCLE(state->race + 1, 0, state->dresser->races_count - 1);
+    model_changed = true;
+  }
+  ui_label(ui, 139.0f, 30.0f, (uint8_t *) state->dresser->race_options[state->race].name);
+  if (ui_button(ui, 100.0f, 30.0f, state->sex == 0 ? (uint8_t *) "Male" : (uint8_t *) "Female") == UI_BUTTON_RESULT_CLICKED) {
+    state->sex = !state->sex;
+    model_changed = true;
+  }
   ui_layout_row_end(ui);
 
   ui_layout_spacer(ui, 0.0f, 10.0f);
@@ -1356,23 +1469,28 @@ void render_ui(State *state)
   // Appearance controls
 
   bool changed = false;
+  DresserCustomizationLimits *lims = &state->appearance_limits;
+  DresserCharacterAppearance *app = &state->appearance;
 
-  changed |= render_appearance_switcher(ui, &state->appearance.faceIdx, 0, MAX_FACE_IDX, (char *) "Face %d");
-  changed |= render_appearance_switcher(ui, &state->appearance.skinIdx, 0, MAX_SKIN_IDX, (char *) "Skin %d");
-  changed |= render_appearance_switcher(ui, &state->hairIdx, MIN_HAIR_IDX, MAX_HAIR_IDX, (char *) "Hair %d");
-  changed |= render_appearance_switcher(ui, &state->appearance.hairColorIdx, 0, MAX_HAIR_COLOR_IDX, (char *) "Hair color %d");
-  changed |= render_appearance_switcher(ui, &state->appearance.facialDetailIdx,
-                                        MIN_FACIAL_DETAIL_IDX, MAX_FACIAL_DETAIL_IDX, (char *) "Detail %d");
+  changed |= render_appearance_switcher(ui, &app->face, lims->face[0], lims->face[1], (char *) "Face %d");
+  changed |= render_appearance_switcher(ui, &app->skin_color, lims->skin_color[0], lims->skin_color[1], (char *) "Skin %d");
 
+  snprintf(buf, 255, "%s %%d", state->dresser->race_options[state->race].feature_names[state->sex][0]);
+  changed |= render_appearance_switcher(ui, &app->hair, lims->hair[0], lims->hair[1], buf);
+
+  snprintf(buf, 255, "%s color %%d", state->dresser->race_options[state->race].feature_names[state->sex][0]);
+  changed |= render_appearance_switcher(ui, &app->hair_color, lims->hair_color[0], lims->hair_color[1], buf);
+
+  snprintf(buf, 255, "%s %%d", state->dresser->race_options[state->race].feature_names[state->sex][1]);
+  changed |= render_appearance_switcher(ui, &app->facial, lims->facial[0], lims->facial[1], buf);
 
   // Randomize button
 
-  ui_layout_row_begin(ui, 200.0f, 30.0f);
+  ui_layout_row_begin(ui, 215.0f, 30.0f);
 
   ui_layout_fill(ui);
   if (ui_button(ui, 0, 30.0f, (uint8_t *) "Randomize") == UI_BUTTON_RESULT_CLICKED) {
-    state->appearance = random_appearance();
-    state->hairIdx = RANDOM(MIN_HAIR_IDX, MAX_HAIR_IDX);
+    state->appearance = random_appearance(state->appearance_limits);
     changed = true;
   };
 
@@ -1386,8 +1504,10 @@ void render_ui(State *state)
 
   ui_end(ui);
 
-  if (changed) {
-    set_character_appearance(state, state->appearance);
+  if (model_changed) {
+    set_character_model(state, state->race, state->sex);
+  } else if (changed) {
+    update_character_appearance(state);
   }
 }
 

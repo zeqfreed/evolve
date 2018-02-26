@@ -258,11 +258,6 @@ M2Model *m2_load(MemoryAllocator *allocator, void *bytes, size_t size)
   M2Header *header = (M2Header *) bytes;
   m2_dump_header(header, bytes);
 
-  // uint16_t *texLookups = (uint16_t *) ((uint8_t *) bytes + header->textureLookupsOffset);
-  // for (int ti = 0; ti < header->textureLookupsCount; ti++) {
-  //   printf("Texture lookup %d: %d\n", ti, texLookups[ti]);
-  // }
-
   // uint16_t *texUnitLookups = (uint16_t *) ((uint8_t *) bytes + header->textureUnitLookupsOffset);
   // for (int tui = 0; tui < header->textureUnitLookupsCount; tui++) {
   //   printf("Texture unit lookup %d: %d\n", tui, texUnitLookups[tui]);
@@ -323,9 +318,26 @@ M2Model *m2_load(MemoryAllocator *allocator, void *bytes, size_t size)
     // printf("Render pass %d: flags: %d; submesh: %d, render flags index = %d\n", rpi, renderPasses[rpi].flags, renderPasses[rpi].submesh, renderPasses[rpi].renderFlagIndex);
   }
 
-  M2Texture *textures = (M2Texture *) ((uint8_t *) bytes + header->texturesOffset);
+  M2Texture *m2textures = (M2Texture *) ((uint8_t *) bytes + header->texturesOffset);
+  model->texturesCount = header->texturesCount;
+  model->textures = ALLOCATE_MANY(allocator, ModelTexture, header->texturesCount);
   for (int ti = 0; ti < header->texturesCount; ti++) {
-    m2_dump_texture(&textures[ti], bytes);
+    m2_dump_texture(&m2textures[ti], bytes);
+
+    model->textures[ti].type = m2textures[ti].type;
+    if (m2textures[ti].type == MTT_INLINE) {
+      model->textures[ti].name = (char *) ALLOCATE_SIZE(allocator, m2textures[ti].filenameLength);
+      memcpy(model->textures[ti].name, (uint8_t *) bytes + m2textures[ti].filenameOffset, m2textures[ti].filenameLength);
+    } else {
+      model->textures[ti].name = NULL;
+    }
+  }
+
+  uint16_t *texLookups = (uint16_t *) ((uint8_t *) bytes + header->textureLookupsOffset);
+  model->textureLookupsCount = header->textureLookupsCount;
+  model->textureLookups = ALLOCATE_MANY(allocator, uint32_t, header->textureLookupsCount);
+  for (int ti = 0; ti < header->textureLookupsCount; ti++) {
+    model->textureLookups[ti] = texLookups[ti];
   }
 
   M2Geoset *geosets = (M2Geoset *) ((uint8_t *) bytes + view->submeshesOffset);

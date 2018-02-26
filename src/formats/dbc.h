@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 
+typedef uint32_t DBCString;
+
 typedef struct DBCHeader {
   uint32_t magic;
   uint32_t records_count;
@@ -33,9 +35,87 @@ typedef struct DBCCharSectionsRecord {
   uint32_t color;
   uint32_t texture_names[3];
   uint32_t flags;
-
-
 } DBCCharSectionsRecord;
+
+typedef struct DBCLocalizedString {
+  uint32_t enUS;
+  uint32_t koKR;
+  uint32_t frFR;
+  uint32_t deDE;
+  uint32_t enCN;
+  uint32_t enTW;
+  uint32_t esES;
+  uint32_t esMX;
+  uint32_t flags;
+} DBCLocalizedString;
+
+typedef struct DBCCharRacesRecord {
+  uint32_t id;
+  uint32_t flags;
+  uint32_t faction_id;
+  uint32_t exploration_sound_id;
+  uint32_t male_display_id;
+  uint32_t female_display_id;
+  uint32_t client_prefix;
+  float mount_scale;
+  uint32_t language;
+  uint32_t creature_type;
+  uint32_t login_effect_spell_id;
+  uint32_t combat_stun_spell_id;
+  uint32_t res_sickness_spell_id;
+  uint32_t splash_sound_id;
+  uint32_t starting_taxi_node;
+  uint32_t file;
+  uint32_t cinematic_sequence_id;
+  DBCLocalizedString i18n_name;
+  DBCString features[3];
+} DBCCharRacesRecord;
+
+typedef struct DBCCreatureDisplayInfoRecord {
+  uint32_t id;
+  uint32_t model_id;
+  uint32_t sound_id;
+  uint32_t ex_display_info_id;
+  float model_scale;
+  uint32_t alpha;
+  DBCString texture_variants[3];
+  uint32_t size_class;
+  uint32_t blood_id;
+  uint32_t npc_sound_id;
+} DBCCreatureDisplayInfoRecord;
+
+typedef struct DBCCreatureModelDataRecord {
+  uint32_t id;
+  uint32_t flags;
+  DBCString model_name;
+  uint32_t size_class;
+  float model_scale;
+  uint32_t blood_id;
+  uint32_t footprint_tex_id;
+  float footprint_tex_dims[2];
+  float footprint_tex_scale;
+  uint32_t material;
+  uint32_t footstep_shake;
+  uint32_t death_thud_shake;
+  float collision_dims[2];
+  float mount_height;
+} DBCCreatureModelDataRecord;
+
+typedef struct DBCCharHairGeosetRecord {
+  uint32_t id;
+  uint32_t race;
+  uint32_t sex;
+  uint32_t variant;
+  uint32_t geoset;
+  uint32_t is_bald;
+} DBCCharHairGeosetRecord;
+
+typedef struct DBCCharacterFacialHairStylesRecord {
+  uint32_t race;
+  uint32_t sex;
+  uint32_t variant;
+  uint32_t geosets[6];
+} DBCCharacterFacialHairStylesRecord;
 
 typedef struct DBCFile {
   DBCHeader header;

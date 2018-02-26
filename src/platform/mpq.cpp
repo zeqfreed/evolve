@@ -77,6 +77,19 @@ static bool string_ends_with(char *string, char *what)
 
 static bool mpq_archive_init(MPQArchive *archive, char *filename);
 
+typedef int (* QSortCompareFunc)(const void *, const void *);
+
+static int32_t _mpq_archive_compare(MPQArchive *a, MPQArchive *b)
+{
+  if (a->priority > b->priority) {
+    return -1;
+  } else if (a->priority < b->priority) {
+    return 1;
+  }
+
+  return 0;
+}
+
 void mpq_registry_init(MPQRegistry *registry, char *directory)
 {
   mpq_init_crypt_table();
@@ -94,15 +107,31 @@ void mpq_registry_init(MPQRegistry *registry, char *directory)
     }
 
     if (!entry->is_dir && string_ends_with(entry->name, (char *) ".mpq")) {
+      uint32_t priority = 0;
+      if (strncmp(entry->name, "patch.mpq", 8) == 0) {
+        priority = 1;
+      } else {
+        sscanf(entry->name, "patch-%u.mpq", &priority);
+      }
+
       char buf[2048];
       snprintf(buf, sizeof(buf) / sizeof(buf[0]), "%s%c%s", directory, DIRECTORY_SEPARATOR, entry->name);
 
       MPQArchive *archive = &registry->archives[registry->archives_count++];
+      archive->priority = priority;
+
       mpq_archive_init(archive, buf);
     }
   }
 
   PLATFORM_API.directory_listing_end(&iter);
+
+  qsort(registry->archives, registry->archives_count, sizeof(MPQArchive), (QSortCompareFunc) _mpq_archive_compare);
+
+  for (size_t i = 0; i < registry->archives_count; i++) {
+    MPQArchive *archive = &registry->archives[i];
+    printf("Archive %s: priority %u, size %u\n", archive->filename, archive->priority, archive->header.archive_size);
+  }
 }
 
 static void mpq_decrypt_data(void *data, size_t size, uint32_t key)
@@ -159,9 +188,11 @@ static bool mpq_archive_init(MPQArchive *archive, char *filename)
     return false;
   }
 
-  printf("Read archive %s: %d\n", filename, archive->header.archive_size);
-
   archive->file = file;
+
+  uint32_t len = strlen(filename);
+  archive->filename = (char *) PLATFORM_API.allocate_memory(len + 1);
+  memcpy(archive->filename, filename, len);
 
   size_t hash_table_size = archive->header.hash_table_size * sizeof(MPQHashEntry);
   archive->hash_table = (MPQHashEntry *) PLATFORM_API.allocate_memory(hash_table_size);
@@ -206,7 +237,7 @@ static MPQHashEntry *mpq_archive_find_entry(MPQArchive *archive, char *name)
   uint32_t platform = 0;
 
   uint32_t idx = start_idx;
-  uint32_t tries = 10;
+  uint32_t tries = 100;
 
   while (table[idx].block_index != MPQ_HASH_ENTRY_EMPTY && tries) {
     MPQHashEntry *entry = &table[idx];
@@ -256,8 +287,11 @@ MPQFile mpq_load_file(MPQRegistry *registry, char *name)
   }
 
   if (matchedArchive == NULL || matchedEntry == NULL) {
+    printf("[ERROR] No archive contained %s\n", name);
     return result;
   }
+
+  printf("Found %s in archive %s\n", name, matchedArchive->filename);
 
   MPQBlockEntry *block = &matchedArchive->block_table[matchedEntry->block_index];
   if ((block->flags & MPQ_BLOCK_IS_FILE) != MPQ_BLOCK_IS_FILE) {

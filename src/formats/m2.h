@@ -188,6 +188,18 @@ typedef struct ModelAnimationData {
   void *data;
 } ModelAnimationData;
 
+typedef enum ModelTextureType {
+  MTT_INLINE = 0,
+  MTT_SKIN,
+  MTT_CHAR_HAIR = 6,
+  MTT_SKIN_EXTRA = 8
+} ModelTextureType;
+
+typedef struct ModelTexture {
+  uint32_t type;
+  char *name; // for MTT_INLINE only
+} ModelTexture;
+
 typedef struct ModelBone {
   int32_t parent;
   int32_t keybone;
@@ -224,6 +236,10 @@ typedef struct M2Model {
   Vec3f *normals;
   Vec3f *animatedNormals;
   Vec3f *textureCoords;
+  uint32_t texturesCount;
+  ModelTexture *textures;
+  uint32_t textureLookupsCount;
+  uint32_t *textureLookups;
   ModelVertexWeight *weights;
   uint32_t facesCount;
   M2Face *faces;

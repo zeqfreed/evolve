@@ -2,8 +2,9 @@
 
 #include "platform/platform.h"
 
+#include "formats/tga.cpp"
+
 #include "utils/math.cpp"
-#include "utils/tga.cpp"
 #include "utils/texture.cpp"
 #include "utils/memory.cpp"
 #include "utils/assets.cpp"

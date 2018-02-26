@@ -34,6 +34,8 @@ typedef struct MPQArchive {
   MPQHeader header;
   MPQHashEntry *hash_table;
   MPQBlockEntry *block_table;
+  char *filename;
+  uint32_t priority;
 } MPQArchive;
 
 #define MPQ_MAX_ARCHIVES 32

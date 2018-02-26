@@ -21,13 +21,15 @@ Possibly outdated list of implemented features includes:
    * Lazy and poor font rendering demonstration
 
 3. Viewer module
-   * Loading of TGA textures and OBJ models
-   * Loading and animation of M2 models (Vanilla WoW)
-   * Perspective-correct attribute interpolation, normal & shadow mapping, basic lighting in shader functions
+   * Loading of texture and model assets (BLP/M2) from original Vanilla WoW MPQ archives
+   * Display of character models according to DBC files
+   * Simple immediate mode UI to select character race, sex and customize appearance
 
-# Example output
+# Viewer module
 
-![Screenshot](screenshot.v2.png?raw=true)
+Example output
+
+![Screenshot](screenshot.v3.png?raw=true)
 
 # License
 

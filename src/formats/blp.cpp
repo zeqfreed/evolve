@@ -49,6 +49,13 @@ Vec4f BlpPixelIter::next()
 
   if (image->header.alphaDepth == 8) {
     result.a = alphaData[pixelsRead] / 255.0;
+  } else if (image->header.alphaDepth == 1) {
+    uint8_t bit_idx = pixelsRead & 7;
+    if ((alphaData[pixelsRead / 8] & (1 << bit_idx)) > 0) {
+      result.a = 1.0f;
+    } else {
+      result.a = 0.0f;
+    }
   } else {
     result.a = 1.0f;
   }
@@ -151,13 +158,12 @@ void BlpImage::read_into_texture(void *bytes, size_t size, Texture *texture)
 {
   read_header(bytes, size);
 
-  // ASSERT(header.compression == 1);
+  ASSERT(header.compression == 1 || header.compression == 2);
 
   ASSERT(texture->width == header.width);
   ASSERT(texture->height == header.height);
 
   uint32_t offset = header.mipmapOffsets[0];
-  // uint32_t length = header.mipmapLengths[0];
 
   if (header.compression == 1) {
     uint8_t *pixelData = (uint8_t *) ((uint8_t *)bytes + offset);
