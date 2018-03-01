@@ -85,6 +85,9 @@ static float font_get_text_width(Font *font, uint8_t *text)
   ASSERT(font);
 
   float result = 0.0f;
+  if (text == NULL) {
+    return result;
+  }
 
   uint32_t codepoint;
   uint8_t *c = text;
@@ -111,6 +114,10 @@ static float font_get_text_width(Font *font, uint8_t *text)
 static void font_render_text(Font *font, RenderingContext *ctx, float x, float y, uint8_t *text, Vec4f tint = DEFAULT_FONT_TINT)
 {
   ASSERT(font);
+
+  if (text == NULL) {
+    return;
+  }
 
   FontShaderData data = {};
   data.texture = font->texture;

@@ -90,6 +90,35 @@ static int32_t _mpq_archive_compare(MPQArchive *a, MPQArchive *b)
   return 0;
 }
 
+static inline char downcase(char c)
+{
+  if (c >= 'A' && c <= 'Z') {
+    return c + 32;
+  }
+
+  return c;
+}
+
+static int32_t string_equal_ni(char *a, char *b, size_t len)
+{
+  while (len--) {
+    if (*a && *b) {
+      if (downcase(*a) > downcase(*b)) {
+        return 1;
+      } else if (downcase(*a) < downcase(*b)) {
+        return -1;
+      }
+
+      a++;
+      b++;
+    } else {
+      break;
+    }
+  }
+
+  return 0;
+}
+
 void mpq_registry_init(MPQRegistry *registry, char *directory)
 {
   mpq_init_crypt_table();
@@ -106,16 +135,25 @@ void mpq_registry_init(MPQRegistry *registry, char *directory)
       continue;
     }
 
+    char *p = entry->name;
+    do {
+      *p = downcase(*p);
+    } while (*p++);
+
     if (!entry->is_dir && string_ends_with(entry->name, (char *) ".mpq")) {
       uint32_t priority = 0;
-      if (strncmp(entry->name, "patch.mpq", 8) == 0) {
-        priority = 1;
-      } else {
-        sscanf(entry->name, "patch-%u.mpq", &priority);
+      if (strncmp(entry->name, "patch", 5) == 0) {
+        if (entry->name[5] == '.') {
+          priority = 1;
+        } else if (entry->name[5] == '-') {
+          priority = atoi(&entry->name[6]);
+        }
       }
 
-      char buf[2048];
-      snprintf(buf, sizeof(buf) / sizeof(buf[0]), "%s%c%s", directory, DIRECTORY_SEPARATOR, entry->name);
+      char buf[2048] = {};
+      snprintf(buf, sizeof(buf) / sizeof(buf[0]), "%s", directory);
+      buf[strlen(directory)] = DIRECTORY_SEPARATOR;
+      snprintf(&buf[strlen(directory) + 1], 255, "%s", entry->name);
 
       MPQArchive *archive = &registry->archives[registry->archives_count++];
       archive->priority = priority;
@@ -179,7 +217,7 @@ static uint32_t mpq_string_hash(char *string, uint32_t type)
 
 static bool mpq_archive_init(MPQArchive *archive, char *filename)
 {
-  OpenFile file = {};
+  PlatformFile file = {};
   if (PAPI_ERROR(PLATFORM_API.file_open(&file, filename))) {
     return false;
   }
@@ -225,9 +263,8 @@ static MPQFileId mpq_file_id(char *name)
   return result;
 }
 
-static MPQHashEntry *mpq_archive_find_entry(MPQArchive *archive, char *name)
+static MPQHashEntry *mpq_archive_find_entry(MPQArchive *archive, MPQFileId file_id)
 {
-  MPQFileId file_id = mpq_file_id(name);
   uint32_t start_idx = file_id.hash & (archive->header.hash_table_size - 1);
 
   MPQHashEntry *table = archive->hash_table;
@@ -277,8 +314,10 @@ MPQFile mpq_load_file(MPQRegistry *registry, char *name)
   MPQArchive *matchedArchive = NULL;
   MPQHashEntry *matchedEntry = NULL;
 
+  MPQFileId file_id = mpq_file_id(name);
+
   for (size_t i = 0; i < registry->archives_count; i++) {
-    MPQHashEntry *entry = mpq_archive_find_entry(&registry->archives[i], name);
+    MPQHashEntry *entry = mpq_archive_find_entry(&registry->archives[i], file_id);
     if (entry != NULL) {
       matchedArchive = &registry->archives[i];
       matchedEntry = entry;

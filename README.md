@@ -7,10 +7,11 @@ codebase simple and clear. Strictly OSX related parts are written in Objective-C
 
 Possibly outdated list of implemented features includes:
 
-1. Minimal MacOS platform layer
+1. Minimal MacOS/Windows platform layer
    * Window creation
    * Game loop
    * Hot reloading of shared executable modules
+   * Keyboard and mouse input
 
 2. 3D rendering facilities
    * "Programmable pipeline" with vertex and fragment functions

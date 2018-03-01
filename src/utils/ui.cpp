@@ -300,6 +300,8 @@ UIRect ui_layout__calc_rect(UIContext *ctx, UIRect rect)
       return {ctx->layout.row.x0 + ctx->layout.xspacing, rect.y0 + ctx->y, ctx->layout.row.x1 - ctx->layout.xspacing, rect.y1 + ctx->y};
     }
   }
+
+  return rect;
 }
 
 void ui_layout__shrink_row(UIContext *ctx, UIRect rect)

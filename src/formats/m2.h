@@ -3,7 +3,7 @@
 #include "math.h"
 #include "memory.h"
 
-#pragma pack(push)
+PACK_START(1);
 
 typedef struct M2Header {
   char magic[4];
@@ -48,7 +48,7 @@ typedef struct M2Header {
   uint32_t textureLookupsOffset;
   uint32_t textureUnitLookupsCount;
   uint32_t textureUnitLookupsOffset;
-} M2Header;
+} PACKED M2Header;
 
 typedef struct M2Vertex {
   Vec3f pos;
@@ -58,19 +58,19 @@ typedef struct M2Vertex {
   float texcoords[2];
   uint32_t reserved1;
   uint32_t reserved2;
-} M2Vertex;
+} PACKED M2Vertex;
 
 typedef struct M2Texture {
   uint32_t type;
   uint32_t flags;
   uint32_t filenameLength;
   uint32_t filenameOffset;
-} M2Texture;
+} PACKED M2Texture;
 
 typedef struct M2RenderFlag {
   uint16_t flags;
   uint16_t blendingMode;
-} M2RenderFlag;
+} PACKED M2RenderFlag;
 
 typedef struct M2RenderPass {
   uint16_t flags;
@@ -85,7 +85,7 @@ typedef struct M2RenderPass {
   uint16_t _unknown2;
   uint16_t transparencyIndex;
   uint16_t textureAnimationIndex;
-} M2RenderPass;
+} PACKED M2RenderPass;
 
 typedef struct M2View {
   uint32_t indicesCount;
@@ -99,7 +99,7 @@ typedef struct M2View {
   uint32_t renderPassesCount;
   uint32_t renderPassesOffset;
 	int32_t lod;
-} M2View;
+} PACKED M2View;
 
 typedef struct M2Geoset {
   uint32_t id;
@@ -115,7 +115,7 @@ typedef struct M2Geoset {
   //float radius;
   //uint16_t _padding;
   //uint16_t unknown[6]; // 12 bytes
-} M2Geoset;
+} PACKED M2Geoset;
 
 typedef struct M2Animation {
   uint32_t id;
@@ -133,7 +133,7 @@ typedef struct M2Animation {
   float radius;
   int16_t nextAnimation;
   uint16_t aliasedAnimation;
-} M2Animation;
+} PACKED M2Animation;
 
 typedef struct M2AnimationBlock {
   uint16_t interpolationType;
@@ -144,7 +144,7 @@ typedef struct M2AnimationBlock {
   uint32_t timestampsOffset;
   uint32_t keyframesCount;
   uint32_t keyframesOffset;
-} M2AnimationBlock;
+} PACKED M2AnimationBlock;
 
 typedef struct M2Bone {
   int32_t keybone;
@@ -155,7 +155,9 @@ typedef struct M2Bone {
   M2AnimationBlock rotation;
   M2AnimationBlock scaling;
   Vec3f pivot;
-} M2Bone;
+} PACKED M2Bone;
+
+PACK_END();
 
 typedef struct ModelSubmesh {
   uint32_t id;
@@ -295,7 +297,5 @@ typedef struct ModelBoneSet {
 
 #define MODEL_BONESET_SET(BS, IDX) (BS.set[IDX / 32] |= (1 << (IDX % 32)))
 #define MODEL_PBONESET_ISSET(PBS, IDX) ((PBS->set[IDX / 32] & (1 << (IDX % 32))) > 0)
-
-#pragma pack(pop)
 
 M2Model *m2_load(MemoryAllocator *allocator, void *bytes, size_t size);

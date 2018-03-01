@@ -73,7 +73,8 @@ static bool clip_line(int32_t *x0, int32_t *y0, int32_t *x1, int32_t *y1, int32_
     } else {
       int32_t code = code0 ? code0 : code1;
 
-      float x, y;
+      float x = xmin;
+      float y = ymin;
       float dx = *x1 - *x0;
       float dy = *y1 - *y0;
 

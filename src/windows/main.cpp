@@ -4,22 +4,24 @@
 #define _USE_MATH_DEFINES
 #include <cmath>
 
-#include <Windows.h>
-
 #include "platform/platform.h"
 
 #include "windows/fs.cpp"
 #include "windows/keyboard.cpp"
+#include "windows/mouse.cpp"
 
-#define WIDTH 1024
-#define HEIGHT 768
+#include "platform/mpq.cpp"
+
+#define WIDTH 1600
+#define HEIGHT 900
 
 #define FRAMES_TO_UPDATE_FPS 30
 
 static volatile bool gameRunning = false;
 static HMODULE dllHandle = NULL;
 static DrawFrameFunc drawFrame = NULL;
-static KeyboardState keyboardState;
+static KeyboardState keyboardState = {};
+static MouseState mouseState = {};
 static BITMAPINFO bmi = {};
 static HDC targetDC = NULL;
 static HWND gameWindow = NULL;
@@ -105,6 +107,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
       keyboard_clear_state(&keyboardState);
       break;
 
+    case WM_LBUTTONDOWN: {
+      SetCapture(hWnd);
+      int32_t xpos = GET_X_LPARAM(lParam); 
+      int32_t ypos = GET_Y_LPARAM(lParam);
+      mouse_state_set_position(&mouseState, (float) xpos, (float) ypos);
+      mouse_state_button_down(&mouseState, MB_LEFT);
+    } break;
+
+    case WM_LBUTTONUP: {
+      ReleaseCapture();
+      int32_t xpos = GET_X_LPARAM(lParam); 
+      int32_t ypos = GET_Y_LPARAM(lParam);
+      mouse_state_set_position(&mouseState, (float) xpos, (float) ypos);
+      mouse_state_button_up(&mouseState, MB_LEFT);
+    } break;
+
+    case WM_MOUSEMOVE: {
+      int32_t xpos = GET_X_LPARAM(lParam); 
+      int32_t ypos = GET_Y_LPARAM(lParam);
+      mouse_state_set_position(&mouseState, (float) xpos, (float) ypos);
+    } break;
+
     default:
       return DefWindowProc(hWnd, message, wParam, lParam);
   }
@@ -124,8 +148,8 @@ HWND create_window(HINSTANCE hInstance, uint16_t width, uint16_t height, char *t
 	wndClass.lpszClassName = "evolveWindowClass";
 
 	if (!RegisterClassEx(&wndClass)) {
-		MessageBox(NULL, "RegisterClassEx failed!", "Evolve", NULL);
-		return false;
+		MessageBox(NULL, "RegisterClassEx failed!", "Evolve", 0);
+		return 0;
 	}
 
   uint32_t style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE;
@@ -198,6 +222,11 @@ C_LINKAGE void *windows_allocate_memory(size_t size)
   return result;
 }
 
+C_LINKAGE void windows_free_memory(void *memory)
+{
+  free(memory);
+}
+
 C_LINKAGE void windows_terminate()
 {
   gameRunning = false;
@@ -244,6 +273,47 @@ void test_draw_frame(GlobalState *state, DrawingBuffer *buffer, float dt)
   }
 }
 
+MPQFileId windows_get_asset_id(char *name)
+{
+  return mpq_file_id(name);
+}
+
+MPQFile windows_load_asset(char *name)
+{
+  int32_t size = windows_fs_size(name);
+  if (size >= 0) {
+    MPQFile result = {};
+    result.id = mpq_file_id(name);
+    result.data = windows_allocate_memory(size);
+    result.size = size;
+    windows_fs_read(name, result.data, size);
+    return result;
+  }
+
+  return mpq_load_file(&MPQ_REGISTRY, name);
+}
+
+void windows_release_asset(MPQFile *file)
+{
+  return mpq_release_file(&MPQ_REGISTRY, file);
+}
+
+PlatformAPI PLATFORM_API = {
+  (GetFileSizeFunc) windows_fs_size,
+  (ReadFileContentsFunc) windows_fs_read,
+  (AllocateMemoryFunc) windows_allocate_memory,
+  (FreeMemoryFunc) windows_free_memory,
+  (TerminateFunc) windows_terminate,
+  (GetAssetIdFunc) windows_get_asset_id,
+  (LoadAssetFunc) windows_load_asset,
+  (ReleaseAssetFunc) windows_release_asset,
+  (FileOpenFunc) windows_file_open,
+  (FileReadFunc) windows_file_read,
+  (DirectoryListingBeginFunc) windows_directory_listing_begin,
+  (DirectoryListingNextEntryFunc) windows_directory_listing_next_entry,
+  (DirectoryListingEndFunc) windows_directory_listing_end
+};
+
 int WINAPI WinMain(HINSTANCE hInstance,
                    HINSTANCE hPrevInstance,
                    LPSTR lpCmdLine,
@@ -260,12 +330,14 @@ int WINAPI WinMain(HINSTANCE hInstance,
     }
   }
 
-  char dllPath[255] = {};
-  if (strlen(module) > 0) {
-    snprintf(dllPath, sizeof(dllPath), "%s.dll", (char *) module);
-  } else {
-    printf("Supply a module name\n");
-    exit(1);
+  char dllPath[MAX_PATH] = {};
+  size_t len = strlen(module);
+  if (len > 3) {
+    if (module[len - 3] == 'd' && module[len - 2] == 'l' && module[len - 1] == 'l') {
+      memcpy(dllPath, module, len);
+    } else {
+      snprintf(dllPath, MAX_PATH, "%s.dll", (char *) module);
+    }
   };
 
   if (load_library(dllPath)) {
@@ -274,7 +346,7 @@ int WINAPI WinMain(HINSTANCE hInstance,
     drawFrame = test_draw_frame;
   }
 
-  gameWindow = create_window(hInstance, WIDTH, HEIGHT, "Evolve");
+  gameWindow = create_window(hInstance, WIDTH, HEIGHT, (char *) "Evolve");
   if (!gameWindow) {
     return 1;
   }
@@ -298,12 +370,11 @@ int WINAPI WinMain(HINSTANCE hInstance,
   bmi.bmiHeader.biCompression = BI_RGB;
 
   GlobalState state = {};
-  state.platform_api.get_file_size = windows_fs_size;
-  state.platform_api.read_file_contents = windows_fs_read;
-  state.platform_api.allocate_memory = windows_allocate_memory;
-  state.platform_api.terminate = windows_terminate;
-  
+  state.platform_api = PLATFORM_API;
   state.keyboard = &keyboardState; 
+  state.mouse = &mouseState;
+
+  mpq_registry_init(&MPQ_REGISTRY, (char *) "G:\\Games\\WoW Classic\\Data");
 
   gameRunning = true;
 
@@ -336,6 +407,7 @@ int WINAPI WinMain(HINSTANCE hInstance,
     }
 
     keyboard_clear_state_changes(&keyboardState);
+    mouse_state_clear_frame_changes(&mouseState);    
     windows_handle_events();
 
     if (drawFrame) {

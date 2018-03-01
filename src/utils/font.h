@@ -2,6 +2,8 @@
 
 #include "texture.h"
 
+PACK_START(1);
+
 typedef struct FTDHeader {
   char magic[4];
   float fontSize;
@@ -14,14 +16,16 @@ typedef struct FTDHeader {
   uint32_t quadsOffset;
   uint32_t kernPairsCount;
   uint32_t kernPairsOffset;
-} __attribute__((packed)) FTDHeader;
+} PACKED FTDHeader;
 
 typedef struct FontQuad {
   float x0, y0;
   float x1, y1;
   float s0, t0;
   float s1, t1;
-} __attribute__((packed)) FontQuad;
+} PACKED FontQuad;
+
+PACK_END();
 
 typedef struct Font {
   Texture *texture;

@@ -1,4 +1,3 @@
-#include <Windows.h>
 
 static kb_t keyCodesMap[256] = {
   0,

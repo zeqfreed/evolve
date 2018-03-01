@@ -2,9 +2,9 @@
 
 #include "fs.h"
 
-typedef struct OpenFile {
+typedef struct PlatformFile {
   MacosOpenFile _private;
-} OpenFile;
+} PlatformFile;
 
 typedef struct DirectoryListingIter {
   void *data;

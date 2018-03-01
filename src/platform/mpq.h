@@ -2,6 +2,8 @@
 
 #include "defs.h"
 
+PACK_START(1);
+
 typedef struct MPQHeader {
   char magic[4];
   uint32_t header_size;
@@ -12,7 +14,7 @@ typedef struct MPQHeader {
   uint32_t block_table_offset;
   uint32_t hash_table_size;
   uint32_t block_table_size;
-} MPQHeader;
+} PACKED MPQHeader;
 
 typedef struct MPQHashEntry {
   uint32_t check1;
@@ -20,17 +22,19 @@ typedef struct MPQHashEntry {
   uint16_t locale;
   uint16_t platform;
   uint32_t block_index;
-} MPQHashEntry;
+} PACKED MPQHashEntry;
 
 typedef struct MPQBlockEntry {
   uint32_t offset;
   uint32_t block_size;
   uint32_t file_size;
   uint32_t flags;
-} MPQBlockEntry;
+} PACKED MPQBlockEntry;
+
+PACK_END();
 
 typedef struct MPQArchive {
-  OpenFile file;
+  PlatformFile file;
   MPQHeader header;
   MPQHashEntry *hash_table;
   MPQBlockEntry *block_table;

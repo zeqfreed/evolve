@@ -406,7 +406,7 @@ static DresserCharacterTextures dresser_load_character_textures(Dresser *dresser
           scalp[1] = _dresser_load_texture(dresser, dbc, rec, 2);
         } else if (rec->color == appearance.hair_color && hair == NULL) {
           // If no hair matched, grab first variant for selected color. Required for beard on bald Orc
-          printf("Fallback to hair (%u): variant %u color %u", rec->type, rec->variant, rec->color);
+          printf("Fallback to hair (%u): variant %u color %u\n", rec->type, rec->variant, rec->color);
           hair = _dresser_load_texture(dresser, dbc, rec, 0);
         }
         break;

@@ -1,5 +1,11 @@
 #pragma once
 
+#if defined PLATFORM_MACOS
+  #include "macos/platform.h"
+#elif defined PLATFORM_WINDOWS
+  #include "windows/platform.h"
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -11,10 +17,6 @@
 
 #define PAPI_OK(x) (x >= 0)
 #define PAPI_ERROR(x) (x < 0)
-
-//#if PLATFORM == MACOS
-  #include "macos/platform.h"
-//#endif
 
 typedef struct DrawingBuffer {
   uint32_t width;
@@ -39,8 +41,8 @@ typedef AssetId ( *GetAssetIdFunc)(char *name);
 typedef LoadedAsset ( *LoadAssetFunc)(char *name);
 typedef void ( *ReleaseAssetFunc)(LoadedAsset *asset);
 
-typedef int32_t (* FileOpenFunc)(OpenFile *file, char *filename);
-typedef int32_t (* FileReadFunc)(OpenFile *file, void *dst, uint32_t offset, uint32_t bytes);
+typedef int32_t (* FileOpenFunc)(PlatformFile *file, char *filename);
+typedef int32_t (* FileReadFunc)(PlatformFile *file, void *dst, uint32_t offset, uint32_t bytes);
 
 typedef bool (*DirectoryListingBeginFunc)(DirectoryListingIter *iter, char *dir);
 typedef DirectoryListingEntry *(*DirectoryListingNextEntryFunc)(DirectoryListingIter *iter);

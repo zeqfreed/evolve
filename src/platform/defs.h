@@ -25,5 +25,5 @@
 #else
   #define PACK_START(...)
   #define PACK_END(...)
-  #define PACKED __attribute__((packed))
+  #define PACKED __attribute__((packed, aligned(1)))
 #endif

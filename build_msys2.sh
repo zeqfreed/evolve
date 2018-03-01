@@ -6,10 +6,12 @@ DATASYMLINK="${BINDIR}/data"
 
 CC="g++ -std=c++11"
 OC="g++"
+FLAGS="-mno-ms-bitfields -D__USE_MINGW_ANSI_STDIO=1 -DCOLOR_BGR"
 WFLAGS="-Wall -Wno-missing-braces -Wno-unused-variable -Wno-unused-function"
-#CFLAGS="-c ${FLAGS} ${WFLAGS} -g -gmodules -O0 -DMACOSX -Isrc -DDEBUG -DPLATFORM_MACOS"
-CFLAGS="-c ${FLAGS} ${WFLAGS} -O2 -mssse3 -mtune=core2 -march=native -fomit-frame-pointer -DPLATFORM_MACOS -DMACOSX -Isrc"
-LIBS="-framework Cocoa -framework OpenGL"
+#CFLAGS="-c ${FLAGS} ${WFLAGS} -g -O0 -Isrc -DDEBUG -DPLATFORM=WINDOWS"
+CFLAGS="-c ${FLAGS} ${WFLAGS} -O2 -march=native -DPLATFORM=WINDOWS -Isrc"
+LINK_FLAGS="-static-libgcc -static-libstdc++ -static -lwinpthread"
+LIBS="-luser32 -lkernel32 -lgdi32"
 
 exitcode=0
 
@@ -34,9 +36,9 @@ function build_viewer() {
   exitcode=$?
 
   if [ $exitcode -eq 0 ]; then
-    libtool -macosx_version_min 10.11 -dynamic $OBJDIR/viewer.o -lstdc++ -lSystem -o $OBJDIR/viewer.dylib
+    $CC -shared $OBJDIR/viewer.o $LINK_FLAGS -o $OBJDIR/viewer.dll
     exitcode=$?
-    cp $OBJDIR/viewer.dylib $BINDIR/viewer.dylib
+    cp $OBJDIR/viewer.dll $BINDIR/viewer.dll
   fi
 }
 
@@ -47,9 +49,9 @@ function build_cubes() {
   exitcode=$?
 
   if [ $exitcode -eq 0 ]; then
-    libtool -macosx_version_min 10.11 -dynamic $OBJDIR/cubes.o -lstdc++ -lSystem -o $OBJDIR/cubes.dylib
+    $CC -shared $OBJDIR/cubes.o $LINK_FLAGS -o $OBJDIR/cubes.dll
     exitcode=$?
-    cp $OBJDIR/cubes.dylib $BINDIR/cubes.dylib
+    cp $OBJDIR/cubes.dll $BINDIR/cubes.dll
   fi
 }
 
@@ -57,46 +59,19 @@ function build_exe() {
   prepare
 
   EXE="evolve"
-  OBJS="$OBJDIR/platform.o $OBJDIR/main.o"
-
-  $OC src/macos/main.m $CFLAGS -o $OBJDIR/main.o
-  $CC src/macos/platform.cpp $CFLAGS -o $OBJDIR/platform.o
-  $CC -o $BINDIR/$EXE $OBJS $LIBS
-
-  exitcode=$?
-}
-
-function build_dbcdump() {
-  OBJDIR="$OBJDIR/tools/dbcdump"
-  prepare
-
-  EXE="dbcdump"
   OBJS="$OBJDIR/main.o"
 
-  $CC src/tools/dbcdump/main.cpp $CFLAGS -o $OBJDIR/main.o
-  $CC -o $BINDIR/$EXE $OBJS
+  $OC src/windows/main.cpp $CFLAGS -o $OBJDIR/main.o
+  $CC $LINK_FLAGS -o $BINDIR/$EXE $OBJS $LIBS
 
   exitcode=$?
 }
 
-function build_mkfont() {
-  OBJDIR="$OBJDIR/tools/mkfont"
-  prepare
-
-  EXE="mkfont"
-  OBJS="$OBJDIR/main.o"
-
-  $CC src/tools/mkfont/main.cpp $CFLAGS -o $OBJDIR/main.o
-  $CC -o $BINDIR/$EXE $OBJS
-
-  exitcode=$?
-}
-
-function force_reload() {
-  if [ $exitcode -eq 0 ]; then
-    killall -USR1 evolve
-  fi
-}
+# function force_reload() {
+#   if [ $exitcode -eq 0 ]; then
+#     killall -USR1 evolve
+#   fi
+# }
 
 function build_targets() {
   for target in $1
@@ -106,7 +81,7 @@ function build_targets() {
     fi
   done
 
-  force_reload
+  #force_reload
 }
 
 function build_all() {

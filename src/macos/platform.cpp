@@ -24,7 +24,7 @@ PlatformAPI PLATFORM_API = {
   (FileReadFunc) macos_file_read,
   (DirectoryListingBeginFunc) macos_directory_listing_begin,
   (DirectoryListingNextEntryFunc) macos_directory_listing_next_entry,
-  (DirectoryListingEndFunc) macos_directory_listing_end,
+  (DirectoryListingEndFunc) macos_directory_listing_end
 };
 
 MPQFileId macos_get_asset_id(char *name)

@@ -4,18 +4,20 @@
 
 typedef uint32_t DBCString;
 
+PACK_START(1);
+
 typedef struct DBCHeader {
   uint32_t magic;
   uint32_t records_count;
   uint32_t fields_count;
   uint32_t record_size;
   uint32_t strings_size;
-} DBCHeader;
+} PACKED DBCHeader;
 
 typedef struct DBCRecord {
   uint32_t id;
   uint32_t name_offset;
-} DBCRecord;
+} PACKED DBCRecord;
 
 typedef struct DBCAnimationDataRecord {
   uint32_t id;
@@ -24,7 +26,7 @@ typedef struct DBCAnimationDataRecord {
   uint32_t fallback[2];
   uint32_t behaviour_id;
   uint32_t behaviour_tier;
-} DBCAnimationDataRecord;
+} PACKED DBCAnimationDataRecord;
 
 typedef struct DBCCharSectionsRecord {
   uint32_t id;
@@ -35,7 +37,7 @@ typedef struct DBCCharSectionsRecord {
   uint32_t color;
   uint32_t texture_names[3];
   uint32_t flags;
-} DBCCharSectionsRecord;
+} PACKED DBCCharSectionsRecord;
 
 typedef struct DBCLocalizedString {
   uint32_t enUS;
@@ -47,7 +49,7 @@ typedef struct DBCLocalizedString {
   uint32_t esES;
   uint32_t esMX;
   uint32_t flags;
-} DBCLocalizedString;
+} PACKED DBCLocalizedString;
 
 typedef struct DBCCharRacesRecord {
   uint32_t id;
@@ -69,7 +71,7 @@ typedef struct DBCCharRacesRecord {
   uint32_t cinematic_sequence_id;
   DBCLocalizedString i18n_name;
   DBCString features[3];
-} DBCCharRacesRecord;
+} PACKED DBCCharRacesRecord;
 
 typedef struct DBCCreatureDisplayInfoRecord {
   uint32_t id;
@@ -82,7 +84,7 @@ typedef struct DBCCreatureDisplayInfoRecord {
   uint32_t size_class;
   uint32_t blood_id;
   uint32_t npc_sound_id;
-} DBCCreatureDisplayInfoRecord;
+} PACKED DBCCreatureDisplayInfoRecord;
 
 typedef struct DBCCreatureModelDataRecord {
   uint32_t id;
@@ -99,7 +101,7 @@ typedef struct DBCCreatureModelDataRecord {
   uint32_t death_thud_shake;
   float collision_dims[2];
   float mount_height;
-} DBCCreatureModelDataRecord;
+} PACKED DBCCreatureModelDataRecord;
 
 typedef struct DBCCharHairGeosetRecord {
   uint32_t id;
@@ -108,14 +110,16 @@ typedef struct DBCCharHairGeosetRecord {
   uint32_t variant;
   uint32_t geoset;
   uint32_t is_bald;
-} DBCCharHairGeosetRecord;
+} PACKED DBCCharHairGeosetRecord;
 
 typedef struct DBCCharacterFacialHairStylesRecord {
   uint32_t race;
   uint32_t sex;
   uint32_t variant;
   uint32_t geosets[6];
-} DBCCharacterFacialHairStylesRecord;
+} PACKED DBCCharacterFacialHairStylesRecord;
+
+PACK_END();
 
 typedef struct DBCFile {
   DBCHeader header;

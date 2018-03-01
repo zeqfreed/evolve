@@ -883,7 +883,9 @@ static void initialize(State *state, DrawingBuffer *buffer)
 
   asset_loader_init(&state->loader, state->platform_api);
   Asset *dbc_asset = asset_loader_get_dbc(&state->loader, (char *) "DBFilesClient/AnimationData.dbc");
-  state->dbc_anim_data = dbc_asset->dbc;
+  if (dbc_asset != NULL) {
+    state->dbc_anim_data = dbc_asset->dbc;
+  }
 
   // Asset *asset = asset_loader_get_texture(&state->loader, (char *) "Character/Troll/Female/TrollFemaleSkin00_108.blp");
   // Asset *asset = asset_loader_get_texture(&state->loader, (char *) "Character/Troll/Female/TrollFemaleFaceLower00_05.blp");
@@ -1381,6 +1383,10 @@ void render_ui(State *state)
   ui_label(ui, 0.0f, 30.0f, (uint8_t *) buf, UI_ALIGN_LEFT, UI_COLOR_NONE);
   ui_layout_row_end(ui);
 
+  if (state->m2model == NULL) {
+    return;
+  }
+
   bool model_changed = false;
 
   ui_layout_row_begin(ui, 0.0f, 30.0f);
@@ -1609,22 +1615,21 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   render_ui(state);
 }
 
-#ifdef _WIN32
-#include "Windows.h"
+// #ifdef PLATFORM_WINDOWS
 
-BOOLEAN WINAPI DllMain(IN HINSTANCE hDllHandle,
-                       IN DWORD     nReason,
-                       IN LPVOID    Reserved)
-{
-  switch (nReason) {
-    case DLL_PROCESS_ATTACH:
-      DisableThreadLibraryCalls(hDllHandle);
-      break;
+// BOOLEAN WINAPI DllMain(IN HINSTANCE hDllHandle,
+//                        IN DWORD     nReason,
+//                        IN LPVOID    Reserved)
+// {
+//   switch (nReason) {
+//     case DLL_PROCESS_ATTACH:
+//       DisableThreadLibraryCalls(hDllHandle);
+//       break;
 
-    case DLL_PROCESS_DETACH:
-      break;
-  }
+//     case DLL_PROCESS_DETACH:
+//       break;
+//   }
 
-  return true;
-}
-#endif
+//   return true;
+// }
+// #endif
