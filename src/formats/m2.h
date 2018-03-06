@@ -48,6 +48,19 @@ typedef struct M2Header {
   uint32_t textureLookupsOffset;
   uint32_t textureUnitLookupsCount;
   uint32_t textureUnitLookupsOffset;
+  uint32_t transparencyLookupsCount;
+  uint32_t transparencyLookupsOffset;
+  uint32_t textureTransformLookupsCount;
+  uint32_t textureTransformLookupsOffset;
+  Vec3f bbox[2];
+  float bounding_sphere_radius;
+  Vec3f collision_box[2];
+  float collision_sphere_radius;
+  uint32_t __collision_fields[6];
+  uint32_t attachmentsCount;
+  uint32_t attachmentsOffset;
+  uint32_t attachmentLookupsCount;
+  uint32_t attachmentLookupsOffset;
 } PACKED M2Header;
 
 typedef struct M2Vertex {
@@ -98,7 +111,7 @@ typedef struct M2View {
   uint32_t submeshesOffset;
   uint32_t renderPassesCount;
   uint32_t renderPassesOffset;
-	int32_t lod;
+  int32_t lod;
 } PACKED M2View;
 
 typedef struct M2Geoset {
@@ -193,14 +206,26 @@ typedef struct ModelAnimationData {
 typedef enum ModelTextureType {
   MTT_INLINE = 0,
   MTT_SKIN,
+  MTT_OBJECT_SKIN,
   MTT_CHAR_HAIR = 6,
-  MTT_SKIN_EXTRA = 8
+  MTT_SKIN_EXTRA = 8,
+  MTT_MONSTER_0 = 11,
+  MTT_MONSTER_1,
+  MTT_MONSTER_2
 } ModelTextureType;
 
 typedef struct ModelTexture {
   uint32_t type;
   char *name; // for MTT_INLINE only
+  Texture *texture;
 } ModelTexture;
+
+typedef struct M2Attachment {
+  uint32_t id;
+  uint32_t bone;
+  Vec3f offset;
+  M2AnimationBlock animations;
+} PACKED M2Attachment;
 
 typedef struct ModelBone {
   int32_t parent;
@@ -259,6 +284,11 @@ typedef struct M2Model {
   M2RenderFlag *renderFlags;
   uint32_t renderPassesCount;
   M2RenderPass *renderPasses;
+  uint32_t attachmentsCount;
+  M2Attachment *attachments;
+  uint32_t attachmentLookupsCount;
+  int16_t *attachmentLookups;
+  float bounding_radius;
 } M2Model;
 
 typedef enum M2Keybone {
@@ -294,6 +324,12 @@ typedef enum M2Keybone {
 typedef struct ModelBoneSet {
   uint32_t set[8];
 } BoneSet;
+
+typedef enum M2AttachmentType {
+  M2_AT_RSHOULDER = 5,
+  M2_AT_LSHOULDER,
+  M2_AT_HELM = 11
+} M2AttachmentType;
 
 #define MODEL_BONESET_SET(BS, IDX) (BS.set[IDX / 32] |= (1 << (IDX % 32)))
 #define MODEL_PBONESET_ISSET(PBS, IDX) ((PBS->set[IDX / 32] & (1 << (IDX % 32))) > 0)

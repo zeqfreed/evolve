@@ -75,9 +75,9 @@ typedef struct DBCCharRacesRecord {
 
 typedef struct DBCCreatureDisplayInfoRecord {
   uint32_t id;
-  uint32_t model_id;
-  uint32_t sound_id;
-  uint32_t ex_display_info_id;
+  uint32_t model;
+  uint32_t sound;
+  uint32_t extra_id;
   float model_scale;
   uint32_t alpha;
   DBCString texture_variants[3];
@@ -85,6 +85,19 @@ typedef struct DBCCreatureDisplayInfoRecord {
   uint32_t blood_id;
   uint32_t npc_sound_id;
 } PACKED DBCCreatureDisplayInfoRecord;
+
+typedef struct DBCCreatureDisplayInfoExtraRecord {
+  uint32_t id;
+  uint32_t race;
+  uint32_t sex;
+  uint32_t skin_color;
+  uint32_t face;
+  uint32_t hair;
+  uint32_t hair_color;
+  uint32_t feature;
+  uint32_t items[10];
+  DBCString texture;
+} DBCCreatureDisplayInfoExtraRecord;
 
 typedef struct DBCCreatureModelDataRecord {
   uint32_t id;
@@ -118,6 +131,35 @@ typedef struct DBCCharacterFacialHairStylesRecord {
   uint32_t variant;
   uint32_t geosets[6];
 } PACKED DBCCharacterFacialHairStylesRecord;
+
+typedef struct DBCItemDisplayInfoRecord {
+  uint32_t id;
+  DBCString models[2];
+  DBCString model_textures[2];
+  DBCString icon;
+  uint32_t geosets[3];
+  DBCString ground_model;
+  uint32_t spell_id;
+  uint32_t sound;
+  uint32_t helm_vis_ids[2];
+  DBCString textures[8];
+  uint32_t visual;
+} DBCItemDisplayInfoRecord;
+
+typedef struct DBCItemSetRecord {
+  uint32_t id;
+  DBCLocalizedString i18n_name;
+  uint32_t items[17];
+  uint32_t spell_ids[8];
+  uint32_t thresholds[8];
+  uint32_t skill;
+  uint32_t rank;
+} DBCItemSetRecord;
+
+typedef struct DBCHelmetGeosetVisDataRecord {
+  uint32_t id;
+  uint32_t hide_masks[5];
+} DBCHelmetGeosetVisDataRecord;
 
 PACK_END();
 

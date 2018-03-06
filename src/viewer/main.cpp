@@ -36,6 +36,37 @@ typedef struct Animation {
   float currentFrame;
 } Animation;
 
+static struct {
+  const char *name;
+  uint32_t display_id;
+} creatures[] = {
+  {"Auberdine Sentinel", 4845},
+  {"\"Sea Wolf\" MacKinley", 1925},
+  {"Stormind City Guard", 3167},
+  {"Defias Smuggler", 4418},
+  {"Defias Highwayman", 2342},
+  {"Dalaran Wizard", 3585},
+  {"Infernal", 169},
+  {"Felhunter", 850},
+  {"Murloc Flesheater", 506},
+  {"Tarantula", 366},
+  {"Young Goretusk", 8871},
+  {"Kobold Geomancer", 163},
+  {"Lady Sylvanas Windrunner", 11657},
+  {"Onyxia", 8570},
+  {"Wailing Banshee", 8782},
+  {"Risen Construct", 12074},
+  {"Scholomance Occultist", 11157},
+  {"Beaten Corpse", 10004},
+  {"Swine", 10015},
+  {"Argent Officer Pureheart", 10211},
+  {"Fallen Hero", 10460},
+  {"Cyclone Warrior", 8716},
+  {"Frostwolf Legionnaire", 12949},
+  {"Riding Nightsaber", 9991},
+  {"Alterac Yeti", 10946}
+};
+
 typedef struct State {
   PlatformAPI *platform_api;
   KeyboardState *keyboard;
@@ -47,9 +78,8 @@ typedef struct State {
   Texture *shadowmap;
 
   Model *model;
-  M2Model *m2model;
-  Texture *textures[5];
   Texture *debugTexture;
+  Texture *debugTexture2;
   RenderingContext rendering_context;
   Mat44 matShadowMVP;
 
@@ -59,9 +89,8 @@ typedef struct State {
 
   AssetLoader loader;
   Dresser *dresser;
-  uint32_t race;
-  uint32_t sex;
-  DresserCharacterAppearance appearance;
+  uint32_t creature_index;
+  DresserCreatureBase *creature;
   DresserCustomizationLimits appearance_limits;
 
   uint32_t screenWidth;
@@ -80,6 +109,7 @@ typedef struct State {
   float sat_deg;
   uint32_t hair;
   float scale;
+  float model_scale;
 
   DrawingBuffer *buffer;
 
@@ -473,7 +503,7 @@ static inline void render_m2_pass(State *state, RenderingContext *ctx, M2Model *
   Vec3f positions[3];
 
   uint32_t texture_index = model->textureLookups[pass->textureId];
-  shader_data.texture = state->textures[texture_index];
+  shader_data.texture = model->textures[texture_index].texture;
 
   uint32_t faceStart = submesh->facesStart;
   uint32_t faceEnd = faceStart + submesh->facesCount;
@@ -523,9 +553,6 @@ static void render_m2_model(State *state, RenderingContext *ctx, M2Model *model,
   if (model == NULL) {
     return;
   }
-
-  ctx->model_mat = Mat44::rotate_y(-RAD(90)) * Mat44::scale(state->scale, state->scale, state->scale);
-  precalculate_matrices(ctx);
 
   for (int rpi = 0; rpi < model->renderPassesCount; rpi++) {
     M2RenderPass *pass = &model->renderPasses[rpi];
@@ -652,36 +679,50 @@ static void render_unit_axes(RenderingContext *ctx)
 
 static void animate_model(State *state)
 {
-  M2Model *model = state->m2model;
+  if (state->creature == NULL) {
+    return;
+  }
+
+  M2Model *model = state->creature->model;
   if (model == NULL) {
     return;
   }
 
   m2_reset_bones(model);
 
-  if (state->lower_anim_enabled && (state->upperAnim.id != state->lowerAnim.id)) {
-    m2_calc_bones(model, &state->core_boneset, state->lowerAnim.id, state->lowerAnim.currentFrame, 0);
-    m2_calc_bones(model, &state->upper_boneset, state->upperAnim.id, state->upperAnim.currentFrame, 0);
-    m2_calc_bones(model, NULL, state->lowerAnim.id, state->lowerAnim.currentFrame, 0);
+  if (state->creature->type == DCT_CHARACTER) {
+    if (state->lower_anim_enabled && (state->upperAnim.id != state->lowerAnim.id)) {
+      m2_calc_bones(model, &state->core_boneset, state->lowerAnim.id, state->lowerAnim.currentFrame, 0);
+      m2_calc_bones(model, &state->upper_boneset, state->upperAnim.id, state->upperAnim.currentFrame, 0);
+      m2_calc_bones(model, NULL, state->lowerAnim.id, state->lowerAnim.currentFrame, 0);
+    } else {
+      m2_calc_bones(model, NULL, state->upperAnim.id, state->upperAnim.currentFrame, 0);
+    }
   } else {
     m2_calc_bones(model, NULL, state->upperAnim.id, state->upperAnim.currentFrame, 0);
   }
 
-  m2_animate_vertices(state->m2model);
+  m2_animate_vertices(model);
 
   state->modelChanged = true;
 }
 
 static void set_animation(State *state, Animation *anim, uint32_t newId)
 {
+  if (state->creature == NULL) {
+    return;
+  }
+
+  M2Model *model = state->creature->model;
+
   anim->id = newId;
-  anim->startFrame = state->m2model->animations[newId].startFrame;
-  anim->endFrame = state->m2model->animations[newId].endFrame;
+  anim->startFrame = model->animations[newId].startFrame;
+  anim->endFrame = model->animations[newId].endFrame;
   anim->fps = 1000.0;
   anim->currentFrame = anim->startFrame;
   anim->name = (char *) "N/A";
 
-  int16_t dbId = state->m2model->animations[newId].id;
+  int16_t dbId = model->animations[newId].id;
   if (dbId >= 0) {
     DBCRecord *anim_record = dbc_get_record(state->dbc_anim_data, dbId);
     if (anim_record) {
@@ -697,143 +738,56 @@ static void set_animation(State *state, Animation *anim, uint32_t newId)
 
 static void switch_animation(State *state, Animation *anim, int32_t inc)
 {
-  uint32_t newId = CLAMP_CYCLE((int32_t) anim->id + inc, (int32_t) 0, (int32_t) state->m2model->animationsCount - 1);
+  M2Model *model = state->creature->model;
+  uint32_t newId = CLAMP_CYCLE((int32_t) anim->id + inc, (int32_t) 0, (int32_t) model->animationsCount - 1);
   set_animation(state, anim, newId);
 }
 
-static void update_character_appearance(State *state)
+static void set_creature(State *state, DresserCreatureBase *creature)
 {
-  Asset *asset = asset_loader_get_texture(&state->loader, (char *) "World/Scale/1_Null.blp");
-  Texture *placeholder = asset->texture; // TODO: Generate procedurally
-
-  DresserCharacterTextures textures = dresser_load_character_textures(state->dresser, state->race, state->sex, state->appearance);
-
-  for (size_t i = 0; i < state->m2model->texturesCount; i++) {
-    printf("Model texture #%zu: type %u name %s\n", i, state->m2model->textures[i].type, state->m2model->textures[i].name);
-
-    ModelTexture *model_texture = &state->m2model->textures[i];
-    Texture *texture = NULL;
-
-    switch (model_texture->type) {
-    case MTT_INLINE: {
-      Asset *texture_asset = asset_loader_get_texture(state->dresser->loader, model_texture->name);
-      if (texture_asset != NULL) {
-        texture = texture_asset->texture;
-      }
-    } break;
-    case MTT_SKIN:
-      texture = textures.skin;
-      break;
-    case MTT_CHAR_HAIR:
-      texture = textures.hair;
-      break;
-    case MTT_SKIN_EXTRA:
-      texture = textures.skin_extra;
-      break;
-    }
-
-    if (texture != NULL) {
-      state->textures[i] = texture;
-    } else {
-      state->textures[i] = placeholder;
-    }
-  }
-
-  //                             SIC!
-  uint32_t geosets[7] = {1, 101, 301, 201}; // Default hair / feature geosets
-
-  asset = asset_loader_get_dbc(&state->loader, (char *) "DBFilesClient/CharHairGeosets.dbc");
-  if (asset != NULL) {
-    for (size_t i = 0; i < asset->dbc->header.records_count; i++) {
-      DBCCharHairGeosetRecord *rec = DBC_RECORD(asset->dbc, DBCCharHairGeosetRecord, i);
-
-      if (rec->race == state->race + 1 && rec->sex == state->sex && rec->variant == state->appearance.hair) {
-        if (rec->is_bald || rec->geoset == 0) {
-          geosets[0] = 1; // Default hair option
-        } else {
-          geosets[0] = rec->geoset;
-        }
-        break;
-      }
-    }
-  }
-
-  asset = asset_loader_get_dbc(&state->loader, (char *) "DBFilesClient/CharacterFacialHairStyles.dbc");
-  if (asset != NULL) {
-    for (size_t i = 0; i < asset->dbc->header.records_count; i++) {
-      DBCCharacterFacialHairStylesRecord *rec = DBC_RECORD(asset->dbc, DBCCharacterFacialHairStylesRecord, i);
-
-      if (rec->race == state->race + 1 && rec->sex == state->sex && rec->variant == state->appearance.facial) {
-        if (rec->geosets[3] > 0) { geosets[1] = rec->geosets[3] + 100; }
-        if (rec->geosets[4] > 0) { geosets[2] = rec->geosets[4] + 300; } // SIC! Second group is 3XX
-        if (rec->geosets[5] > 0) { geosets[3] = rec->geosets[5] + 200; }
-        break;
-      }
-    }
-  }
-
-  printf("Features geosets: %u %u %u %u\n", geosets[0], geosets[1], geosets[2], geosets[3]);
-
-  M2Model *model = state->m2model;
-  for (int si = 0; si < model->submeshesCount; si++) {
-    if (model->submeshes[si].id == 0) {
-      continue;
-    }
-
-    bool enable = false;
-
-    if (model->submeshes[si].id < 400) {
-      for (size_t gi = 0; gi < sizeof(geosets) / sizeof(geosets[0]); gi++) {
-        if (model->submeshes[si].id == geosets[gi]) {
-          enable = true;
-          break;
-        }
-      }
-    } else if (model->submeshes[si].id == 702) {
-      enable = true; // Enable ears
-    } else {
-      enable = (model->submeshes[si].id % 100 == 1); // Enable default geosets in each group starting from 4
-    }
-
-    model->submeshes[si].enabled = enable;
-  }
-
-  animate_model(state);
-}
-
-static void set_character_model(State *state, int32_t race, int32_t sex)
-{
-  race = CLAMP_CYCLE(race, 0, (int32_t) state->dresser->races_count);
-  sex = sex & 1;
-
-  state->race = race;
-  state->sex = sex;
-
-  state->m2model = dresser_load_character_model(state->dresser, race, sex);
-  if (state->m2model == NULL) {
+  if (creature == NULL) {
     return;
   }
 
-  state->appearance = dresser_get_character_appearance(state->dresser, race, sex);
-  state->appearance_limits = dresser_get_customization_limits(state->dresser, race, sex);
+  state->creature = creature;
 
-  state->core_boneset = m2_character_core_boneset(state->m2model);
-  state->upper_boneset = m2_character_upper_body_boneset(state->m2model);
-
-  if (state->m2model->animationLookups[state->upperAnim.dbc_id] > -1) {
-    set_animation(state, &state->upperAnim, state->m2model->animationLookups[state->upperAnim.dbc_id]);
+  M2Model *model = creature->model;
+  if (model->bounding_radius > 3.0f) {
+    state->model_scale = 2.8f / model->bounding_radius;
   } else {
-    set_animation(state, &state->upperAnim, 0);
+    state->model_scale = 1.0f;
   }
 
-  if (state->m2model->animationLookups[state->lowerAnim.dbc_id] > -1) {
-    set_animation(state, &state->lowerAnim, state->m2model->animationLookups[state->lowerAnim.dbc_id]);
+  state->debugTexture = model->textures[0].texture;
+
+  if (creature->type == DCT_CHARACTER) {
+    DresserCharacter *character = (DresserCharacter *) creature;
+
+    state->appearance_limits = dresser_get_customization_limits(state->dresser, character->race, character->sex);
+
+    state->core_boneset = m2_character_core_boneset(creature->model);
+    state->upper_boneset = m2_character_upper_body_boneset(creature->model);
+
+    if (model->animationLookups[state->upperAnim.dbc_id] > -1) {
+      set_animation(state, &state->upperAnim, model->animationLookups[state->upperAnim.dbc_id]);
+    } else {
+      set_animation(state, &state->upperAnim, 0);
+    }
+
+    if (model->animationLookups[state->lowerAnim.dbc_id] > -1) {
+      set_animation(state, &state->lowerAnim, model->animationLookups[state->lowerAnim.dbc_id]);
+    } else {
+      set_animation(state, &state->lowerAnim, 0);
+    }
   } else {
-    set_animation(state, &state->lowerAnim, 0);
+    if (model->animationLookups[state->upperAnim.dbc_id] > -1) {
+      set_animation(state, &state->upperAnim, model->animationLookups[state->upperAnim.dbc_id]);
+    } else {
+      set_animation(state, &state->upperAnim, 0);
+    }
   }
 
   animate_model(state);
-  update_character_appearance(state);
 }
 
 static void initialize(State *state, DrawingBuffer *buffer)
@@ -846,8 +800,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
   ctx->viewport_mat = viewport_matrix((float) buffer->width, (float) buffer->height, true);
   ctx->projection_mat = perspective_matrix(0.1f, 10.0f, 60.0f);
 
-  ctx->light = { 0, -1, 0 };
-  ctx->light = ctx->light.normalized();
+  ctx->light = Vec3f(0.5f, 1.0f, 0.5f).normalized();
 
   ctx->zbuffer = (zval_t *) state->main_arena->allocate(buffer->width * buffer->height * sizeof(zval_t));
 
@@ -892,15 +845,41 @@ static void initialize(State *state, DrawingBuffer *buffer)
   // Asset *asset = asset_loader_get_texture(&state->loader, (char *) "Character/Troll/ScalpLowerHair02_00.blp");
   // Asset *asset = asset_loader_get_texture(&state->loader, (char *) "Character/NightElf/FacialUpperHair01_00.blp");
   // Asset *asset = asset_loader_get_texture(&state->loader, (char *) "Character/Scourge/FacialUpperHair03_00.blp");
-  // Asset *asset = asset_loader_get_texture(&state->loader, (char *) "Character/Orc/FacialUpperHair02_01.blp");
+  // Asset *asset = asset_loader_get_texture(&state->loader, (char *) "Item/TextureComponents/LegLowerTexture/Robe_C_03BlackBlack_Pant_LL_U.blp");
   // state->debugTexture = asset->texture;
 
   state->dresser = (Dresser *) state->main_arena->allocate(sizeof(Dresser));
   dresser_init(state->dresser, &state->loader);
 
-  state->race = 0;
-  state->sex = 0;
-  set_character_model(state, state->race, state->sex);
+  state->creature_index = 0;
+  set_creature(state, dresser_load_creature(state->dresser, creatures[state->creature_index].display_id));
+  switch_animation(state, &state->lowerAnim, 0);
+  switch_animation(state, &state->upperAnim, 0);
+
+  #if 0
+  if (state->creature && state->creature->type == DCT_CHARACTER) {
+    DresserCharacterEquipment equip = {};
+
+    equip.slots[DEIS_HEAD] = {35612}; // Redemption Headpiece
+    //equip.slots[DEIS_HEAD] = {15912}; // Silk Wizard Hat
+    //equip.slots[DEIS_HEAD] = {17277};
+    equip.slots[DEIS_WRISTS] = {35619}; // Redemption Wristguards
+    equip.slots[DEIS_SHOULDERS] = {35617}; // Redemption Spaulders
+    equip.slots[DEIS_LEGS] = {35616}; // Redemption Legguards
+    equip.slots[DEIS_FEET] = {35613}; // Redemption Boots
+    equip.slots[DEIS_CHEST] = {35618}; // Redemption Tunic
+    //equip.slots[DEIS_CHEST] = {12702}; // Silver Dress Robes
+    equip.slots[DEIS_HANDS] = {35615}; // Redemption Handguards
+    equip.slots[DEIS_WAIST] = {35614}; // Redemption Girdle
+    equip.slots[DEIS_BACK] = {35408}; // Veil of Eclipse
+
+    dresser_set_character_equipment(state->dresser, (DresserCharacter *) state->creature, &equip);
+  }
+  #endif
+
+  animate_model(state);
+
+  //set_character_model(state, 0, 0);
 
   // load_m2_model(state, (char *) "data/misc/dwarf.m2");
   // state->textures[0] = load_tga_texture(state, (char *) "data/misc/dwarf_0.tga");
@@ -956,9 +935,6 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->showUnitAxes = false;
   state->modelChanged = true;
 
-  // load_blp_texture(state->platform_api, state->main_arena, state->temp_arena, (char *) "data/mpq/Character/NightElf/ScalpLowerHair00_04.blp");
-  // state->debugTexture = state->textures[1];
-
   // set_animation(state, &state->upperAnim, 0);
   // set_animation(state, &state->lowerAnim, 0);
   state->lower_anim_enabled = false;
@@ -966,7 +942,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->temp_arena->discard();
 }
 
-static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, Texture *shadowmap)
+static void render_shadowmap(State *state, RenderingContext *ctx, Texture *shadowmap)
 {
   RenderingContext subctx = {};
 
@@ -986,7 +962,14 @@ static void render_shadowmap(State *state, RenderingContext *ctx, Model *model, 
   state->matShadowMVP = subctx.modelview_mat * subctx.projection_mat * subctx.viewport_mat;
 
   clear_zbuffer(&subctx);
-  render_m2_model(state, &subctx, state->m2model);
+
+  if (state->creature != NULL) {
+    float scale = state->scale * state->model_scale;
+    subctx.model_mat = Mat44::rotate_y(-RAD(90)) * Mat44::scale(scale, scale, scale);
+    precalculate_matrices(&subctx);
+
+    render_m2_model(state, &subctx, state->creature->model);
+  }
 
   for (int i = 0; i < shadowmap->width; i++) {
     for (int j = 0; j < shadowmap->height; j++) {
@@ -1367,41 +1350,26 @@ bool render_appearance_switcher(UIContext *ui, uint32_t *value, uint32_t min, ui
   return result;
 }
 
-void render_ui(State *state)
+void render_character_ui(State *state, DresserCharacter *character)
 {
   RenderingContext *ctx = &state->rendering_context;
   UIContext *ui = &state->ui;
 
-  renderer_set_flags(ctx, RENDER_BLENDING | RENDER_SHADING);
-  renderer_set_blend_mode(ctx, BLEND_MODE_DECAL);
+  char buf[255] = {};
 
-  ui_begin(ui, 10.0f, 10.0f);
-
-  char buf[255];
-  snprintf(buf, 255, "X: %.03f, Y: %.03f", state->mouse->windowX, state->mouse->windowY);
-  ui_layout_row_begin(ui, 0.0f, 30.0f);
-  ui_label(ui, 0.0f, 30.0f, (uint8_t *) buf, UI_ALIGN_LEFT, UI_COLOR_NONE);
-  ui_layout_row_end(ui);
-
-  if (state->m2model == NULL) {
-    return;
-  }
-
-  bool model_changed = false;
+  uint32_t race = character->race;
+  uint32_t sex = character->sex;
 
   ui_layout_row_begin(ui, 0.0f, 30.0f);
   if (ui_button(ui, 30.0f, 30.0f, (uint8_t *) "<") == UI_BUTTON_RESULT_CLICKED) {
-    state->race = CLAMP_CYCLE((int32_t) state->race - 1, 0, (int32_t) state->dresser->races_count - 1);
-    model_changed = true;
+    race = CLAMP_CYCLE((int32_t) race - 1, 0, (int32_t) state->dresser->races_count - 1);
   }
   if (ui_button(ui, 30.0f, 30.0f, (uint8_t *) ">") == UI_BUTTON_RESULT_CLICKED) {
-    state->race = CLAMP_CYCLE(state->race + 1, 0, state->dresser->races_count - 1);
-    model_changed = true;
+    race = CLAMP_CYCLE(race + 1, 0, state->dresser->races_count - 1);
   }
-  ui_label(ui, 139.0f, 30.0f, (uint8_t *) state->dresser->race_options[state->race].name);
-  if (ui_button(ui, 100.0f, 30.0f, state->sex == 0 ? (uint8_t *) "Male" : (uint8_t *) "Female") == UI_BUTTON_RESULT_CLICKED) {
-    state->sex = !state->sex;
-    model_changed = true;
+  ui_label(ui, 139.0f, 30.0f, (uint8_t *) state->dresser->race_options[race].name);
+  if (ui_button(ui, 100.0f, 30.0f, sex == 0 ? (uint8_t *) "Male" : (uint8_t *) "Female") == UI_BUTTON_RESULT_CLICKED) {
+    sex = !sex;
   }
   ui_layout_row_end(ui);
 
@@ -1476,18 +1444,18 @@ void render_ui(State *state)
 
   bool changed = false;
   DresserCustomizationLimits *lims = &state->appearance_limits;
-  DresserCharacterAppearance *app = &state->appearance;
+  DresserCharacterAppearance *app = &character->appearance;
 
   changed |= render_appearance_switcher(ui, &app->face, lims->face[0], lims->face[1], (char *) "Face %d");
   changed |= render_appearance_switcher(ui, &app->skin_color, lims->skin_color[0], lims->skin_color[1], (char *) "Skin %d");
 
-  snprintf(buf, 255, "%s %%d", state->dresser->race_options[state->race].feature_names[state->sex][0]);
+  snprintf(buf, 255, "%s %%d", state->dresser->race_options[character->race].feature_names[character->sex][0]);
   changed |= render_appearance_switcher(ui, &app->hair, lims->hair[0], lims->hair[1], buf);
 
-  snprintf(buf, 255, "%s color %%d", state->dresser->race_options[state->race].feature_names[state->sex][0]);
+  snprintf(buf, 255, "%s color %%d", state->dresser->race_options[character->race].feature_names[character->sex][0]);
   changed |= render_appearance_switcher(ui, &app->hair_color, lims->hair_color[0], lims->hair_color[1], buf);
 
-  snprintf(buf, 255, "%s %%d", state->dresser->race_options[state->race].feature_names[state->sex][1]);
+  snprintf(buf, 255, "%s %%d", state->dresser->race_options[character->race].feature_names[character->sex][1]);
   changed |= render_appearance_switcher(ui, &app->facial, lims->facial[0], lims->facial[1], buf);
 
   // Randomize button
@@ -1496,7 +1464,7 @@ void render_ui(State *state)
 
   ui_layout_fill(ui);
   if (ui_button(ui, 0, 30.0f, (uint8_t *) "Randomize") == UI_BUTTON_RESULT_CLICKED) {
-    state->appearance = random_appearance(state->appearance_limits);
+    character->appearance = random_appearance(state->appearance_limits);
     changed = true;
   };
 
@@ -1510,10 +1478,142 @@ void render_ui(State *state)
 
   ui_end(ui);
 
-  if (model_changed) {
-    set_character_model(state, state->race, state->sex);
+  if (race != character->race || sex != character->sex) {
+    DresserCharacter *new_character = dresser_load_character(state->dresser, race, sex);
+    if (new_character != NULL) {
+      DresserCharacterAppearance new_appearance = dresser_get_default_character_appearance(state->dresser, new_character);
+      dresser_set_character_appearance(state->dresser, new_character, &new_appearance);
+      dresser_set_character_equipment(state->dresser, new_character, &character->equipment);
+
+      set_creature(state, (DresserCreatureBase *) new_character);
+    }
   } else if (changed) {
-    update_character_appearance(state);
+    dresser_set_character_appearance(state->dresser, character, &character->appearance);
+    dresser_set_character_equipment(state->dresser, character, &character->equipment);
+    animate_model(state);
+  }
+}
+
+static void render_creature_ui(State *state, DresserCreature *creature)
+{
+  RenderingContext *ctx = &state->rendering_context;
+  UIContext *ui = &state->ui;
+
+  char buf[255] = {};
+
+  // Upper body animation controls
+
+  ui_group_begin(ui, (char *) "UBAC");
+  ui_layout_row_begin(ui, 600.0f, 30.0f);
+
+  ui_label(ui, 150.0f, 30.0f, (uint8_t *) "Upper body", UI_ALIGN_LEFT, UI_COLOR_NONE);
+
+  if (ui_button(ui, 30.0f, 30.0f, (uint8_t *) "<") == UI_BUTTON_RESULT_CLICKED) {
+    switch_animation(state, &state->upperAnim, -1);
+  };
+
+  if (ui_button(ui, 30.0f, 30.0f, (uint8_t *) ">") == UI_BUTTON_RESULT_CLICKED) {
+    switch_animation(state, &state->upperAnim, 1);
+  }
+
+  ui_layout_pull_right(ui);
+
+  if (ui_button(ui, 100.0f, 30.0f, (uint8_t *) (state->playing ? "Pause" : "Play")) == UI_BUTTON_RESULT_CLICKED) {
+    state->playing = !state->playing;
+  }
+
+  ui_layout_fill(ui);
+  snprintf(buf, sizeof(buf) * sizeof(buf[0]), "%s (%d)", state->upperAnim.name, state->upperAnim.id);
+  ui_label(ui, 0, 30.0f, (uint8_t *) &buf, UI_ALIGN_CENTER);
+
+  ui_layout_row_end(ui);
+  ui_group_end(ui);
+}
+
+void render_ui(State *state)
+{
+  RenderingContext *ctx = &state->rendering_context;
+  UIContext *ui = &state->ui;
+
+  renderer_set_flags(ctx, RENDER_BLENDING | RENDER_SHADING);
+  renderer_set_blend_mode(ctx, BLEND_MODE_DECAL);
+
+  ui_begin(ui, 10.0f, 10.0f);
+
+  char buf[255];
+  snprintf(buf, 255, "X: %.03f, Y: %.03f", state->mouse->windowX, state->mouse->windowY);
+  ui_layout_row_begin(ui, 0.0f, 30.0f);
+  ui_label(ui, 0.0f, 30.0f, (uint8_t *) buf, UI_ALIGN_LEFT, UI_COLOR_NONE);
+  ui_layout_row_end(ui);
+
+  ui_group_begin(ui, (char *) "Creature");
+  ui_layout_row_begin(ui, 600.0f, 30.0f);
+
+  int32_t creature_idx = (int32_t) state->creature_index;
+
+  if (ui_button(ui, 30.0f, 30.0f, (uint8_t *) "<") == UI_BUTTON_RESULT_CLICKED) {
+    creature_idx = CLAMP_CYCLE((int32_t) creature_idx - 1, (int32_t) 0, (int32_t) (sizeof(creatures) / sizeof(creatures[0])) - 1);
+  };
+  if (ui_button(ui, 30.0f, 30.0f, (uint8_t *) ">") == UI_BUTTON_RESULT_CLICKED) {
+    creature_idx = CLAMP_CYCLE(creature_idx + 1, 0, sizeof(creatures) / sizeof(creatures[0]) - 1);
+  }
+
+  ui_layout_fill(ui);
+  ui_label(ui, 0, 30.0f, (uint8_t *) creatures[creature_idx].name, UI_ALIGN_CENTER);
+
+  ui_layout_row_end(ui);
+  ui_group_end(ui);
+
+  if ((uint32_t) creature_idx != state->creature_index) {
+    state->creature_index = creature_idx;
+    set_creature(state, dresser_load_creature(state->dresser, creatures[state->creature_index].display_id));
+  }
+
+  if (state->creature == NULL) {
+    return;
+  }
+
+  ui_layout_spacer(ui, 0.0f, 10.0f);
+
+  if (state->creature->type == DCT_CHARACTER) {
+    render_character_ui(state, (DresserCharacter *) state->creature);
+  } else {
+    render_creature_ui(state, (DresserCreature *) state->creature);
+  }
+}
+
+static void render_creature(State *state, DresserCreatureBase *creature, RenderingContext *ctx)
+{
+  if (creature == NULL) {
+    return;
+  }
+
+  float scale = state->scale * state->model_scale;
+  Mat44 parent_mat = Mat44::rotate_y(-RAD(90)) * Mat44::scale(scale, scale, scale);
+  ctx->model_mat = parent_mat;
+  precalculate_matrices(ctx);
+
+  render_m2_model(state, ctx, creature->model, RENDER_MODE_OPAQUE);
+  render_m2_model(state, ctx, creature->model, RENDER_MODE_TRANSPARENT);
+
+  for (size_t ii = 0; ii < creature->items_count; ii++) {
+    M2Model *item = creature->items[ii];
+    M2Attachment *att = creature->attachments[ii];
+
+    if (item != NULL && att != NULL) {
+      ModelBone bone = creature->model->bones[att->bone];
+      Mat44 mat = Mat44::translate(att->offset.x, att->offset.y, att->offset.z) * bone.matrix;
+
+      ctx->model_mat = mat * parent_mat;
+      precalculate_matrices(ctx);
+
+      render_m2_model(state, ctx, item, RENDER_MODE_OPAQUE);
+      render_m2_model(state, ctx, item, RENDER_MODE_TRANSPARENT);
+    }
+  }
+
+  if (state->showBones) {
+    render_m2_model_bones(state, ctx, creature->model);
   }
 }
 
@@ -1547,11 +1647,8 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   RenderingContext *ctx = &state->rendering_context;
 
   if (!state->shadowmap) {
-    ctx->light = { 0.5, 1, 0.5 };
-    ctx->light = ctx->light.normalized();
-
     state->shadowmap = texture_create(state->main_arena, 512, 512);
-    render_shadowmap(state, ctx, state->model, state->shadowmap);
+    render_shadowmap(state, ctx, state->shadowmap);
   }
 
   if (state->playing) {
@@ -1560,7 +1657,7 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
 
   if (state->modelChanged) {
     if (state->render_flags.shadow_mapping) {
-      render_shadowmap(state, ctx, state->model, state->shadowmap);
+      render_shadowmap(state, ctx, state->shadowmap);
     }
 
     state->modelChanged = false;
@@ -1585,14 +1682,8 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   clear_zbuffer(ctx);
 
   render_floor(state, ctx);
-  //render_model(state, ctx, state->model);
 
-  render_m2_model(state, ctx, state->m2model, RENDER_MODE_OPAQUE);
-  render_m2_model(state, ctx, state->m2model, RENDER_MODE_TRANSPARENT);
-
-  if (state->showBones) {
-   render_m2_model_bones(state, ctx, state->m2model);
-  }
+  render_creature(state, state->creature, ctx);
 
   if (state->showUnitAxes) {
     render_unit_axes(ctx);
@@ -1609,7 +1700,14 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
     renderer_set_flags(ctx, RENDER_BLENDING);
     renderer_set_blend_mode(ctx, BLEND_MODE_DECAL);
 
-    render_debug_texture(state, ctx, state->debugTexture, 10, 410, 400);
+    render_debug_texture(state, ctx, state->debugTexture, 10, state->ui.y + 8, 400);
+  }
+
+  if (state->debugTexture2) {
+    renderer_set_flags(ctx, RENDER_BLENDING);
+    renderer_set_blend_mode(ctx, BLEND_MODE_DECAL);
+
+    render_debug_texture(state, ctx, state->debugTexture2, 1180, 410, 400);
   }
 
   render_ui(state);

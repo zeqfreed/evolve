@@ -17,7 +17,7 @@ static void m2_dump_header(M2Header *header, void *bytes)
     "GlobalSequences", "Animations", "AnimationLookups", "PlayableAnimLookups",
     "Bones", "KeyBoneLookups", "Vertices", "Views", "Colors", "Textures", "Transparencies",
     "Reserved", "TextureAnimations", "TextureReplacements", "RenderFlags", "BoneLookups", "TextureLookups",
-    "TextureUnitLookups"
+    "TextureUnitLookups", "TransparencyLookups", "TexTransformLookups"
   };
 
   uint32_t *h = (uint32_t *) &header->globalSequencesCount;
@@ -25,6 +25,17 @@ static void m2_dump_header(M2Header *header, void *bytes)
     uint32_t count = h[i * 2];
     size_t offset = h[i * 2 + 1];
     printf("%s: %d entries at %p\n", entries[i], count, (void *) offset);
+  }
+
+  const char *entries2[] = {
+    "Attachments", "AttachmentLookups"
+  };
+
+  h = (uint32_t *) &header->attachmentsCount;
+  for (int i = 0; i < sizeof(entries2) / sizeof(entries2[0]); i++) {
+    uint32_t count = h[i * 2];
+    size_t offset = h[i * 2 + 1];
+    printf("%s: %d entries at %p\n", entries2[i], count, (void *) offset);
   }
 }
 
@@ -264,6 +275,8 @@ M2Model *m2_load(MemoryAllocator *allocator, void *bytes, size_t size)
   // }
 
   M2Model *model = ALLOCATE_ONE(allocator, M2Model);
+  model->bounding_radius = header->bounding_sphere_radius;
+
   model->verticesCount = header->verticesCount;
   model->positions = ALLOCATE_MANY(allocator, Vec3f, header->verticesCount);
   model->animatedPositions = ALLOCATE_MANY(allocator, Vec3f, header->verticesCount);
@@ -344,14 +357,14 @@ M2Model *m2_load(MemoryAllocator *allocator, void *bytes, size_t size)
   model->submeshesCount = view->submeshesCount;
   model->submeshes = ALLOCATE_MANY(allocator, ModelSubmesh, view->submeshesCount);
   for (int i = 0; i < view->submeshesCount; i++) {
-    //m2_dump_geoset(&geosets[i]);
+    m2_dump_geoset(&geosets[i]);
     ModelSubmesh submesh;
     submesh.id = geosets[i].id;
     submesh.verticesStart = geosets[i].verticesStart;
     submesh.verticesCount = geosets[i].verticesCount;
     submesh.facesStart = geosets[i].indicesStart / 3;
     submesh.facesCount = geosets[i].indicesCount / 3;
-    submesh.enabled = (submesh.id == 0); // By default enable only parts without alternatives
+    submesh.enabled = true;
 
     model->submeshes[i] = submesh;
   }
@@ -417,6 +430,24 @@ M2Model *m2_load(MemoryAllocator *allocator, void *bytes, size_t size)
   int16_t *keybones = (int16_t *) ((uint8_t *) bytes + header->keyBoneLookupsOffset);
   for (size_t bli = 0; bli < header->keyBoneLookupsCount; bli++) {
     model->keybones[bli] = keybones[bli];
+  }
+
+  printf("Head bone: %d\n", model->keybones[M2_KEYBONE_ROOT]);
+
+  printf("att size: %zu\n", sizeof(M2Attachment));
+  model->attachmentsCount = header->attachmentsCount;
+  M2Attachment *attachments = (M2Attachment *) ((uint8_t *) bytes + header->attachmentsOffset);
+  model->attachments = ALLOCATE_MANY(allocator, M2Attachment, header->attachmentsCount);
+  for (size_t ai = 0; ai < header->attachmentsCount; ai++) {
+    M2Attachment *attachment = &attachments[ai];
+    model->attachments[ai] = attachments[ai];
+    model->attachments[ai].offset = Vec3f(attachments[ai].offset.x, attachments[ai].offset.z, -attachments[ai].offset.y);
+  }
+
+  int16_t *attachmentLookups = (int16_t *) ((uint8_t *) bytes + header->attachmentLookupsOffset);
+  model->attachmentLookups = ALLOCATE_MANY(allocator, int16_t, header->attachmentLookupsCount);
+  for (size_t ali = 0; ali < header->attachmentLookupsCount; ali++) {
+    model->attachmentLookups[ali] = attachmentLookups[ali];
   }
 
   return model;
@@ -639,6 +670,16 @@ void m2_animate_vertices(M2Model *model)
       model->animatedNormals[vi] = normal;
     }
   }
+}
+
+ModelBoneSet m2_character_full_boneset(M2Model *model)
+{
+  ModelBoneSet result = {};
+  for (size_t i = 0; i <= model->bonesCount; i++) {
+    MODEL_BONESET_SET(result, i);
+  }
+
+  return result;
 }
 
 ModelBoneSet m2_character_core_boneset(M2Model *model)
