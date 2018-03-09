@@ -17,7 +17,11 @@
 
 #if DRAW_TRIANGLE_ZTEST
   #define ZTEST(NEW, OLD) ((NEW > OLD))
-  #define ALPHA_TEST(A) (A > 0.5f)
+  #if DRAW_TRIANGLE_BLEND
+    #define ALPHA_TEST(A) (A > 0.5f)
+  #else
+    #define ALPHA_TEST(...) (true)
+  #endif
 #else
   #define ZTEST(...) (true)
   #define ALPHA_TEST(...) (true)
