@@ -264,6 +264,26 @@ void m2_load_animation_data(void *bytes, M2Header *header, MemoryAllocator *allo
     }
 }
 
+void m2_fix_normals(M2Model *model)
+{
+  for (size_t fi = 0; fi < model->facesCount; fi++) {
+    M2Face face = model->faces[fi];
+
+    Vec3f vertices[3] = {};
+    for (size_t vi = 0; vi < 3; vi++) {
+      vertices[vi] = model->positions[face.indices[vi]];
+    }
+
+    Vec3f face_normal = (vertices[2] - vertices[1]).cross(vertices[2] - vertices[0]).normalized();
+    for (size_t ni = 0; ni < 3; ni++) {
+      Vec3f normal = model->normals[face.indices[ni]];
+      if ((fabs(normal.x) < 0.000001f) && (fabs(normal.y) < 0.000001f) && (fabs(normal.z) < 0.000001)) {
+        model->normals[face.indices[ni]] = face_normal;
+      }
+    }
+  }
+}
+
 M2Model *m2_load(MemoryAllocator *allocator, void *bytes, size_t size)
 {
   M2Header *header = (M2Header *) bytes;
@@ -295,7 +315,7 @@ M2Model *m2_load(MemoryAllocator *allocator, void *bytes, size_t size)
   };
 
   M2Vertex *vertices = (M2Vertex *) ((uint8_t *) bytes + header->verticesOffset);
-  for(int i = 0; i < header->verticesCount; i++) {
+  for(size_t i = 0; i < header->verticesCount; i++) {
     model->positions[i] = vertices[i].pos * worldMat;
     model->animatedPositions[i] = model->positions[i];
     model->normals[i] = -(vertices[i].normal * worldMat);
@@ -449,6 +469,8 @@ M2Model *m2_load(MemoryAllocator *allocator, void *bytes, size_t size)
   for (size_t ali = 0; ali < header->attachmentLookupsCount; ali++) {
     model->attachmentLookups[ali] = attachmentLookups[ali];
   }
+
+  m2_fix_normals(model);
 
   return model;
 }
