@@ -4,6 +4,8 @@
 
 static inline void mouse_state_clear_frame_changes(MouseState *state)
 {
+  state->frameDx = 0.0f;
+  state->frameDy = 0.0f;
   memset(&state->frameStateChanges, 0, sizeof(state->frameStateChanges));
 }
 
