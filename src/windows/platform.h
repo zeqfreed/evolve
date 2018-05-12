@@ -1,5 +1,9 @@
 #pragma once
 
+#define WIN32_LEAN_AND_MEAN
+#define VC_LEANMEAN
+#define INITGUID
+
 #include <Windowsx.h>
 #include <Windows.h>
 #include <winuser.h>
@@ -8,10 +12,11 @@
 #undef MB_RIGHT
 #undef MB_MIDDLE
 
-#undef near // WTF Windows???
-#undef far
-
 #include "fs.h"
+#include "sound.h"
+
+#undef near
+#undef far
 
 typedef struct PlatformFile {
   WindowsFile _private;
@@ -20,6 +25,10 @@ typedef struct PlatformFile {
 typedef struct DirectoryListingIter {
   WindowsDirectoryListingIter _private;
 } DirectoryListingIter;
+
+typedef struct SoundBuffer {
+  WindowsSoundBuffer _private;
+} SoundBuffer;
 
 typedef WindowsDirectoryListingEntry DirectoryListingEntry;
 

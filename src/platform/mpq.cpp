@@ -17,7 +17,7 @@
 #define MPQ_HASH_ENTRY_DELETED 0xFFFFFFFE
 
 static uint32_t CRYPT_TABLE[0x500];
-MPQRegistry MPQ_REGISTRY = {};
+MPQRegistry MPQ_REGISTRY = {0};
 
 static void mpq_init_crypt_table()
 {
@@ -150,7 +150,7 @@ void mpq_registry_init(MPQRegistry *registry, char *directory)
         }
       }
 
-      char buf[2048] = {};
+      char buf[2048] = {0};
       snprintf(buf, sizeof(buf) / sizeof(buf[0]), "%s", directory);
       buf[strlen(directory)] = DIRECTORY_SEPARATOR;
       snprintf(&buf[strlen(directory) + 1], 255, "%s", entry->name);
@@ -217,7 +217,7 @@ static uint32_t mpq_string_hash(char *string, uint32_t type)
 
 static bool mpq_archive_init(MPQArchive *archive, char *filename)
 {
-  PlatformFile file = {};
+  PlatformFile file = {0};
   if (PAPI_ERROR(PLATFORM_API.file_open(&file, filename))) {
     return false;
   }
@@ -255,7 +255,7 @@ static bool mpq_archive_init(MPQArchive *archive, char *filename)
 
 static MPQFileId mpq_file_id(char *name)
 {
-  MPQFileId result = {};
+  MPQFileId result = {0};
   result.hash = mpq_string_hash(name, MPQ_HASH_TYPE_OFFSET);
   result.check1 = mpq_string_hash(name, MPQ_HASH_TYPE_CHECK1);
   result.check2 = mpq_string_hash(name, MPQ_HASH_TYPE_CHECK2);
@@ -309,7 +309,7 @@ int32_t inflate(void *src, size_t src_size, void *dst, size_t dst_size)
 
 MPQFile mpq_load_file(MPQRegistry *registry, char *name)
 {
-  MPQFile result = {};
+  MPQFile result = {0};
 
   MPQArchive *matchedArchive = NULL;
   MPQHashEntry *matchedEntry = NULL;
@@ -340,7 +340,7 @@ MPQFile mpq_load_file(MPQRegistry *registry, char *name)
   size_t uncompressed_sector_size = 512 << matchedArchive->header.sector_size_shift;
   void *uncompressed_data = PLATFORM_API.allocate_memory(block->file_size);
 
-  uint8_t buf[4096] = {};
+  uint8_t buf[4096] = {0};
   if (PAPI_ERROR(PLATFORM_API.file_read(&matchedArchive->file, (void *) &buf[0], block->offset, 4))) {
     return result;
   }
@@ -348,7 +348,7 @@ MPQFile mpq_load_file(MPQRegistry *registry, char *name)
   int32_t data_offset = ((int32_t *) buf)[0];
   size_t sectors_count = data_offset / sizeof(int32_t);
 
-  int32_t *sectors = new int32_t[sectors_count];
+  int32_t *sectors = (int32_t *) PLATFORM_API.allocate_memory(sectors_count * sizeof(int32_t));
   PLATFORM_API.file_read(&matchedArchive->file, sectors, block->offset, data_offset);
 
   for (size_t i = 0; i < sectors_count - 1; i++) {
@@ -371,7 +371,7 @@ MPQFile mpq_load_file(MPQRegistry *registry, char *name)
     }
   }
 
-  delete[] sectors;
+  PLATFORM_API.free_memory(sectors);
 
   result.data = uncompressed_data;
   result.size = block->file_size;

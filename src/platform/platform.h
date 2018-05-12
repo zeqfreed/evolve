@@ -12,6 +12,7 @@
 
 #include "keyboard.h"
 #include "mouse.h"
+#include "sound.h"
 
 #include "defs.h"
 
@@ -48,6 +49,13 @@ typedef bool (*DirectoryListingBeginFunc)(DirectoryListingIter *iter, char *dir)
 typedef DirectoryListingEntry *(*DirectoryListingNextEntryFunc)(DirectoryListingIter *iter);
 typedef void (*DirectoryListingEndFunc)(DirectoryListingIter *iter);
 
+typedef bool (*SoundBufferInitFunc)(SoundBuffer *sound_buffer);
+typedef void (*SoundBufferFinalizeFunc)(SoundBuffer *sound_buffer);
+typedef void (*SoundBufferPlayFunc)(SoundBuffer *sound_buffer);
+typedef void (*SoundBufferStopFunc)(SoundBuffer *sound_buffer);
+typedef LockedSoundBufferRegion (*SoundBufferLockFunc)(SoundBuffer *sound_buffer);
+typedef void (*SoundBufferUnlockFunc)(SoundBuffer *sound_buffer, LockedSoundBufferRegion *locked_region);
+
 typedef struct PlatformAPI {
   GetFileSizeFunc get_file_size;
   ReadFileContentsFunc read_file_contents;
@@ -62,6 +70,13 @@ typedef struct PlatformAPI {
   DirectoryListingBeginFunc directory_listing_begin;
   DirectoryListingNextEntryFunc directory_listing_next_entry;
   DirectoryListingEndFunc directory_listing_end;
+
+  SoundBufferInitFunc sound_buffer_init;
+  SoundBufferFinalizeFunc sound_buffer_finalize;
+  SoundBufferPlayFunc sound_buffer_play;
+  SoundBufferStopFunc sound_buffer_stop;
+  SoundBufferLockFunc sound_buffer_lock;
+  SoundBufferUnlockFunc sound_buffer_unlock;
 } PlatformAPI;
 
 extern PlatformAPI PLATFORM_API;

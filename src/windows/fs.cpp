@@ -68,7 +68,7 @@ int32_t windows_file_read(WindowsFile *file, void *dst, uint32_t offset, uint32_
 
   void *buf = dst;
 
-  OVERLAPPED overlapped = {};
+  OVERLAPPED overlapped = {0};
   overlapped.Offset = offset;
 
   while (total_read < bytes) {
@@ -104,13 +104,13 @@ int32_t windows_file_read(WindowsFile *file, void *dst, uint32_t offset, uint32_
 
 bool windows_directory_listing_begin(WindowsDirectoryListingIter *iter, char *directory)
 {
-  WIN32_FIND_DATAA fd = {};
+  WIN32_FIND_DATAA fd = {0};
 
   char buf[MAX_PATH];
   snprintf(buf, MAX_PATH, "%s%c%s", directory, DIRECTORY_SEPARATOR, "*");
   HANDLE handle = FindFirstFileA(buf, &fd);
   if (handle == INVALID_HANDLE_VALUE) {
-    return NULL;
+    return false;
   }
 
   iter->handle = handle;
@@ -129,7 +129,7 @@ WindowsDirectoryListingEntry *windows_directory_listing_next_entry(WindowsDirect
     return &iter->entry;
   }
 
-  WIN32_FIND_DATAA fd = {};
+  WIN32_FIND_DATAA fd = {0};
   if (!FindNextFileA(iter->handle, &fd)) {
     return NULL;
   }

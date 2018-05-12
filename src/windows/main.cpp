@@ -1,14 +1,15 @@
-#include <cstdio>
-#include <cstdint>
+#include <stdio.h>
+#include <stdint.h>
 
 #define _USE_MATH_DEFINES
-#include <cmath>
+#include <math.h>
 
 #include "platform/platform.h"
 
 #include "windows/fs.cpp"
 #include "windows/keyboard.cpp"
 #include "windows/mouse.cpp"
+#include "windows/sound.cpp"
 
 #include "platform/mpq.cpp"
 
@@ -20,9 +21,9 @@
 static volatile bool gameRunning = false;
 static HMODULE dllHandle = NULL;
 static DrawFrameFunc drawFrame = NULL;
-static KeyboardState keyboardState = {};
-static MouseState mouseState = {};
-static BITMAPINFO bmi = {};
+static KeyboardState keyboardState = {0};
+static MouseState mouseState = {0};
+static BITMAPINFO bmi = {0};
 static HDC targetDC = NULL;
 static HWND gameWindow = NULL;
 
@@ -138,7 +139,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 HWND create_window(HINSTANCE hInstance, uint16_t width, uint16_t height, char *title)
 {
-	WNDCLASSEX wndClass = {};
+	WNDCLASSEX wndClass = {0};
 	wndClass.cbSize = sizeof(WNDCLASSEX);
 	wndClass.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
   wndClass.hInstance = hInstance;
@@ -154,7 +155,9 @@ HWND create_window(HINSTANCE hInstance, uint16_t width, uint16_t height, char *t
 
   uint32_t style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE;
   uint32_t exStyle = WS_EX_APPWINDOW;
-  RECT rect = {0, 0, width, height};
+  RECT rect = {0};
+  rect.right = width;
+  rect.bottom = height;
   AdjustWindowRectEx(&rect, style, false, exStyle);
 
 	HWND wnd = CreateWindowEx(
@@ -282,7 +285,7 @@ MPQFile windows_load_asset(char *name)
 {
   int32_t size = windows_fs_size(name);
   if (size >= 0) {
-    MPQFile result = {};
+    MPQFile result = {0};
     result.id = mpq_file_id(name);
     result.data = windows_allocate_memory(size);
     result.size = size;
@@ -295,7 +298,7 @@ MPQFile windows_load_asset(char *name)
 
 void windows_release_asset(MPQFile *file)
 {
-  return mpq_release_file(&MPQ_REGISTRY, file);
+  mpq_release_file(&MPQ_REGISTRY, file);
 }
 
 PlatformAPI PLATFORM_API = {
@@ -311,7 +314,13 @@ PlatformAPI PLATFORM_API = {
   (FileReadFunc) windows_file_read,
   (DirectoryListingBeginFunc) windows_directory_listing_begin,
   (DirectoryListingNextEntryFunc) windows_directory_listing_next_entry,
-  (DirectoryListingEndFunc) windows_directory_listing_end
+  (DirectoryListingEndFunc) windows_directory_listing_end,
+  (SoundBufferInitFunc) windows_sound_buffer_init,
+  (SoundBufferFinalizeFunc) windows_sound_buffer_finalize,
+  (SoundBufferPlayFunc) windows_sound_buffer_play,
+  (SoundBufferStopFunc) windows_sound_buffer_stop,
+  (SoundBufferLockFunc) windows_sound_buffer_lock,
+  (SoundBufferUnlockFunc) windows_sound_buffer_unlock
 };
 
 int WINAPI WinMain(HINSTANCE hInstance,
@@ -321,7 +330,7 @@ int WINAPI WinMain(HINSTANCE hInstance,
 {
   prepare_console();
 
-  char module[255] = {};
+  char module[255] = {0};
   if (strlen(lpCmdLine) > 0) {
     uint32_t idx = 0;
     while (idx < sizeof(module) && lpCmdLine[idx] != ' ') {
@@ -330,7 +339,7 @@ int WINAPI WinMain(HINSTANCE hInstance,
     }
   }
 
-  char dllPath[MAX_PATH] = {};
+  char dllPath[MAX_PATH] = {0};
   size_t len = strlen(module);
   if (len > 3) {
     if (module[len - 3] == 'd' && module[len - 2] == 'l' && module[len - 1] == 'l') {
@@ -351,6 +360,7 @@ int WINAPI WinMain(HINSTANCE hInstance,
     return 1;
   }
 
+  windows_sound_hwnd = gameWindow;
   targetDC = GetDC(gameWindow);
 
   uint32_t bytesPerPixel = 4;
@@ -369,7 +379,7 @@ int WINAPI WinMain(HINSTANCE hInstance,
   bmi.bmiHeader.biBitCount = (uint16_t) bytesPerPixel * 8;
   bmi.bmiHeader.biCompression = BI_RGB;
 
-  GlobalState state = {};
+  GlobalState state = {0};
   state.platform_api = PLATFORM_API;
   state.keyboard = &keyboardState; 
   state.mouse = &mouseState;
