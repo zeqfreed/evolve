@@ -27,6 +27,9 @@ typedef struct DirectoryListingIter {
 } DirectoryListingIter;
 
 typedef struct SoundBuffer {
+  uint32_t channels;
+  uint32_t sample_rate;
+  uint32_t length;
   WindowsSoundBuffer _private;
 } SoundBuffer;
 

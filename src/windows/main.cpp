@@ -49,7 +49,7 @@ inline uint32_t map_keycode(WPARAM wParam, LPARAM lParam)
       uint32_t scancode = (lParam & 0x00ff0000) >> 16;
       result = MapVirtualKey(scancode, MAPVK_VSC_TO_VK_EX);
     }; break;
-  
+
     case VK_CONTROL: {
       uint32_t extended  = (lParam & 0x01000000) >> 23;
       result = VK_LCONTROL + extended;
@@ -88,7 +88,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_SYSKEYUP: {
       uint32_t keyCode = map_keycode(wParam, lParam);
       keyboard_state_key_up(&keyboardState, KEYBOARD_CODE(keyCode));
-    }; break;              
+    }; break;
 
     case WM_DESTROY:
       gameRunning = false;
@@ -96,7 +96,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
       break;
 
     case WM_SYSCOMMAND:
-      if (wParam == SC_KEYMENU && (lParam>>16) <= 0) return 0;  
+      if (wParam == SC_KEYMENU && (lParam>>16) <= 0) return 0;
       return DefWindowProc(hWnd, message, wParam, lParam);
       break;
 
@@ -110,7 +110,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_LBUTTONDOWN: {
       SetCapture(hWnd);
-      int32_t xpos = GET_X_LPARAM(lParam); 
+      int32_t xpos = GET_X_LPARAM(lParam);
       int32_t ypos = GET_Y_LPARAM(lParam);
       mouse_state_set_position(&mouseState, (float) xpos, (float) ypos);
       mouse_state_button_down(&mouseState, MB_LEFT);
@@ -118,14 +118,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_LBUTTONUP: {
       ReleaseCapture();
-      int32_t xpos = GET_X_LPARAM(lParam); 
+      int32_t xpos = GET_X_LPARAM(lParam);
       int32_t ypos = GET_Y_LPARAM(lParam);
       mouse_state_set_position(&mouseState, (float) xpos, (float) ypos);
       mouse_state_button_up(&mouseState, MB_LEFT);
     } break;
 
     case WM_MOUSEMOVE: {
-      int32_t xpos = GET_X_LPARAM(lParam); 
+      int32_t xpos = GET_X_LPARAM(lParam);
       int32_t ypos = GET_Y_LPARAM(lParam);
       mouse_state_set_position(&mouseState, (float) xpos, (float) ypos);
     } break;
@@ -381,7 +381,7 @@ int WINAPI WinMain(HINSTANCE hInstance,
 
   GlobalState state = {0};
   state.platform_api = PLATFORM_API;
-  state.keyboard = &keyboardState; 
+  state.keyboard = &keyboardState;
   state.mouse = &mouseState;
 
   mpq_registry_init(&MPQ_REGISTRY, (char *) "G:\\Games\\WoW Classic\\Data");
@@ -417,7 +417,7 @@ int WINAPI WinMain(HINSTANCE hInstance,
     }
 
     keyboard_clear_state_changes(&keyboardState);
-    mouse_state_clear_frame_changes(&mouseState);    
+    mouse_state_clear_frame_changes(&mouseState);
     windows_handle_events();
 
     if (drawFrame) {

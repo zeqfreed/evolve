@@ -49,12 +49,12 @@ typedef bool (*DirectoryListingBeginFunc)(DirectoryListingIter *iter, char *dir)
 typedef DirectoryListingEntry *(*DirectoryListingNextEntryFunc)(DirectoryListingIter *iter);
 typedef void (*DirectoryListingEndFunc)(DirectoryListingIter *iter);
 
-typedef bool (*SoundBufferInitFunc)(SoundBuffer *sound_buffer);
+typedef bool (*SoundBufferInitFunc)(SoundBuffer *sound_buffer, uint32_t channels, uint32_t sample_rate, uint32_t milliseconds);
 typedef void (*SoundBufferFinalizeFunc)(SoundBuffer *sound_buffer);
 typedef void (*SoundBufferPlayFunc)(SoundBuffer *sound_buffer);
 typedef void (*SoundBufferStopFunc)(SoundBuffer *sound_buffer);
 typedef LockedSoundBufferRegion (*SoundBufferLockFunc)(SoundBuffer *sound_buffer);
-typedef void (*SoundBufferUnlockFunc)(SoundBuffer *sound_buffer, LockedSoundBufferRegion *locked_region);
+typedef void (*SoundBufferUnlockFunc)(SoundBuffer *sound_buffer, LockedSoundBufferRegion *locked_region, uint32_t advance_by);
 
 typedef struct PlatformAPI {
   GetFileSizeFunc get_file_size;
