@@ -158,6 +158,7 @@ void mpq_registry_init(MPQRegistry *registry, char *directory)
       MPQArchive *archive = &registry->archives[registry->archives_count++];
       archive->priority = priority;
 
+      // TODO: Fix when opening file failed
       mpq_archive_init(archive, buf);
     }
   }

@@ -8,6 +8,7 @@
 #include "utils/ui.cpp"
 
 #include "formats/tga.cpp"
+#include "formats/wav.cpp"
 
 #include "renderer/renderer.cpp"
 
@@ -60,11 +61,19 @@ typedef struct WaveformBuffer {
   uint32_t tail_idx;
 } WaveformBuffer;
 
+typedef struct PlayingSound {
+  bool loop;
+  float current_frame;
+  WavFile *wav;
+} PlayingSound;
+
 typedef struct State {
   PlatformAPI *platform_api;
   KeyboardState *keyboard;
   MouseState *mouse;
   SoundBuffer sound_buffer;
+
+  PlayingSound track0;
 
   WaveformBuffer waveform_buffer;
   float leftover_dt;
@@ -134,6 +143,36 @@ static Font *load_font(State *state, char *textureFilename)
   font_init(font, file.contents, file.size);
 
   return font;
+}
+
+static WavFile *load_wav(State *state, char *filename)
+{
+  LoadedFile file = load_file(state->platform_api, state->main_arena, filename);
+  if (!file.size) {
+    printf("Failed to load wav: %s\n", filename);
+    return NULL;
+  }
+
+  WavFile *wav = (WavFile *) state->main_arena->allocate(sizeof(WavFile));
+  if (wav_read(wav, file.contents, file.size)) {
+    printf("Loaded WAV file %s\nChannels: %d\nSample rate: %d\nBits per sample: %d\nBlock align: %d\nTotal frames: %zu\n", filename, wav->channels, wav->samples_per_second, wav->bits_per_sample, wav->block_align, wav->frames);
+    return wav;
+  }
+
+  return NULL;
+}
+
+static WavFile *load_wav_asset(State *state, char *filename)
+{
+  LoadedAsset asset = state->platform_api->load_asset(filename);
+
+  WavFile *wav = (WavFile *) state->main_arena->allocate(sizeof(WavFile));
+  if (wav_read(wav, asset.data, asset.size)) {
+    printf("Loaded WAV file %s\nChannels: %d\nSample rate: %d\nBits per sample: %d\nBlock align: %d\n", filename, wav->channels, wav->samples_per_second, wav->bits_per_sample, wav->block_align);
+    return wav;
+  }
+
+  return NULL;
 }
 
 float note_frequency(float n)
@@ -391,6 +430,84 @@ static Voice make_voice(float note)
   return result;
 }
 
+static void play_sound(State *state, PlayingSound *sound, float dt)
+{
+  static int16_t buf[BUFFER_SIZE];
+
+  if (!sound->wav) {
+    return;
+  }
+
+  float target_sample_rate = 44100.0f;
+  size_t target_channels = 2;
+  float frame_step = (float) sound->wav->samples_per_second / target_sample_rate;
+
+  // size_t target_frames = (size_t) (dt * target_sample_rate);
+  size_t target_frames = BUFFER_SIZE / (BYTES_PER_SAMPLE * target_channels);
+
+  size_t generated_frames = 0;
+  int16_t *out = buf;
+  size_t out_len = BUFFER_SIZE;
+
+  float current_frame = sound->current_frame;
+
+  while (generated_frames < target_frames) {
+    int32_t source_frames = MAX(0, (int32_t) (sound->wav->frames - current_frame + 0.5));
+    int32_t frames = 0;
+
+    if (source_frames >= frame_step) {
+      frames = MIN(source_frames / frame_step, target_frames - generated_frames);
+
+      uint32_t mask = ((1 << sound->wav->bits_per_sample) - 1);
+      uint32_t shift = MAX(0, sound->wav->bits_per_sample - 16);
+      uint32_t bytes_per_channel = sound->wav->bits_per_sample / 8;
+
+      uint8_t *pcm_data = (uint8_t *) sound->wav->pcm_data;
+      for (size_t fi = 0; fi < frames; fi++) {
+        size_t source_frame_index = (size_t) (current_frame + (float) fi * frame_step + 0.5);
+
+        uint8_t *frame = pcm_data + source_frame_index * sound->wav->block_align;
+        for (size_t ch = 0; ch < target_channels; ch++) {
+          int32_t sample_value = *((int32_t *) (frame + ch * bytes_per_channel));
+          sample_value = (sample_value & mask) >> shift;
+          out[fi*BYTES_PER_SAMPLE+ch] = (int16_t) sample_value;
+        }
+      }
+
+      current_frame += frames * frame_step;
+      if (sound->loop) {
+        if (current_frame >= sound->wav->frames) {
+          current_frame -= (float) sound->wav->frames;
+        } else if (sound->wav->frames - current_frame < frame_step) {
+          current_frame = frame_step - ((float) sound->wav->frames - current_frame);
+        }
+      }
+    } else {
+      frames = target_frames - generated_frames;
+      for (size_t fi = 0; fi < frames; fi++) {
+        for (size_t ch = 0; ch < target_channels; ch++) {
+          out[fi+ch] = 0;
+        }
+      }
+    }
+
+    generated_frames += frames;
+    out += frames * target_channels;
+    out_len -= (frames * target_channels) * BYTES_PER_SAMPLE;
+  }
+
+  size_t target_samples = (size_t) (dt * target_sample_rate + 0.5) * target_channels; // round then multiply, because it must be a multiple of channel count
+  size_t buffer_samples = BUFFER_SIZE / (BYTES_PER_SAMPLE);
+  size_t overrun_samples = buffer_samples - target_samples;
+
+  sound->current_frame += ((float) target_samples / target_channels) * frame_step;
+  while (sound->current_frame >= sound->wav->frames) {
+    sound->current_frame -= sound->wav->frames;
+  }
+
+  dump_samples(state, buf, buffer_samples, overrun_samples);
+}
+
 static void initialize(State *state, DrawingBuffer *buffer)
 {
   state->screen_width = (float) buffer->width;
@@ -408,10 +525,26 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->font = load_font(state, (char *) "data/fonts/firasans.tga");
   ui_init(&state->ui, &state->rendering_context, state->font, state->keyboard, state->mouse);
 
+
+  WavFile *wav = load_wav(state, (char *) "data/misc/CHIPSHOP_Full120_002.wav");
+  //WavFile *wav = load_wav(state, (char *) "data/misc/CS_FMArp A_140-E.wav");
+  //WavFile *wav = load_wav(state, (char *) "data/misc/alarm01.wav");
+  //WavFile *wav = load_wav(state, (char *) "data/misc/CS_Noise A-04.wav");
+  //WavFile *wav = load_wav_asset(state, (char *) "Sound/Character/NightElf/NightElfFemale/NightElfFemaleChicken01.wav");
+  //WavFile *wav = load_wav_asset(state, (char *) "Sound/Creature/Archer/ArcherYesAttack1.wav");
+
+  state->track0 = {0};
+  state->track0.wav = wav;
+  state->track0.loop = true;
+  state->track0.current_frame = 0.0f;
+
   state->volume = 1.0f;
 
-  state->platform_api->sound_buffer_init(&state->sound_buffer, 1, 44100, 3000);
-  synth_next_chunk(state, 1.0f / 60.0f);
+  state->platform_api->sound_buffer_init(&state->sound_buffer, 2, 44100, 3000);
+
+  play_sound(state, &state->track0, 1.0f / 60.0f);
+
+  //synth_next_chunk(state, 1.0f / 60.0f);
   state->platform_api->sound_buffer_play(&state->sound_buffer);
 }
 
@@ -681,7 +814,9 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   //clear_zbuffer(ctx);
 
   update_keyboard(state);
-  synth_next_chunk(state, dt);
+
+  play_sound(state, &state->track0, dt);
+  //synth_next_chunk(state, dt);
 
   render_keyboard(state);
   //render_buffer(state, {0.0f, 300.0f, 0.0f}, state->screen_width, 300.0f);
