@@ -9,7 +9,7 @@ if not exist %BUILDDIR% mkdir %BUILDDIR%
 if not exist %EXEDIR% mkdir %EXEDIR%
 
 set BFLAGS=/DCOLOR_BGR /DPLATFORM_WINDOWS
-REM set CFLAGS=/MP /Zi /EHsc /FC
+REM set CFLAGS=/MP /Zi /EHsc /FC /Fd"%BUILDDIR%/"
 set CFLAGS=/MP /Ox /EHsc /FC
 REM 4267 and 4018 is actually useful, should review!
 set WFLAGS=/W4 /wd4018 /wd4100 /wd4189 /wd4201 /wd4244 /wd4334 /wd4267 /wd4505 /wd4996 /WX
@@ -21,7 +21,7 @@ if not %errorlevel% == 0 goto :error
 cl.exe -Isrc /Fo"%BUILDDIR%\viewer.obj" /Fe"%EXEDIR%\viewer.dll" /Fd"%BUILDDIR%/" src\viewer\main.cpp /LD %BFLAGS% %CFLAGS% %WFLAGS%
 if not %errorlevel% == 0 goto :error
 
-cl.exe -Isrc /Fo"%BUILDDIR%\cubes.obj" /Fe"%EXEDIR%\cubes.dll" src\cubes\main.cpp /LD %BFLAGS% %CFLAGS% %WFLAGS%
+cl.exe -Isrc /Fo"%BUILDDIR%\cubes.obj" /Fe"%EXEDIR%\cubes.dll" /Fd"%BUILDDIR%/" src\cubes\main.cpp /LD %BFLAGS% %CFLAGS% %WFLAGS%
 if not %errorlevel% == 0 goto :error
 
 cl.exe -Isrc /Fo"%BUILDDIR%\sound.obj" /Fe"%EXEDIR%\sound.dll" /Fd"%BUILDDIR%/" src\apps\sound\main.cpp /LD %BFLAGS% %CFLAGS% %WFLAGS% /link %LFLAGS%
