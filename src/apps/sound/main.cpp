@@ -51,16 +51,6 @@ typedef struct KeyState {
   bool pressed;
 } KeyState;
 
-#define WAVEFORM_BUFFER_SIZE 4096
-
-typedef struct WaveformBuffer {
-  int16_t samples[WAVEFORM_BUFFER_SIZE];
-  int16_t acc_value;
-  size_t acc_count;
-  uint32_t head_idx;
-  uint32_t tail_idx;
-} WaveformBuffer;
-
 typedef struct PlayingSound {
   bool loop;
   float current_frame;
@@ -85,7 +75,6 @@ typedef struct State {
   PlayingSound tracks[2];
   size_t tracks_count;
 
-  WaveformBuffer waveform_buffer;
   float leftover_dt;
   uint32_t voices_count;
   Voice voices[MAX_VOICES];
@@ -549,7 +538,7 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->font = load_font(state, (char *) "data/fonts/firasans.tga");
   ui_init(&state->ui, &state->rendering_context, state->font, state->keyboard, state->mouse);
 
-  state->sound_mixer.samples_count = 44100;
+  state->sound_mixer.samples_count = 88200;
   state->sound_mixer.buffer = (float *) state->main_arena->allocate(state->sound_mixer.samples_count * sizeof(float));
 
   //WavFile *wav = load_wav(state, (char *) "data/misc/CHIPSHOP_Full120_002.wav");
@@ -563,16 +552,16 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->tracks[0].loop = true;
   state->tracks[0].current_frame = 0.0f;
   state->tracks[0].speedup = 1.0f;
-  state->tracks[0].volume[0] = 0.5f;
-  state->tracks[0].volume[1] = 0.5f;
+  state->tracks[0].volume[0] = 1.0f;
+  state->tracks[0].volume[1] = 1.0f;
 
   state->tracks[1] = {0};
   state->tracks[1].wav = load_wav_asset(state, (char *) "Sound/Character/NightElf/NightElfFemale/NightElfFemaleChicken01.wav");
   state->tracks[1].loop = true;
   state->tracks[1].current_frame = 0.0f;
   state->tracks[1].speedup = 1.1f;
-  state->tracks[1].volume[0] = 0.5f;
-  state->tracks[1].volume[1] = 0.5f;
+  state->tracks[1].volume[0] = 1.0f;
+  state->tracks[1].volume[1] = 1.0f;
 
   state->tracks_count = 2;
 
@@ -790,43 +779,43 @@ void render_ui(State *state)
   ui_group_end(ui);
 }
 
-// static void render_buffer(State *state, Vec3f origin, float width, float height)
-// {
-//   uint32_t segment_samples = 4096;
-//   uint32_t segment_bytes = segment_samples * BYTES_PER_SAMPLE;
+static void render_mixer_buffer(State *state, SoundMixer *mixer, Vec3f origin, float width, float height)
+{
+  uint32_t samples_per_pixel = mixer->samples_count / width;
 
-//   RenderingContext *ctx = &state->rendering_context;
+  RenderingContext *ctx = &state->rendering_context;
 
-//   Vec3f last_point = Vec3f{origin.x, origin.y + height / 2.0f, 0.0f};
-//   float dx_per_sample = width / (float) segment_samples;
+  ctx->draw_line(ctx, origin, {origin.x + width, origin.y, 0.0f}, {0.1f, 0.1f, 0.1f, 1.0f});
+  ctx->draw_line(ctx, {origin.x, origin.y + height, 0.0f}, {origin.x + width, origin.y + height, 0.0f}, {0.1f, 0.1f, 0.1f, 1.0f});
 
-//   ctx->draw_line(ctx, origin, {origin.x + width, origin.y, 0.0f}, {0.1f, 0.1f, 0.1f, 1.0f});
-//   ctx->draw_line(ctx, {origin.x, origin.y + height, 0.0f}, {origin.x + width, origin.y + height, 0.0f}, {0.1f, 0.1f, 0.1f, 1.0f});
+  uint32_t sample_index = 0;
+  for (size_t x = 0; x < width; x++) {
+    float sample_avg = 0.0f;
+    float sample_min = 0.0f;
+    float sample_max = 0.0f;
+    for (size_t si = 0; si < samples_per_pixel; si++) {
+      float value = mixer->buffer[sample_index + si];
+      sample_avg -= sample_avg / (float) samples_per_pixel;
+      sample_avg += value / (float) samples_per_pixel;
 
-//   uint32_t start_idx = 0;
-//   if (state->buffer_write_idx > segment_bytes) {
-//     start_idx = (state->buffer_write_idx - segment_bytes) / BYTES_PER_SAMPLE;
-//   } else {
-//     start_idx = (BUFFER_SIZE - (segment_bytes - state->buffer_write_idx)) / BYTES_PER_SAMPLE;
-//   }
+      if (value < sample_min) {
+        sample_min = value;
+      }
 
-//   uint32_t total_samples = BUFFER_SIZE / BYTES_PER_SAMPLE;
-//   int16_t *samples = (int16_t *) state->buffer;
+      if (value > sample_max) {
+        sample_max = value;
+      }
+    }
 
-//   for (size_t i = 0; i < segment_samples; i++) {
-//     size_t idx = start_idx + i;
-//     if (idx >= total_samples) {
-//       idx -= total_samples;
-//     }
+    sample_index += samples_per_pixel;
 
-//     int16_t value = samples[idx];
-
-//     float y = origin.y + height / 2.0f + height * ((float) value / 65536.0f);
-//     Vec3f point = Vec3f{origin.x + (float) i * dx_per_sample, y, 0.0f};
-//     ctx->draw_line(ctx, last_point, point, {0.745f, 0.498f, 0.898f, 1.0f});
-//     last_point = point;
-//   }
-// }
+    float y0 = origin.y + height / 2.0f + height * sample_min;
+    float y1 = origin.y + height / 2.0f + height * sample_max;
+    Vec3f p0 = Vec3f{origin.x + (float) x, y0, 0.0f};
+    Vec3f p1 = Vec3f{origin.x + (float) x, y1, 0.0f};
+    ctx->draw_line(ctx, p0, p1, {0.745f, 0.498f, 0.898f, 1.0f});
+  }
+}
 
 C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer, float dt)
 {
@@ -870,6 +859,6 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   //synth_next_chunk(state, dt);
 
   render_keyboard(state);
-  //render_buffer(state, {0.0f, 300.0f, 0.0f}, state->screen_width, 300.0f);
+  render_mixer_buffer(state, &state->sound_mixer, {0.0f, 300.0f, 0.0f}, state->screen_width, 300.0f);
   //render_ui(state);
 }
