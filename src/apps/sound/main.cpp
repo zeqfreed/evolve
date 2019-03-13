@@ -51,12 +51,22 @@ typedef struct KeyState {
   bool pressed;
 } KeyState;
 
+struct PlayingSound;
+typedef size_t (* PlayingSoundAddFramesFunc)(struct PlayingSound *sound, float time, float *out, size_t frames_count);
+typedef bool (* PlayingSoundAdvanceFunc)(struct PlayingSound *sound, float dt);
+
 typedef struct PlayingSound {
   bool loop;
-  float current_frame;
+  float time;
+  float duration;
   float speedup;
   float volume[2];
-  WavFile *wav;
+  union {
+    WavFile *wav;
+    void *data;
+  };
+  PlayingSoundAddFramesFunc add_frames;
+  PlayingSoundAdvanceFunc advance;
 } PlayingSound;
 
 typedef struct SoundMixer {
@@ -65,6 +75,11 @@ typedef struct SoundMixer {
   size_t mixed_samples;
 } SoundMixer;
 
+typedef struct SynthState {
+  Voice voices[MAX_VOICES];
+  uint32_t voices_count;
+} SynthState;
+
 typedef struct State {
   PlatformAPI *platform_api;
   KeyboardState *keyboard;
@@ -72,15 +87,12 @@ typedef struct State {
   SoundBuffer sound_buffer;
 
   SoundMixer sound_mixer;
-  PlayingSound tracks[2];
+  PlayingSound tracks[3];
   size_t tracks_count;
 
   float leftover_dt;
-  uint32_t voices_count;
-  Voice voices[MAX_VOICES];
+  SynthState synth_state;
   KeyState keys[MAX_KEYS];
-
-  float volume;
 
   MemoryArena *main_arena;
 
@@ -235,34 +247,6 @@ static float osc(OscType type, float frequency, float t, float mod_freq, float m
   }
 }
 
-static void generate_samples(State *state, int16_t *buf, size_t nsamples)
-{
-  float seconds_per_sample = 1.0f / (float) SAMPLES_PER_SECOND;
-
-  int16_t *out = buf;
-  for (size_t i = 0; i < nsamples; i++) {
-    float value = 0.0f;
-
-    for (size_t vi = 0; vi < state->voices_count; vi++) {
-      Voice *v = &state->voices[vi];
-
-      if (v->active || (v->elapsed_time > 0.0f && v->inactive_time < v->envelope.release_time)) {
-        float frequency = note_frequency(v->note);
-
-        float t = v->elapsed_time + (float) i * seconds_per_sample;
-        float s = 0.75f * osc(OSC_SINE, frequency, t, 4.0f, 0.005f) +
-                  0.25f * osc(OSC_TRIANGLE, frequency, t, 1.0f, 0.005f) +
-                  0.15f * osc(OSC_SQUARE, frequency, t, 5.0f, 0.001f);
-
-        float t2 = v->active ? 0.0f : v->inactive_time + (float) i * seconds_per_sample;
-        value += apply_envelope(&v->envelope, s, t, t2);
-      }
-    }
-
-    out[i] = value * 32767 * state->volume * 0.25f;
-  }
-}
-
 static void render_sound_buffer_state(State *state, LockedSoundBufferRegion *reg)
 {
   RenderingContext *ctx = &state->rendering_context;
@@ -336,59 +320,14 @@ static int32_t dump_samples(State *state, float *buf, int32_t nsamples, int32_t 
   return (bytes_written - overrun_bytes) / BYTES_PER_SAMPLE + skip_samples;
 }
 
-static void synth_next_chunk(State *state, float dt)
-{
-  if (dt > 1.0f / 30.0f) { // TODO: Remove when window move is fixed
-    dt = 1.0f / 30.0f;
-  }
-  float seconds_to_write = dt + state->leftover_dt;
-
-  int32_t overrun_samples = (state->sound_buffer.length / 3) / BYTES_PER_SAMPLE;
-  int32_t samples_to_write = (int32_t)(seconds_to_write * (float) SAMPLES_PER_SECOND) + overrun_samples;
-  if (samples_to_write * BYTES_PER_SAMPLE > BUFFER_SIZE) {
-    printf("Wanted to generate %d samples but buffer can hold at most %d\n", samples_to_write, BUFFER_SIZE / BYTES_PER_SAMPLE);
-    samples_to_write = BUFFER_SIZE / BYTES_PER_SAMPLE;
-  }
-
-  static int16_t buf[BUFFER_SIZE];
-
-  generate_samples(state, buf, samples_to_write);
-  int32_t samples_dumped = dump_samples(state, (float *) buf, samples_to_write, overrun_samples); // ERROR!!! wrong sample type
-
-  float seconds_written = 0;
-
-  if (samples_dumped < 0) {
-    seconds_written = (float) -samples_dumped / (float) SAMPLES_PER_SECOND;
-    printf("Skipping %.6f seconds of synth to catch up with write buffer\n", seconds_written);
-    state->leftover_dt = 0.0f;
-  } else {
-    if (samples_dumped < samples_to_write - overrun_samples) {
-      printf("FAILED TO DUMP ALL THE SAMPLES\n");
-    }
-
-    seconds_written = (float) samples_dumped / (float) SAMPLES_PER_SECOND;
-    state->leftover_dt = dt - seconds_written;
-    if (state->leftover_dt < 0.0f) {
-      state->leftover_dt = 0.0f;
-    }
-  }
-
-  for (size_t vi = 0; vi < state->voices_count; vi++) {
-    state->voices[vi].elapsed_time += seconds_written;
-    if (!state->voices[vi].active) {
-      state->voices[vi].inactive_time += seconds_written;
-    }
-  }
-}
-
-static int32_t add_voice(State *state, Voice voice)
+static int32_t add_voice(SynthState *synth_state, Voice voice)
 {
   int32_t found_idx = -1;
 
-  if (state->voices_count < MAX_VOICES) {
-    found_idx = state->voices_count;
-    state->voices[found_idx] = voice;
-    state->voices_count++;
+  if (synth_state->voices_count < MAX_VOICES) {
+    found_idx = synth_state->voices_count;
+    synth_state->voices[found_idx] = voice;
+    synth_state->voices_count++;
     return found_idx;
   }
 
@@ -398,7 +337,7 @@ static int32_t add_voice(State *state, Voice voice)
   float max_inactive_time = 0.0f;
 
   for (size_t vi = 0; vi < MAX_VOICES; vi++) {
-    Voice *v = &state->voices[vi];
+    Voice *v = &synth_state->voices[vi];
     if (!v->active) {
       if (!found_inactive) {
         found_idx = vi;
@@ -414,7 +353,7 @@ static int32_t add_voice(State *state, Voice voice)
   }
 
   if (found_idx > -1 && found_idx < MAX_VOICES) {
-    state->voices[found_idx] = voice;
+    synth_state->voices[found_idx] = voice;
     return found_idx;
   }
 
@@ -446,6 +385,133 @@ static void sound_mixer_clear(SoundMixer *mixer)
   memset(mixer->buffer, 0, mixer->samples_count * sizeof(float));
 }
 
+static size_t playing_sound_synth_add_frames(PlayingSound *sound, float time, float *out, size_t frames_count)
+{
+  size_t target_channels = 2;
+  float target_sample_rate = 44100.0f;
+
+  float seconds_per_sample = 1.0f / (float) target_sample_rate;
+
+  SynthState *synth = (SynthState *) sound->data;
+
+  for (size_t i = 0; i < frames_count; i++) {
+    float value = 0.0f;
+
+    for (size_t vi = 0; vi < synth->voices_count; vi++) {
+      Voice *v = &synth->voices[vi];
+
+      if (v->active || (v->elapsed_time > 0.0f && v->inactive_time < v->envelope.release_time)) {
+        float frequency = note_frequency(v->note);
+
+        float t = v->elapsed_time + (float) i * seconds_per_sample;
+        float s = 0.75f * osc(OSC_SINE, frequency, t, 4.0f, 0.005f) +
+                  0.25f * osc(OSC_TRIANGLE, frequency, t, 1.0f, 0.005f) +
+                  0.15f * osc(OSC_SQUARE, frequency, t, 5.0f, 0.001f);
+
+        float t2 = v->active ? 0.0f : v->inactive_time + (float) i * seconds_per_sample;
+        value += apply_envelope(&v->envelope, s, t, t2) * 0.25f;
+      }
+    }
+
+    for (size_t ch = 0; ch < target_channels; ch++) {
+      out[i*target_channels+ch] += value * sound->volume[ch];
+    }
+  }
+
+  return frames_count;
+}
+
+static bool playing_sound_synth_advance(PlayingSound *sound, float dt)
+{
+  sound->time += dt * sound->speedup;
+
+  SynthState *synth_state = (SynthState *) sound->data;
+
+  for (size_t vi = 0; vi < synth_state->voices_count; vi++) {
+    synth_state->voices[vi].elapsed_time += dt;
+    if (!synth_state->voices[vi].active) {
+      synth_state->voices[vi].inactive_time += dt;
+    }
+  }
+
+  return true;
+}
+
+static size_t playing_sound_wav_add_frames(PlayingSound *sound, float time, float *out, size_t frames_count)
+{
+  size_t target_bytes_per_sample = sizeof(float);
+  float target_sample_rate = 44100.0f;
+  size_t target_channels = 2;
+  size_t target_frames = frames_count;
+
+  float frame_step = (float) sound->wav->samples_per_second * sound->speedup / target_sample_rate;
+  int32_t bytes_per_sample = sound->wav->bits_per_sample / 8;
+
+  size_t generated_frames = 0;
+  size_t out_len = frames_count * target_bytes_per_sample * target_channels;
+
+  float current_frame = time * sound->wav->samples_per_second;
+
+  while (generated_frames < target_frames) {
+    int32_t source_frames = MAX(0, (int32_t) (sound->wav->frames - current_frame + 0.5));
+    int32_t frames = MIN(source_frames / frame_step, target_frames - generated_frames);
+
+    if (frames <= 0) {
+      break;
+    }
+
+    uint8_t *pcm_data = (uint8_t *) sound->wav->pcm_data;
+    for (size_t fi = 0; fi < frames; fi++) {
+      size_t source_frame_index = (size_t) (current_frame + (float) fi * frame_step + 0.5);
+
+      uint8_t *frame = pcm_data + source_frame_index * sound->wav->block_align;
+      for (size_t ch = 0; ch < target_channels; ch++) {
+        uint8_t *sample_data = frame + ch * bytes_per_sample;
+
+        uint32_t sample_value = 0;
+        uint32_t shift = (sizeof(sample_value) - bytes_per_sample) * 8;
+        for (size_t bi = 0; bi < bytes_per_sample; bi++) {
+          sample_value |= (uint32_t)(sample_data[bi]) << shift;
+          shift += 8;
+        }
+
+        out[fi*target_channels+ch] += (float)((int32_t) sample_value / (float) UINT32_MAX) * sound->volume[ch];
+      }
+    }
+
+    current_frame += frames * frame_step;
+    if (sound->loop) {
+      if (current_frame >= sound->wav->frames) {
+        current_frame -= (float) sound->wav->frames;
+      } else if (sound->wav->frames - current_frame < frame_step) {
+        current_frame = frame_step - ((float) sound->wav->frames - current_frame);
+      }
+    }
+
+    generated_frames += frames;
+    out += frames * target_channels;
+    out_len -= (frames * target_channels) * target_bytes_per_sample;
+  }
+
+  return generated_frames;
+}
+
+static bool playing_sound_advance(PlayingSound *sound, float dt)
+{
+  sound->time += dt * sound->speedup;
+
+  if (sound->time < sound->duration) {
+    return true;
+  } else if (sound->loop) {
+    while (sound->time >= sound->duration) {
+      sound->time -= sound->duration;
+    }
+    return true;
+  }
+
+  return false;
+}
+
 static void sound_mixer_mix_sound(SoundMixer *mixer, PlayingSound *sound, float dt)
 {
   ASSERT(mixer);
@@ -455,70 +521,40 @@ static void sound_mixer_mix_sound(SoundMixer *mixer, PlayingSound *sound, float 
     return;
   }
 
-  size_t target_bytes_per_sample = sizeof(float);
-  float target_sample_rate = 44100.0f;
+  size_t target_sample_rate = 44100.0f;
   size_t target_channels = 2;
-  size_t target_frames = mixer->samples_count / target_channels;
-
   float frame_step = (float) sound->wav->samples_per_second * sound->speedup / target_sample_rate;
-  int32_t bytes_per_sample = sound->wav->bits_per_sample / 8;
 
-  size_t generated_frames = 0;
-  float *out = mixer->buffer;
-  size_t out_len = mixer->samples_count * target_bytes_per_sample;
+  sound->add_frames(sound, sound->time, mixer->buffer, mixer->samples_count / target_channels);
+  sound->advance(sound, dt);
 
-  float current_frame = sound->current_frame;
-
-  while (generated_frames < target_frames) {
-    int32_t source_frames = MAX(0, (int32_t) (sound->wav->frames - current_frame + 0.5));
-    int32_t frames = 0;
-
-    if (source_frames >= frame_step) {
-      frames = MIN(source_frames / frame_step, target_frames - generated_frames);
-
-      uint8_t *pcm_data = (uint8_t *) sound->wav->pcm_data;
-      for (size_t fi = 0; fi < frames; fi++) {
-        size_t source_frame_index = (size_t) (current_frame + (float) fi * frame_step + 0.5);
-
-        uint8_t *frame = pcm_data + source_frame_index * sound->wav->block_align;
-        for (size_t ch = 0; ch < target_channels; ch++) {
-          uint8_t *sample_data = frame + ch * bytes_per_sample;
-
-          uint32_t sample_value = 0;
-          uint32_t shift = (sizeof(sample_value) - bytes_per_sample) * 8;
-          for (size_t bi = 0; bi < bytes_per_sample; bi++) {
-            sample_value |= (uint32_t)(sample_data[bi]) << shift;
-            shift += 8;
-          }
-
-          out[fi*target_channels+ch] += (float)((int32_t) sample_value / (float) UINT32_MAX) * sound->volume[ch];
-        }
-      }
-
-      current_frame += frames * frame_step;
-      if (sound->loop) {
-        if (current_frame >= sound->wav->frames) {
-          current_frame -= (float) sound->wav->frames;
-        } else if (sound->wav->frames - current_frame < frame_step) {
-          current_frame = frame_step - ((float) sound->wav->frames - current_frame);
-        }
-      }
-    } else {
-      break;
-    }
-
-    generated_frames += frames;
-    out += frames * target_channels;
-    out_len -= (frames * target_channels) * target_bytes_per_sample;
-  }
-
-  size_t dt_samples = (size_t) (dt * target_sample_rate + 0.5) * target_channels; // round then multiply, because it must be a multiple of channel count
+  size_t dt_samples = (size_t) (dt * target_sample_rate) * target_channels; // round then multiply, because it must be a multiple of channel count
   mixer->mixed_samples = MAX(dt_samples, mixer->mixed_samples);
+}
 
-  sound->current_frame += ((float) dt_samples / target_channels) * frame_step;
-  while (sound->current_frame >= sound->wav->frames) {
-    sound->current_frame -= sound->wav->frames;
+static bool playing_sound_add_wav(State *state, WavFile *wav, bool loop, float speedup, float volume)
+{
+  if (state->tracks_count >= 3) {
+    return false;
   }
+
+  if (!wav) {
+    return false;
+  }
+
+  size_t idx = state->tracks_count++;
+  state->tracks[idx] = {0};
+  state->tracks[idx].wav = wav;
+  state->tracks[idx].loop = true;
+  state->tracks[idx].time = 0.0f;
+  state->tracks[idx].duration = (float) wav->frames / (float) wav->samples_per_second;
+  state->tracks[idx].speedup = speedup;
+  state->tracks[idx].volume[0] = volume;
+  state->tracks[idx].volume[1] = volume;
+  state->tracks[idx].add_frames = playing_sound_wav_add_frames;
+  state->tracks[idx].advance = playing_sound_advance;
+
+  return true;
 }
 
 static void initialize(State *state, DrawingBuffer *buffer)
@@ -547,25 +583,22 @@ static void initialize(State *state, DrawingBuffer *buffer)
   //WavFile *wav = load_wav_asset(state, (char *) "Sound/Character/NightElf/NightElfFemale/NightElfFemaleChicken01.wav");
   //WavFile *wav = load_wav_asset(state, (char *) "Sound/Creature/Archer/ArcherYesAttack1.wav");
 
-  state->tracks[0] = {0};
-  state->tracks[0].wav = load_wav(state, (char *) "data/misc/alarm01.wav");
-  state->tracks[0].loop = true;
-  state->tracks[0].current_frame = 0.0f;
-  state->tracks[0].speedup = 1.0f;
-  state->tracks[0].volume[0] = 1.0f;
-  state->tracks[0].volume[1] = 1.0f;
+  playing_sound_add_wav(state, load_wav(state, (char *) "data/misc/alarm01.wav"), true, 1.0f, 1.0f);
+  playing_sound_add_wav(state, load_wav_asset(state, (char *) "Sound/Character/NightElf/NightElfFemale/NightElfFemaleChicken01.wav"), true, 1.1f, 1.0f);
 
-  state->tracks[1] = {0};
-  state->tracks[1].wav = load_wav_asset(state, (char *) "Sound/Character/NightElf/NightElfFemale/NightElfFemaleChicken01.wav");
-  state->tracks[1].loop = true;
-  state->tracks[1].current_frame = 0.0f;
-  state->tracks[1].speedup = 1.1f;
-  state->tracks[1].volume[0] = 1.0f;
-  state->tracks[1].volume[1] = 1.0f;
-
-  state->tracks_count = 2;
-
-  state->volume = 1.0f;
+  if (state->tracks_count <= 2) {
+    size_t idx = state->tracks_count++;
+    state->tracks[idx] = {0};
+    state->tracks[idx].data = (void *) &state->synth_state;
+    state->tracks[idx].loop = false;
+    state->tracks[idx].time = 0.0f;
+    state->tracks[idx].duration = 0.0f;
+    state->tracks[idx].speedup = 1.0f;
+    state->tracks[idx].volume[0] = 0.6f;
+    state->tracks[idx].volume[1] = 0.6f;
+    state->tracks[idx].add_frames = playing_sound_synth_add_frames;
+    state->tracks[idx].advance = playing_sound_synth_advance;
+  }
 
   state->platform_api->sound_buffer_init(&state->sound_buffer, 2, 44100, 3000);
 
@@ -577,7 +610,6 @@ static void initialize(State *state, DrawingBuffer *buffer)
   size_t overrun_samples = state->sound_mixer.samples_count - state->sound_mixer.mixed_samples;
   dump_samples(state, state->sound_mixer.buffer, state->sound_mixer.samples_count, overrun_samples);
 
-  //synth_next_chunk(state, 1.0f / 60.0f);
   state->platform_api->sound_buffer_play(&state->sound_buffer);
 }
 
@@ -601,16 +633,18 @@ void update_keyboard(State *state)
   bool checked_voices[MAX_VOICES] = {false};
   int32_t key_offset = 12;
 
+  SynthState *synth_state = &state->synth_state;
+
   for (size_t i = 0; i < 13; i++) {
     float note = notes[i];
 
     int32_t voice_idx = -1;
-    for (size_t vi = 0; vi < state->voices_count; vi++) {
+    for (size_t vi = 0; vi < synth_state->voices_count; vi++) {
       if (checked_voices[vi]) {
         continue;
       }
 
-      if (state->voices[vi].active && state->voices[vi].note == note) {
+      if (synth_state->voices[vi].active && synth_state->voices[vi].note == note) {
         voice_idx = vi;
         break;
       }
@@ -623,7 +657,7 @@ void update_keyboard(State *state)
       if (voice_idx > -1) {
         checked_voices[voice_idx] = true;
       } else {
-        int32_t idx = add_voice(state, make_voice(note));
+        int32_t idx = add_voice(synth_state, make_voice(note));
         if (idx >= 0 && idx < MAX_VOICES) {
           checked_voices[idx] = true;
         }
@@ -631,9 +665,9 @@ void update_keyboard(State *state)
     }
   }
 
-  for (size_t vi = 0; vi < state->voices_count; vi++) {
+  for (size_t vi = 0; vi < synth_state->voices_count; vi++) {
     if (!checked_voices[vi]) {
-      state->voices[vi].active = false;
+      synth_state->voices[vi].active = false;
     }
   }
 }
@@ -733,6 +767,8 @@ void render_ui(State *state)
 
   bool checked_voices[MAX_VOICES] = {false};
 
+  SynthState *synth_state = &state->synth_state;
+
   for (size_t i = 0; i < 8; i++) {
     buf[0] = names[i];
     buf[1] = '0' + i;
@@ -741,12 +777,12 @@ void render_ui(State *state)
     float note = notes[i];
 
     int32_t voice_idx = -1;
-    for (size_t vi = 0; vi < state->voices_count; vi++) {
+    for (size_t vi = 0; vi < synth_state->voices_count; vi++) {
       if (checked_voices[vi]) {
         continue;
       }
 
-      if (state->voices[vi].active && state->voices[vi].note == note) {
+      if (synth_state->voices[vi].active && synth_state->voices[vi].note == note) {
         voice_idx = vi;
         break;
       }
@@ -761,7 +797,7 @@ void render_ui(State *state)
       if (voice_idx > -1) {
         checked_voices[voice_idx] = true;
       } else {
-        int32_t idx = add_voice(state, make_voice(note));
+        int32_t idx = add_voice(synth_state, make_voice(note));
         if (idx >= 0 && idx < MAX_VOICES) {
           checked_voices[idx] = true;
         }
@@ -769,9 +805,9 @@ void render_ui(State *state)
     }
   }
 
-  for (size_t vi = 0; vi < state->voices_count; vi++) {
+  for (size_t vi = 0; vi < synth_state->voices_count; vi++) {
     if (!checked_voices[vi]) {
-      state->voices[vi].active = false;
+      synth_state->voices[vi].active = false;
     }
   }
 
@@ -809,8 +845,8 @@ static void render_mixer_buffer(State *state, SoundMixer *mixer, Vec3f origin, f
 
     sample_index += samples_per_pixel;
 
-    float y0 = origin.y + height / 2.0f + height * sample_min;
-    float y1 = origin.y + height / 2.0f + height * sample_max;
+    float y0 = origin.y + height / 2.0f + height / 2.0f * sample_min;
+    float y1 = origin.y + height / 2.0f + height / 2.0f * sample_max;
     Vec3f p0 = Vec3f{origin.x + (float) x, y0, 0.0f};
     Vec3f p1 = Vec3f{origin.x + (float) x, y1, 0.0f};
     ctx->draw_line(ctx, p0, p1, {0.745f, 0.498f, 0.898f, 1.0f});
@@ -855,8 +891,6 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
 
   size_t overrun_samples = state->sound_mixer.samples_count - state->sound_mixer.mixed_samples;
   dump_samples(state, state->sound_mixer.buffer, state->sound_mixer.samples_count, overrun_samples);
-
-  //synth_next_chunk(state, dt);
 
   render_keyboard(state);
   render_mixer_buffer(state, &state->sound_mixer, {0.0f, 300.0f, 0.0f}, state->screen_width, 300.0f);
