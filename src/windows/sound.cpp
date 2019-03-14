@@ -5,12 +5,10 @@
 
 static HWND windows_sound_hwnd = NULL;
 
-#define BYTES_PER_SAMPLE 2
-
 // This is minimum amount of samples to cover 30 updates per second with 2 16-bit channels at 48kHz
 #define MIN_SAMPLES_PER_WRITE 6400
 
-bool windows_sound_buffer_init(SoundBuffer *sb, uint32_t channels, uint32_t sample_rate, uint32_t milliseconds) {
+bool windows_sound_buffer_init(SoundBuffer *sb, uint32_t channels, uint32_t sample_rate, float seconds) {
 
     LPDIRECTSOUND8 ds;
     HRESULT hresult = DirectSoundCreate8(NULL, &ds, NULL);
@@ -25,15 +23,16 @@ bool windows_sound_buffer_init(SoundBuffer *sb, uint32_t channels, uint32_t samp
     wave_format.wFormatTag = WAVE_FORMAT_PCM;
     wave_format.nChannels = channels;
     wave_format.nSamplesPerSec = sample_rate;
-    wave_format.wBitsPerSample = BYTES_PER_SAMPLE * 8;
+    wave_format.wBitsPerSample = BACKEND_BYTES_PER_SAMPLE * 8;
     wave_format.nBlockAlign = (wave_format.nChannels * wave_format.wBitsPerSample) / 8;
     wave_format.nAvgBytesPerSec = wave_format.nSamplesPerSec * wave_format.nBlockAlign;
     sb->_private.wave_format = wave_format;
 
+    size_t buffer_size = (size_t) (seconds * (float) sample_rate) * channels * BACKEND_BYTES_PER_SAMPLE;
+
     sb->channels = channels;
     sb->sample_rate = sample_rate;
-    sb->length = (milliseconds / 1000.0) * wave_format.nAvgBytesPerSec;
-    ASSERT(sb->length % (sb->channels * BYTES_PER_SAMPLE) == 0);
+    sb->length = buffer_size;
 
     memset(&sb->_private.dsb_desc, 0, sizeof(sb->_private.dsb_desc));
     sb->_private.dsb_desc.dwSize = sizeof(DSBUFFERDESC);

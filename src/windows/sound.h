@@ -3,6 +3,8 @@
 #include <mmreg.h>
 #include <dsound.h>
 
+#define BACKEND_BYTES_PER_SAMPLE 2
+
 typedef struct WindowsSoundBufferPlayInfo {
     bool playing;
     uint32_t write_pos;
