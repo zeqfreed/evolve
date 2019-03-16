@@ -112,6 +112,8 @@ LockedSoundBufferRegion windows_sound_buffer_lock(SoundBuffer *sb) {
         printf("[WARN] write_pos warped by %d bytes to catch up with write_offset\n", -write_pos_lead + 500);
         pi->write_pos = (write_offset + 500) % sb->length;
         result.write_pos_lead = write_pos_lead - 500;
+    } else {
+        result.write_pos_lead = write_pos_lead;
     }
 
     result.play_offset = play_offset;

@@ -708,6 +708,12 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
   SoundMixerDumpResult dump_result = sound_mixer_dump_samples(state->sound_mixer);
   render_sound_buffer_state(state, dump_result);
 
+  if (dump_result.seconds_dumped > 0.0f) {
+    for (size_t i = 0; i < state->tracks_count; i++) {
+      state->tracks[i].advance(&state->tracks[i], dump_result.seconds_dumped);
+    }
+  }
+
   render_keyboard(state);
   render_mixer_buffer(state, state->sound_mixer, {0.0f, 300.0f, 0.0f}, state->screen_width, 300.0f);
   //render_ui(state);

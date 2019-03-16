@@ -47,6 +47,7 @@ typedef struct SoundMixer {
   sound_sample_t *buffer;
   size_t samples_count;
   size_t mixed_samples;
+  float dt_avg;
 } SoundMixer;
 
 typedef struct SoundMixerDumpResult {
@@ -54,5 +55,5 @@ typedef struct SoundMixerDumpResult {
   size_t write_offset;
   size_t write_pos;
   int32_t write_pos_lead;
-  int32_t written_samples;
+  float seconds_dumped;
 } SoundMixerDumpResult;

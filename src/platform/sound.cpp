@@ -109,20 +109,22 @@ static void sound_mixer_mix_sound(SoundMixer *mixer, PlayingSound *sound, float 
     return;
   }
 
-  size_t target_sample_rate = 44100.0f;
-  size_t target_channels = 2;
-  float frame_step = (float) sound->wav->samples_per_second * sound->speedup / target_sample_rate;
+  float frame_step = (float) sound->wav->samples_per_second * sound->speedup / (float) PLATFORM_SAMPLE_RATE;
 
-  sound->add_frames(sound, sound->time, mixer->buffer, mixer->samples_count / target_channels);
-  sound->advance(sound, dt);
+  sound->add_frames(sound, sound->time, mixer->buffer, mixer->samples_count / PLATFORM_CHANNELS);
+  //sound->advance(sound, dt);
 
-  size_t dt_samples = (size_t) (dt * target_sample_rate) * target_channels; // round then multiply, because it must be a multiple of channel count
+  size_t dt_samples = MIN(mixer->samples_count, (size_t) (dt * (float) PLATFORM_SAMPLE_RATE) * PLATFORM_CHANNELS); // round then multiply, because it must be a multiple of channel count
   mixer->mixed_samples = MAX(dt_samples, mixer->mixed_samples);
+
+  mixer->dt_avg -= mixer->dt_avg / 10.0f;
+  mixer->dt_avg += dt / 10.0f;
 }
 
 static SoundMixerDumpResult sound_mixer_dump_samples(SoundMixer *mixer)
 {
-  size_t overrun_samples = mixer->samples_count - mixer->mixed_samples;
+  size_t mix_samples = mixer->dt_avg * (PLATFORM_SAMPLE_RATE * PLATFORM_CHANNELS);
+
   sound_sample_t *buf = mixer->buffer;
 
   SoundMixerDumpResult result = {0};
@@ -133,19 +135,30 @@ static SoundMixerDumpResult sound_mixer_dump_samples(SoundMixer *mixer)
   result.write_offset = locked.write_offset;
   result.write_pos = locked.write_pos;
   result.write_pos_lead = locked.write_pos_lead;
+  result.seconds_dumped = 0.0f;
 
   int32_t skip_samples = 0;
   if (locked.write_pos_lead < 0) {
-    skip_samples = -locked.write_pos_lead / sizeof(float);
+    skip_samples = -locked.write_pos_lead / BACKEND_BYTES_PER_SAMPLE;
     printf("skipping %u samples to adjust for warped write position\n", skip_samples);
     buf = &buf[skip_samples];
+
+    result.seconds_dumped = skip_samples / (float) (PLATFORM_SAMPLE_RATE * PLATFORM_CHANNELS);
+
+    if (skip_samples >= mixer->samples_count) {
+      mixer->papi->sound_buffer_unlock(mixer->sound_buffer, &locked, 0);
+      result.seconds_dumped = mixer->samples_count / (float) (PLATFORM_SAMPLE_RATE * PLATFORM_CHANNELS);
+      return result;
+    }
+  } else {
+      float locked_seconds = locked.write_pos_lead / (float) (BACKEND_BYTES_PER_SAMPLE * mixer->sound_buffer->sample_rate);
+      if (locked_seconds > mixer->dt_avg) {
+          size_t drop_samples = (locked_seconds - mixer->dt_avg) * (float) (PLATFORM_SAMPLE_RATE * PLATFORM_CHANNELS);
+          mix_samples = (drop_samples > mix_samples) ? 0 : mix_samples - drop_samples;
+      }
   }
 
-  if (skip_samples >= mixer->samples_count) {
-    mixer->papi->sound_buffer_unlock(mixer->sound_buffer, &locked, 0);
-    result.written_samples = mixer->samples_count - skip_samples;
-    return result;
-  }
+  result.seconds_dumped += mix_samples / (float) (PLATFORM_SAMPLE_RATE * PLATFORM_CHANNELS);
 
   int32_t bytes_to_write = (mixer->samples_count - skip_samples) * sizeof(int16_t);
   int32_t bytes_written = 0;
@@ -171,9 +184,8 @@ static SoundMixerDumpResult sound_mixer_dump_samples(SoundMixer *mixer)
     }
   }
 
-  int32_t overrun_bytes = MAX(0, bytes_written - ((mixer->samples_count - overrun_samples) * BACKEND_BYTES_PER_SAMPLE));
+  int32_t overrun_bytes = MAX(0, bytes_written - mix_samples * BACKEND_BYTES_PER_SAMPLE);
   mixer->papi->sound_buffer_unlock(mixer->sound_buffer, &locked, bytes_written - overrun_bytes);
 
-  result.written_samples = (bytes_written - overrun_bytes) / BACKEND_BYTES_PER_SAMPLE + skip_samples;
   return result;
 }
