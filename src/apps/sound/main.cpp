@@ -60,9 +60,8 @@ typedef struct State {
   MouseState *mouse;
   SoundBuffer sound_buffer;
 
+  WavFile *effects[5];
   SoundMixer *sound_mixer;
-  PlayingSound tracks[3];
-  size_t tracks_count;
 
   float leftover_dt;
   SynthState synth_state;
@@ -221,7 +220,7 @@ static float osc(OscType type, float frequency, float t, float mod_freq, float m
   }
 }
 
-static void render_sound_buffer_state(State *state, SoundMixerDumpResult dump)
+static void render_sound_buffer_state(State *state, SoundMixerMixResult mix_result)
 {
   RenderingContext *ctx = &state->rendering_context;
 
@@ -230,16 +229,16 @@ static void render_sound_buffer_state(State *state, SoundMixerDumpResult dump)
   Vec3f top = {10.0, 10.0f, 0.0f};
   Vec3f bottom = {10.0, 50.0f, 0.0f};
 
-  Vec3f p0 = bottom + Vec3f{dump.write_pos * pixels_per_byte, 0.0f, 0.0f};
-  Vec3f p1 = top + Vec3f{dump.write_pos * pixels_per_byte, 0.0f, 0.0f};
+  Vec3f p0 = bottom + Vec3f{mix_result.debug.write_pos * pixels_per_byte, 0.0f, 0.0f};
+  Vec3f p1 = top + Vec3f{mix_result.debug.write_pos * pixels_per_byte, 0.0f, 0.0f};
   ctx->draw_line(ctx, p0, p1, {1.0f, 1.0f, 0.0f, 1.0f});
 
-  p0 = bottom + Vec3f{dump.play_offset * pixels_per_byte, 0.0f, 0.0f};
-  p1 = top + Vec3f{dump.play_offset * pixels_per_byte, 0.0f, 0.0f};
+  p0 = bottom + Vec3f{mix_result.debug.play_offset * pixels_per_byte, 0.0f, 0.0f};
+  p1 = top + Vec3f{mix_result.debug.play_offset * pixels_per_byte, 0.0f, 0.0f};
   ctx->draw_line(ctx, p0, p1, {0.0f, 1.0f, 0.0f, 1.0f});
 
-  p0 = bottom + Vec3f{dump.write_offset * pixels_per_byte, 0.0f, 0.0f};
-  p1 = top + Vec3f{dump.write_offset * pixels_per_byte, 0.0f, 0.0f};
+  p0 = bottom + Vec3f{mix_result.debug.write_offset * pixels_per_byte, 0.0f, 0.0f};
+  p1 = top + Vec3f{mix_result.debug.write_offset * pixels_per_byte, 0.0f, 0.0f};
   ctx->draw_line(ctx, p0, p1, {1.0f, 0.0f, 0.0f, 1.0f});
 
   p0 = Vec3f{10.0f, 52.0f, 0.0f};
@@ -302,7 +301,7 @@ static Voice make_voice(float note)
   return result;
 }
 
-static size_t playing_sound_synth_add_frames(PlayingSound *sound, float time, float *out, size_t frames_count)
+static size_t mixed_sound_synth_add_frames(MixedSound *sound, float time, float *out, size_t frames_count)
 {
   float seconds_per_sample = 1.0f / (float) PLATFORM_SAMPLE_RATE;
 
@@ -335,7 +334,7 @@ static size_t playing_sound_synth_add_frames(PlayingSound *sound, float time, fl
   return frames_count;
 }
 
-static bool playing_sound_synth_advance(PlayingSound *sound, float dt)
+static bool mixed_sound_synth_advance(MixedSound *sound, float dt)
 {
   sound->time += dt * sound->speedup;
 
@@ -351,29 +350,9 @@ static bool playing_sound_synth_advance(PlayingSound *sound, float dt)
   return true;
 }
 
-static bool playing_sound_add_wav(State *state, WavFile *wav, bool loop, float speedup, float volume)
+static void mixed_sound_synth_release(MixedSound *sound)
 {
-  if (state->tracks_count >= 3) {
-    return false;
-  }
-
-  if (!wav) {
-    return false;
-  }
-
-  size_t idx = state->tracks_count++;
-  state->tracks[idx] = {0};
-  state->tracks[idx].wav = wav;
-  state->tracks[idx].loop = true;
-  state->tracks[idx].time = 0.0f;
-  state->tracks[idx].duration = (float) wav->frames / (float) wav->samples_per_second;
-  state->tracks[idx].speedup = speedup;
-  state->tracks[idx].volume[0] = volume;
-  state->tracks[idx].volume[1] = volume;
-  state->tracks[idx].add_frames = playing_sound_wav_add_frames;
-  state->tracks[idx].advance = playing_sound_advance;
-
-  return true;
+  return; // Do nothing
 }
 
 static void initialize(State *state, DrawingBuffer *buffer)
@@ -393,38 +372,27 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->font = load_font(state, (char *) "data/fonts/firasans.tga");
   ui_init(&state->ui, &state->rendering_context, state->font, state->keyboard, state->mouse);
 
-  //WavFile *wav = load_wav(state, (char *) "data/misc/CHIPSHOP_Full120_002.wav");
-  //WavFile *wav = load_wav(state, (char *) "data/misc/CS_FMArp A_140-E.wav");
-  //WavFile *wav = load_wav(state, (char *) "data/misc/CS_Noise A-04.wav");
-  //WavFile *wav = load_wav_asset(state, (char *) "Sound/Character/NightElf/NightElfFemale/NightElfFemaleChicken01.wav");
-  //WavFile *wav = load_wav_asset(state, (char *) "Sound/Creature/Archer/ArcherYesAttack1.wav");
-
-  playing_sound_add_wav(state, load_wav(state, (char *) "data/misc/alarm01.wav"), true, 1.0f, 1.0f);
-  playing_sound_add_wav(state, load_wav_asset(state, (char *) "Sound/Character/NightElf/NightElfFemale/NightElfFemaleChicken01.wav"), true, 1.1f, 1.0f);
-
-  if (state->tracks_count <= 2) {
-    size_t idx = state->tracks_count++;
-    state->tracks[idx] = {0};
-    state->tracks[idx].data = (void *) &state->synth_state;
-    state->tracks[idx].loop = false;
-    state->tracks[idx].time = 0.0f;
-    state->tracks[idx].duration = 0.0f;
-    state->tracks[idx].speedup = 1.0f;
-    state->tracks[idx].volume[0] = 0.6f;
-    state->tracks[idx].volume[1] = 0.6f;
-    state->tracks[idx].add_frames = playing_sound_synth_add_frames;
-    state->tracks[idx].advance = playing_sound_synth_advance;
-  }
-
   state->platform_api->sound_buffer_init(&state->sound_buffer, PLATFORM_CHANNELS, PLATFORM_SAMPLE_RATE, 3.0f);
-  state->sound_mixer = sound_mixer_new(state->platform_api, &state->sound_buffer, 2.0f);
+  state->sound_mixer = sound_mixer_new(state->platform_api, &state->sound_buffer, 10, 2.0f);
 
-  sound_mixer_clear(state->sound_mixer);
-  for (size_t i = 0; i < state->tracks_count; i++) {
-    sound_mixer_mix_sound(state->sound_mixer, &state->tracks[i], 1.0f / 30.0f);
-  }
+  state->effects[0] = load_wav(state, (char *) "data/misc/YM_Snare032.wav");
+  state->effects[1] = load_wav(state, (char *) "data/misc/YM_Hat005.wav");
+  state->effects[2] = load_wav(state, (char *) "data/misc/Phat Retro Bass 002.wav");
+  state->effects[3] = load_wav(state, (char *) "data/misc/GB_SFX003.wav");
+  state->effects[4] = load_wav(state, (char *) "data/misc/Effect 002.wav");
 
-  sound_mixer_dump_samples(state->sound_mixer);
+  sound_mixer_add_wav_sound(state->sound_mixer, load_wav(state, (char *) "data/misc/alarm01.wav"), true, 1.0f, 1.0f);
+  sound_mixer_add_wav_sound(state->sound_mixer, load_wav_asset(state, (char *) "Sound/Character/NightElf/NightElfFemale/NightElfFemaleChicken01.wav"), true, 1.1f, 1.0f);
+
+  MixedSoundInterface synth_sound_iface = {
+    &mixed_sound_synth_add_frames,
+    &mixed_sound_synth_advance,
+    &mixed_sound_synth_release
+  };
+
+  sound_mixer_add_sound(state->sound_mixer, (void *) &state->synth_state, synth_sound_iface, 0.0f, false, 1.0f, 1.0f);
+
+  sound_mixer_mix(state->sound_mixer, 1.0f / 60.0f);
 
   state->platform_api->sound_buffer_play(&state->sound_buffer);
 }
@@ -484,6 +452,13 @@ void update_keyboard(State *state)
   for (size_t vi = 0; vi < synth_state->voices_count; vi++) {
     if (!checked_voices[vi]) {
       synth_state->voices[vi].active = false;
+    }
+  }
+
+  for (size_t i = 0; i < 5; i++) {
+    if (KEY_WAS_PRESSED(state->keyboard, KB_1 + i)) {
+      float speedup = KEY_IS_DOWN(state->keyboard, KB_LEFT_SHIFT) ? 0.7f : 1.0f;
+      sound_mixer_add_wav_sound(state->sound_mixer, state->effects[i], false, speedup, 1.0f);
     }
   }
 }
@@ -642,13 +617,13 @@ static void render_mixer_buffer(State *state, SoundMixer *mixer, Vec3f origin, f
 
   uint32_t sample_index = 0;
   for (size_t x = 0; x < width; x++) {
-    float sample_avg = 0.0f;
-    float sample_min = 0.0f;
-    float sample_max = 0.0f;
+    sound_sample_t sample_avg = 0.0f;
+    sound_sample_t sample_min = 0.0f;
+    sound_sample_t sample_max = 0.0f;
     for (size_t si = 0; si < samples_per_pixel; si++) {
-      float value = mixer->buffer[sample_index + si];
-      sample_avg -= sample_avg / (float) samples_per_pixel;
-      sample_avg += value / (float) samples_per_pixel;
+      sound_sample_t value = mixer->samples[sample_index + si];
+      sample_avg -= sample_avg / (sound_sample_t) samples_per_pixel;
+      sample_avg += value / (sound_sample_t) samples_per_pixel;
 
       if (value < sample_min) {
         sample_min = value;
@@ -700,19 +675,8 @@ C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawi
 
   update_keyboard(state);
 
-  sound_mixer_clear(state->sound_mixer);
-  for (size_t i = 0; i < state->tracks_count; i++) {
-    sound_mixer_mix_sound(state->sound_mixer, &state->tracks[i], dt);
-  }
-
-  SoundMixerDumpResult dump_result = sound_mixer_dump_samples(state->sound_mixer);
-  render_sound_buffer_state(state, dump_result);
-
-  if (dump_result.seconds_dumped > 0.0f) {
-    for (size_t i = 0; i < state->tracks_count; i++) {
-      state->tracks[i].advance(&state->tracks[i], dump_result.seconds_dumped);
-    }
-  }
+  SoundMixerMixResult mix_result = sound_mixer_mix(state->sound_mixer, dt);
+  render_sound_buffer_state(state, mix_result);
 
   render_keyboard(state);
   render_mixer_buffer(state, state->sound_mixer, {0.0f, 300.0f, 0.0f}, state->screen_width, 300.0f);

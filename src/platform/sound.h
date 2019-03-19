@@ -23,37 +23,48 @@ typedef struct LockedSoundBufferRegion {
     int32_t write_pos_lead;
 } LockedSoundBufferRegion;
 
-struct PlayingSound;
-typedef size_t (* PlayingSoundAddFramesFunc)(struct PlayingSound *sound, float time, sound_sample_t *out, size_t frames_count);
-typedef bool (* PlayingSoundAdvanceFunc)(struct PlayingSound *sound, float dt);
+struct MixedSound;
+typedef size_t (* MixedSoundAddFramesFunc)(struct MixedSound *sound, float time, sound_sample_t *out, size_t frames_count);
+typedef bool (* MixedSoundAdvanceFunc)(struct MixedSound *sound, float dt);
+typedef void (* MixedSoundReleaseFunc)(struct MixedSound *sound);
 
-typedef struct PlayingSound {
+typedef struct MixedSoundInterface {
+  MixedSoundAddFramesFunc add_frames;
+  MixedSoundAdvanceFunc advance;
+  MixedSoundReleaseFunc release;
+} MixedSoundInterface;
+
+typedef struct MixedSound {
   bool loop;
   float time;
   float duration;
   float speedup;
   float volume[2];
-  union {
-    WavFile *wav;
-    void *data;
-  };
-  PlayingSoundAddFramesFunc add_frames;
-  PlayingSoundAdvanceFunc advance;
-} PlayingSound;
+  void *data;
+  MixedSoundInterface mixed_sound;
+} MixedSound;
 
 typedef struct SoundMixer {
   struct PlatformAPI *papi;
   SoundBuffer *sound_buffer;
-  sound_sample_t *buffer;
+
+  sound_sample_t *samples;
   size_t samples_count;
-  size_t mixed_samples;
+
+  MixedSound *sounds;
+  size_t sounds_capacity;
+  size_t sounds_count;
+
   float dt_avg;
 } SoundMixer;
 
-typedef struct SoundMixerDumpResult {
-  size_t play_offset;
-  size_t write_offset;
-  size_t write_pos;
-  int32_t write_pos_lead;
+typedef struct SoundMixerMixResult {
   float seconds_dumped;
-} SoundMixerDumpResult;
+
+  struct {
+    size_t play_offset;
+    size_t write_offset;
+    size_t write_pos;
+    int32_t write_pos_lead;
+  } debug;
+} SoundMixerMixResult;

@@ -1,14 +1,22 @@
 #include "sound.h"
 
-static SoundMixer *sound_mixer_new(PlatformAPI *papi, SoundBuffer *sound_buffer, float seconds)
+static SoundMixer *sound_mixer_new(PlatformAPI *papi, SoundBuffer *sound_buffer, size_t max_sounds, float seconds)
 {
     size_t buffer_size = (size_t) (seconds * (float) PLATFORM_SAMPLE_RATE) * PLATFORM_BYTES_PER_SAMPLE * PLATFORM_CHANNELS;
-    SoundMixer *result = (SoundMixer *) papi->allocate_memory(sizeof(SoundMixer) + buffer_size);
+    size_t sounds_size = max_sounds * sizeof(MixedSound);
+
+    SoundMixer *result = (SoundMixer *) papi->allocate_memory(sizeof(SoundMixer) + buffer_size + sounds_size);
+    memset(result, 0, sizeof(SoundMixer) + buffer_size + sounds_size);
+
     result->papi = papi;
     result->sound_buffer = sound_buffer;
-    result->buffer = (sound_sample_t *) ((uint8_t *) result + sizeof(SoundMixer));
+
+    result->samples = (sound_sample_t *) ((uint8_t *) result + sizeof(SoundMixer));
     result->samples_count = buffer_size / PLATFORM_BYTES_PER_SAMPLE;
-    result->mixed_samples = 0;
+
+    result->sounds = (MixedSound *) ((uint8_t *) result->samples + buffer_size);
+    result->sounds_capacity = max_sounds;
+    result->sounds_count = 0;
 
     return result;
 }
@@ -17,42 +25,41 @@ static void sound_mixer_free(SoundMixer *mixer)
 {
     ASSERT(mixer);
     ASSERT(mixer->papi);
+
+    for (size_t i = 0; i < mixer->sounds_count; i++) {
+      MixedSound *sound = &mixer->sounds[i];
+      sound->mixed_sound.release(sound);
+    }
+    mixer->sounds_count = 0;
+
     mixer->papi->free_memory(mixer);
 }
 
-static void sound_mixer_clear(SoundMixer *mixer)
+static size_t mixed_sound_wav_add_frames(MixedSound *sound, float time, sound_sample_t *out, size_t frames_count)
 {
-  if (!mixer) {
-    return;
-  }
+  WavFile *wav = (WavFile *) sound->data;
 
-  mixer->mixed_samples = 0;
-  memset(mixer->buffer, 0, mixer->samples_count * sizeof(float));
-}
-
-static size_t playing_sound_wav_add_frames(PlayingSound *sound, float time, sound_sample_t *out, size_t frames_count)
-{
-  float frame_step = (float) sound->wav->samples_per_second * sound->speedup / (float) PLATFORM_SAMPLE_RATE;
-  int32_t bytes_per_sample = sound->wav->bits_per_sample / 8;
+  float frame_step = (float) wav->samples_per_second * sound->speedup / (float) PLATFORM_SAMPLE_RATE;
+  int32_t bytes_per_sample = wav->bits_per_sample / 8;
 
   size_t generated_frames = 0;
   size_t out_len = frames_count * PLATFORM_BYTES_PER_SAMPLE * PLATFORM_CHANNELS;
 
-  float current_frame = time * sound->wav->samples_per_second;
+  float current_frame = time * wav->samples_per_second;
 
   while (generated_frames < frames_count) {
-    int32_t source_frames = MAX(0, (int32_t) (sound->wav->frames - current_frame + 0.5));
+    int32_t source_frames = MAX(0, (int32_t) (wav->frames - current_frame + 0.5));
     int32_t frames = MIN(source_frames / frame_step, frames_count - generated_frames);
 
     if (frames <= 0) {
       break;
     }
 
-    uint8_t *pcm_data = (uint8_t *) sound->wav->pcm_data;
+    uint8_t *pcm_data = (uint8_t *) wav->pcm_data;
     for (size_t fi = 0; fi < frames; fi++) {
       size_t source_frame_index = (size_t) (current_frame + (float) fi * frame_step + 0.5);
 
-      uint8_t *frame = pcm_data + source_frame_index * sound->wav->block_align;
+      uint8_t *frame = pcm_data + source_frame_index * wav->block_align;
       for (size_t ch = 0; ch < PLATFORM_CHANNELS; ch++) {
         uint8_t *sample_data = frame + ch * bytes_per_sample;
 
@@ -69,10 +76,10 @@ static size_t playing_sound_wav_add_frames(PlayingSound *sound, float time, soun
 
     current_frame += frames * frame_step;
     if (sound->loop) {
-      if (current_frame >= sound->wav->frames) {
-        current_frame -= (float) sound->wav->frames;
-      } else if (sound->wav->frames - current_frame < frame_step) {
-        current_frame = frame_step - ((float) sound->wav->frames - current_frame);
+      if (current_frame >= wav->frames) {
+        current_frame -= (float) wav->frames;
+      } else if (wav->frames - current_frame < frame_step) {
+        current_frame = frame_step - ((float) wav->frames - current_frame);
       }
     }
 
@@ -84,7 +91,7 @@ static size_t playing_sound_wav_add_frames(PlayingSound *sound, float time, soun
   return generated_frames;
 }
 
-static bool playing_sound_advance(PlayingSound *sound, float dt)
+static bool mixed_sound_advance(MixedSound *sound, float dt)
 {
   sound->time += dt * sound->speedup;
 
@@ -100,41 +107,88 @@ static bool playing_sound_advance(PlayingSound *sound, float dt)
   return false;
 }
 
-static void sound_mixer_mix_sound(SoundMixer *mixer, PlayingSound *sound, float dt)
+static void mixed_sound_wav_release(MixedSound *sound)
 {
-  ASSERT(mixer);
-  ASSERT(sound);
+    return;
+}
 
-  if (!sound->wav) {
+static MixedSound *sound_mixer_add_sound(SoundMixer *mixer, void *data, MixedSoundInterface iface, float duration, bool loop, float speedup, float volume)
+{
+  if (mixer->sounds_count >= mixer->sounds_capacity) {
+      return NULL;
+  }
+
+  MixedSound *sound = &mixer->sounds[mixer->sounds_count];
+  mixer->sounds_count++;
+
+  sound->data = data;
+  sound->loop = loop;
+  sound->time = 0.0f;
+  sound->duration = duration;
+  sound->speedup = speedup;
+  sound->volume[0] = volume;
+  sound->volume[1] = volume;
+  sound->mixed_sound = iface;
+
+  return sound;
+}
+
+static MixedSound *sound_mixer_add_wav_sound(SoundMixer *mixer, WavFile *wav, bool loop, float speedup, float volume)
+{
+    static MixedSoundInterface iface = {
+        &mixed_sound_wav_add_frames,
+        &mixed_sound_advance,
+        &mixed_sound_wav_release
+    };
+
+    float duration = (float) wav->frames / (float) wav->samples_per_second;
+    MixedSound *sound = sound_mixer_add_sound(mixer, (void *) wav, iface, duration, loop, speedup, volume);
+
+    return sound;
+}
+
+static void sound_mixer_advance_sounds(SoundMixer *mixer, float dt)
+{
+  if (dt <= 0.0f) {
     return;
   }
 
-  float frame_step = (float) sound->wav->samples_per_second * sound->speedup / (float) PLATFORM_SAMPLE_RATE;
+  for (size_t i = 0; i < mixer->sounds_count; i++) {
+    MixedSound *sound = &mixer->sounds[i];
+    bool is_playing = mixer->sounds[i].mixed_sound.advance(sound, dt);
+    if (!is_playing) {
+        sound->mixed_sound.release(sound);
+        if (mixer->sounds_count > 1) {
+            *sound = mixer->sounds[mixer->sounds_count - 1];
+        }
+        mixer->sounds_count--;
+    }
+  }
+}
 
-  sound->add_frames(sound, sound->time, mixer->buffer, mixer->samples_count / PLATFORM_CHANNELS);
-  //sound->advance(sound, dt);
+static SoundMixerMixResult sound_mixer_mix(SoundMixer *mixer, float dt)
+{
+  memset(mixer->samples, 0, mixer->samples_count * sizeof(sound_sample_t));
 
-  size_t dt_samples = MIN(mixer->samples_count, (size_t) (dt * (float) PLATFORM_SAMPLE_RATE) * PLATFORM_CHANNELS); // round then multiply, because it must be a multiple of channel count
-  mixer->mixed_samples = MAX(dt_samples, mixer->mixed_samples);
+  for (size_t i = 0; i < mixer->sounds_count; i++) {
+    MixedSound *sound = &mixer->sounds[i];
+    sound->mixed_sound.add_frames(sound, sound->time, mixer->samples, mixer->samples_count / PLATFORM_CHANNELS);
+  }
 
   mixer->dt_avg -= mixer->dt_avg / 10.0f;
   mixer->dt_avg += dt / 10.0f;
-}
-
-static SoundMixerDumpResult sound_mixer_dump_samples(SoundMixer *mixer)
-{
   size_t mix_samples = mixer->dt_avg * (PLATFORM_SAMPLE_RATE * PLATFORM_CHANNELS);
 
-  sound_sample_t *buf = mixer->buffer;
+  sound_sample_t *buf = mixer->samples;
 
-  SoundMixerDumpResult result = {0};
+  SoundMixerMixResult result = {0};
 
   LockedSoundBufferRegion locked = mixer->papi->sound_buffer_lock(mixer->sound_buffer);
 
-  result.play_offset = locked.play_offset;
-  result.write_offset = locked.write_offset;
-  result.write_pos = locked.write_pos;
-  result.write_pos_lead = locked.write_pos_lead;
+  result.debug.play_offset = locked.play_offset;
+  result.debug.write_offset = locked.write_offset;
+  result.debug.write_pos = locked.write_pos;
+  result.debug.write_pos_lead = locked.write_pos_lead;
   result.seconds_dumped = 0.0f;
 
   int32_t skip_samples = 0;
@@ -186,6 +240,8 @@ static SoundMixerDumpResult sound_mixer_dump_samples(SoundMixer *mixer)
 
   int32_t overrun_bytes = MAX(0, bytes_written - mix_samples * BACKEND_BYTES_PER_SAMPLE);
   mixer->papi->sound_buffer_unlock(mixer->sound_buffer, &locked, bytes_written - overrun_bytes);
+
+  sound_mixer_advance_sounds(mixer, result.seconds_dumped);
 
   return result;
 }
