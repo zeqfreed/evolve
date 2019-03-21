@@ -1,6 +1,8 @@
 #include "platform/platform.h"
 #include "wav.h"
 
+#define WAV_FILE_SUPPORT
+
 #define IS_RIFF(x) ((x)[0] == 'R' && (x)[1] == 'I' && (x)[2] == 'F' && (x)[3] == 'F')
 #define IS_WAVE(x) ((x)[0] == 'W' && (x)[1] == 'A' && (x)[2] == 'V' && (x)[3] == 'E')
 #define IS_FMT(x) ((x)[0] == 'f' && (x)[1] == 'm' && (x)[2] == 't' && (x)[3] == ' ')

@@ -4,6 +4,7 @@
 #include "formats/dbc.h"
 #include "formats/m2.h"
 #include "formats/blp.h"
+#include "formats/wav.h"
 
 typedef struct LoadedFile {
   void *contents;
@@ -13,7 +14,8 @@ typedef struct LoadedFile {
 typedef enum AssetType {
   AT_DBC,
   AT_TEXTURE,
-  AT_MODEL
+  AT_MODEL,
+  AT_WAV
 } AssetType;
 
 typedef struct Asset {
@@ -23,6 +25,7 @@ typedef struct Asset {
     DBCFile *dbc;
     Texture *texture;
     M2Model *model;
+    WavFile *wav;
   };
 } Asset;
 

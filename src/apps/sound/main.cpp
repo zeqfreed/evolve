@@ -1,14 +1,14 @@
 #include "platform/platform.h"
 
+#include "formats/tga.cpp"
+#include "formats/wav.cpp"
+
 #include "utils/math.cpp"
 #include "utils/texture.cpp"
 #include "utils/memory.cpp"
 #include "utils/assets.cpp"
 #include "utils/font.cpp"
 #include "utils/ui.cpp"
-
-#include "formats/tga.cpp"
-#include "formats/wav.cpp"
 
 #include "platform/sound.cpp"
 
@@ -60,7 +60,8 @@ typedef struct State {
   MouseState *mouse;
   SoundBuffer sound_buffer;
 
-  WavFile *effects[5];
+  AssetLoader asset_loader;
+  Asset *effects[5];
   SoundMixer *sound_mixer;
 
   float leftover_dt;
@@ -127,36 +128,6 @@ static Font *load_font(State *state, char *textureFilename)
   font_init(font, file.contents, file.size);
 
   return font;
-}
-
-static WavFile *load_wav(State *state, char *filename)
-{
-  LoadedFile file = load_file(state->platform_api, state->main_arena, filename);
-  if (!file.size) {
-    printf("Failed to load wav: %s\n", filename);
-    return NULL;
-  }
-
-  WavFile *wav = (WavFile *) state->main_arena->allocate(sizeof(WavFile));
-  if (wav_read(wav, file.contents, file.size)) {
-    printf("Loaded WAV file %s\nChannels: %d\nSample rate: %d\nBits per sample: %d\nBlock align: %d\nTotal frames: %zu\n", filename, wav->channels, wav->samples_per_second, wav->bits_per_sample, wav->block_align, wav->frames);
-    return wav;
-  }
-
-  return NULL;
-}
-
-static WavFile *load_wav_asset(State *state, char *filename)
-{
-  LoadedAsset asset = state->platform_api->load_asset(filename);
-
-  WavFile *wav = (WavFile *) state->main_arena->allocate(sizeof(WavFile));
-  if (wav_read(wav, asset.data, asset.size)) {
-    printf("Loaded WAV file %s\nChannels: %d\nSample rate: %d\nBits per sample: %d\nBlock align: %d\n", filename, wav->channels, wav->samples_per_second, wav->bits_per_sample, wav->block_align);
-    return wav;
-  }
-
-  return NULL;
 }
 
 float note_frequency(float n)
@@ -375,14 +346,23 @@ static void initialize(State *state, DrawingBuffer *buffer)
   state->platform_api->sound_buffer_init(&state->sound_buffer, PLATFORM_CHANNELS, PLATFORM_SAMPLE_RATE, 3.0f);
   state->sound_mixer = sound_mixer_new(state->platform_api, &state->sound_buffer, 10, 2.0f);
 
-  state->effects[0] = load_wav(state, (char *) "data/misc/YM_Snare032.wav");
-  state->effects[1] = load_wav(state, (char *) "data/misc/YM_Hat005.wav");
-  state->effects[2] = load_wav(state, (char *) "data/misc/Phat Retro Bass 002.wav");
-  state->effects[3] = load_wav(state, (char *) "data/misc/GB_SFX003.wav");
-  state->effects[4] = load_wav(state, (char *) "data/misc/Effect 002.wav");
+  asset_loader_init(&state->asset_loader, state->platform_api);
 
-  sound_mixer_add_wav_sound(state->sound_mixer, load_wav(state, (char *) "data/misc/alarm01.wav"), true, 1.0f, 1.0f);
-  sound_mixer_add_wav_sound(state->sound_mixer, load_wav_asset(state, (char *) "Sound/Character/NightElf/NightElfFemale/NightElfFemaleChicken01.wav"), true, 1.1f, 1.0f);
+  state->effects[0] = asset_loader_get_wav(&state->asset_loader, (char *) "data/misc/YM_Snare032.wav");
+  state->effects[1] = asset_loader_get_wav(&state->asset_loader, (char *) "data/misc/YM_Hat005.wav");
+  state->effects[2] = asset_loader_get_wav(&state->asset_loader, (char *) "data/misc/Phat Retro Bass 002.wav");
+  state->effects[3] = asset_loader_get_wav(&state->asset_loader, (char *) "data/misc/GB_SFX003.wav");
+  state->effects[4] = asset_loader_get_wav(&state->asset_loader, (char *) "data/misc/Effect 002.wav");
+
+  Asset *track0 = asset_loader_get_wav(&state->asset_loader, (char *) "data/misc/alarm01.wav");
+  if (track0) {
+    sound_mixer_add_wav_sound(state->sound_mixer, track0->wav, true, 1.0f, 1.0f);
+  }
+
+  Asset *track1 = asset_loader_get_wav(&state->asset_loader, (char *) "Sound/Character/NightElf/NightElfFemale/NightElfFemaleChicken01.wav");
+  if (track1) {
+    sound_mixer_add_wav_sound(state->sound_mixer, track1->wav, true, 1.1f, 1.0f);
+  }
 
   MixedSoundInterface synth_sound_iface = {
     &mixed_sound_synth_add_frames,
@@ -458,7 +438,7 @@ void update_keyboard(State *state)
   for (size_t i = 0; i < 5; i++) {
     if (KEY_WAS_PRESSED(state->keyboard, KB_1 + i)) {
       float speedup = KEY_IS_DOWN(state->keyboard, KB_LEFT_SHIFT) ? 0.7f : 1.0f;
-      sound_mixer_add_wav_sound(state->sound_mixer, state->effects[i], false, speedup, 1.0f);
+      sound_mixer_add_wav_sound(state->sound_mixer, state->effects[i]->wav, false, speedup, 1.0f);
     }
   }
 }

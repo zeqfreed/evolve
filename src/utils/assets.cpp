@@ -215,6 +215,38 @@ static Asset *asset_loader_get_model(AssetLoader *loader, char *name)
   return &node->asset;
 }
 
+#ifdef WAV_FILE_SUPPORT
+static Asset *asset_loader_get_wav(AssetLoader *loader, char *name)
+{
+  AssetId id = loader->papi->get_asset_id(name);
+  AssetNode *node = _asset_loader_lookup_asset(loader, id);
+  if (node != NULL) {
+    return &node->asset;
+  }
+
+  LoadedAsset asset_file = loader->papi->load_asset(name);
+  if (asset_file.data == NULL) {
+    return NULL;
+  }
+
+  node = ALLOCATE_ONE(&loader->allocator, AssetNode);
+  node->asset.id = id;
+  node->asset.type = AT_WAV;
+  node->asset.wav = ALLOCATE_ONE(&loader->allocator, WavFile);
+
+  if (!wav_read(node->asset.wav, asset_file.data, asset_file.size)) {
+    memory_free(&loader->allocator, node->asset.wav);
+    memory_free(&loader->allocator, node);
+    loader->papi->release_asset(&asset_file);
+    return NULL;
+  }
+
+  _asset_loader_push_asset(loader, node);
+
+  return &node->asset;
+}
+#endif
+
 void asset_loader_init(AssetLoader *loader, PlatformAPI *papi)
 {
   ASSERT(loader != NULL);
