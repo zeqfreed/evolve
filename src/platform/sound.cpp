@@ -177,7 +177,7 @@ static SoundMixerMixResult sound_mixer_mix(SoundMixer *mixer, float dt)
 
   mixer->dt_avg -= mixer->dt_avg / 10.0f;
   mixer->dt_avg += dt / 10.0f;
-  size_t mix_samples = mixer->dt_avg * (PLATFORM_SAMPLE_RATE * PLATFORM_CHANNELS);
+  size_t mix_samples = (size_t) (mixer->dt_avg * PLATFORM_SAMPLE_RATE) * PLATFORM_CHANNELS;
 
   sound_sample_t *buf = mixer->samples;
 
@@ -207,7 +207,7 @@ static SoundMixerMixResult sound_mixer_mix(SoundMixer *mixer, float dt)
   } else {
       float locked_seconds = locked.write_pos_lead / (float) (BACKEND_BYTES_PER_SAMPLE * mixer->sound_buffer->sample_rate);
       if (locked_seconds > mixer->dt_avg) {
-          size_t drop_samples = (locked_seconds - mixer->dt_avg) * (float) (PLATFORM_SAMPLE_RATE * PLATFORM_CHANNELS);
+          size_t drop_samples = ((size_t) (locked_seconds - mixer->dt_avg) * (float) PLATFORM_SAMPLE_RATE) * PLATFORM_CHANNELS;
           mix_samples = (drop_samples > mix_samples) ? 0 : mix_samples - drop_samples;
       }
   }
