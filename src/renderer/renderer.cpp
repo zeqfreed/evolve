@@ -202,7 +202,9 @@ inline static q8 edge_funcq(q8 x0, q8 y0, q8 x1, q8 y1)
 #define DRAW_TRIANGLE_FRAG 1
 #include "draw_triangle.cpp"
 
+#ifdef __ARCH_X86__
 #include <emmintrin.h>
+#endif
 
 static void change_draw_func(RenderingContext *ctx)
 {

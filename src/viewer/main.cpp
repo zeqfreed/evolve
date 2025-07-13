@@ -1291,6 +1291,8 @@ static void handle_input(State *state)
 #endif
 }
 
+#ifdef __ARCH_X86__
+
 static inline void clear_buffer(DrawingBuffer *buffer, Vec4f color)
 {
   uint32_t iterCount = (buffer->width * buffer->height) / 4;
@@ -1302,6 +1304,20 @@ static inline void clear_buffer(DrawingBuffer *buffer, Vec4f color)
     *p++ = value;
   }
 }
+
+#else
+
+static inline void clear_buffer(DrawingBuffer *buffer, Vec4f color)
+{
+  uint32_t iterCount = buffer->width * buffer->height;
+  Vec4f *p = (Vec4f *) buffer->pixels;
+
+  while (iterCount--) {
+    *p++ = color;
+  }
+}
+
+#endif
 
 #include <stdlib.h>
 

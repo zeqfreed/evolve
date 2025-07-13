@@ -38,6 +38,7 @@ static inline Vec4f color_rgba(uint32_t color)
   return {r, g, b, 0.0f};
 }
 
+#ifdef __ARCH_X86__
 #include <emmintrin.h>
 
 static inline void texture_clear(Texture *texture, Vec4f color)
@@ -57,3 +58,19 @@ static inline void texture_clear(Texture *texture, Vec4f color)
     p += 4;
   }
 }
+
+#else
+
+static inline void texture_clear(Texture *texture, Vec4f color)
+{
+  ASSERT(texture != NULL);
+
+  uint32_t iterCount = texture->width * texture->height;
+  Vec4f *p = texture->pixels;
+
+  while (iterCount--) {
+    *p++ = color;
+  }
+}
+
+#endif

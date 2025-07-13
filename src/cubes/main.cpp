@@ -375,6 +375,8 @@ static void update_camera(State *state, float dt)
   state->fov = CLAMP(state->fov, 3.0f, 170.0f);
 }
 
+#ifdef __ARCH_X86__
+
 static inline void clear_buffer(DrawingBuffer *buffer, Vec4f color)
 {
   uint32_t iterCount = (buffer->width * buffer->height) / 4;
@@ -386,6 +388,20 @@ static inline void clear_buffer(DrawingBuffer *buffer, Vec4f color)
     *p++ = value;
   }
 }
+
+#else
+
+static inline void clear_buffer(DrawingBuffer *buffer, Vec4f color)
+{
+  uint32_t iterCount = buffer->width * buffer->height;
+  Vec4f *p = (Vec4f *) buffer->pixels;
+
+  while (iterCount--) {
+    *p++ = color;
+  }
+}
+
+#endif
 
 C_LINKAGE EXPORT void draw_frame(GlobalState *global_state, DrawingBuffer *drawing_buffer, float dt)
 {

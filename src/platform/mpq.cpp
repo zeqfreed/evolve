@@ -327,7 +327,7 @@ MPQFile mpq_load_file(MPQRegistry *registry, char *name)
   }
 
   if (matchedArchive == NULL || matchedEntry == NULL) {
-    printf("[ERROR] No archive contained %s\n", name);
+    printf("[WARN] No archive contained %s\n", name);
     return result;
   }
 

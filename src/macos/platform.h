@@ -17,4 +17,11 @@ typedef MacosDirectoryListingEntry DirectoryListingEntry;
 typedef MPQFile LoadedAsset;
 typedef MPQFileId AssetId;
 
+typedef struct SoundBuffer {
+  uint32_t channels;
+  uint32_t sample_rate;
+  uint32_t length;
+  void *_private;
+} SoundBuffer;
+
 #define ASSET_IDS_EQUAL(A, B) ((A.hash == B.hash) && (A.check1 == B.check1) && (A.check2 == B.check2))

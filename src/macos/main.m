@@ -424,7 +424,7 @@ int main(int argc, char *argv[])
 
   srand(123);
 
-  void *framePixelData = calloc(WIDTH*HEIGHT, 4); // width * height * RGBA
+  void *framePixelData = calloc(WIDTH*HEIGHT, sizeof(float) * 4); // width * height * RGBA
 
   glActiveTexture(GL_TEXTURE0);
   glEnable(GL_TEXTURE_2D);

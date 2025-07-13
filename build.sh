@@ -8,10 +8,16 @@ CC="g++ -std=c++11"
 OC="g++"
 WFLAGS="-Wall -Wno-missing-braces -Wno-unused-variable -Wno-unused-function"
 #CFLAGS="-c ${FLAGS} ${WFLAGS} -g -gmodules -O0 -DMACOSX -Isrc -DDEBUG -DPLATFORM_MACOS"
-CFLAGS="-c ${FLAGS} ${WFLAGS} -O2 -mssse3 -mtune=core2 -march=native -fomit-frame-pointer -DPLATFORM_MACOS -DMACOSX -Isrc"
+#CFLAGS="-c ${FLAGS} ${WFLAGS} -O2 -mssse3 -mtune=core2 -march=native -fomit-frame-pointer -DPLATFORM_MACOS -DMACOSX -Isrc"
+CFLAGS="-c ${FLAGS} ${WFLAGS} -O3 -march=native -DPLATFORM_MACOS -DMACOSX -Isrc"
+#CFLAGS="-c ${FLAGS} ${WFLAGS} -g -fsanitize=address -fsanitize-address-use-after-scope -fno-optimize-sibling-calls -fno-omit-frame-pointer -march=native -DPLATFORM_MACOS -DMACOSX -Isrc"
+#EXTRA_FLAGS="-fsanitize=address"
 LIBS="-framework Cocoa -framework OpenGL"
 
 exitcode=0
+
+export SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
+export LIBRARY_PATH="$LIBRARY_PATH:$SDKROOT/usr/lib"
 
 function prepare() {
   if [ ! -d $OBJDIR ]; then
@@ -34,7 +40,7 @@ function build_viewer() {
   exitcode=$?
 
   if [ $exitcode -eq 0 ]; then
-    libtool -macosx_version_min 10.11 -dynamic $OBJDIR/viewer.o -lstdc++ -lSystem -o $OBJDIR/viewer.dylib
+    $CC -dynamiclib $OBJDIR/viewer.o $EXTRA_FLAGS -lstdc++ -lSystem -o $OBJDIR/viewer.dylib
     exitcode=$?
     cp $OBJDIR/viewer.dylib $BINDIR/viewer.dylib
   fi
@@ -47,9 +53,23 @@ function build_cubes() {
   exitcode=$?
 
   if [ $exitcode -eq 0 ]; then
-    libtool -macosx_version_min 10.11 -dynamic $OBJDIR/cubes.o -lstdc++ -lSystem -o $OBJDIR/cubes.dylib
+    $CC -dynamiclib $OBJDIR/cubes.o $EXTRA_FLAGS -lstdc++ -lSystem -o $OBJDIR/cubes.dylib
     exitcode=$?
     cp $OBJDIR/cubes.dylib $BINDIR/cubes.dylib
+  fi
+}
+
+function build_sound() {
+  #OBJDIR="$OBJDIR/apps/sound"
+  prepare
+
+  $CC src/apps/sound/main.cpp $CFLAGS -o $OBJDIR/main.o
+  exitcode=$?
+
+  if [ $exitcode -eq 0 ]; then
+    $CC -dynamiclib $OBJDIR/cubes.o $EXTRA_FLAGS -lstdc++ -lSystem -o $OBJDIR/sound.dylib
+    exitcode=$?
+    cp $OBJDIR/sound.dylib $BINDIR/sound.dylib
   fi
 }
 
@@ -61,7 +81,7 @@ function build_exe() {
 
   $OC src/macos/main.m $CFLAGS -o $OBJDIR/main.o
   $CC src/macos/platform.cpp $CFLAGS -o $OBJDIR/platform.o
-  $CC -o $BINDIR/$EXE $OBJS $LIBS
+  $CC -o $BINDIR/$EXE $OBJS $LIBS $EXTRA_FLAGS
 
   exitcode=$?
 }
@@ -120,6 +140,7 @@ case "$1" in
   "cubes") build_targets "cubes exe";;
   "dbcdump") build_targets "dbcdump";;
   "mkfont") build_targets "mkfont";;
+  "sound") build_targets "sound exe";;
   *) echo "Unknown target: $1";;
 esac
 
