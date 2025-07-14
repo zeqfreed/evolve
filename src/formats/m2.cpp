@@ -452,7 +452,9 @@ M2Model *m2_load(MemoryAllocator *allocator, void *bytes, size_t size)
     model->keybones[bli] = keybones[bli];
   }
 
-  printf("Head bone: %d\n", model->keybones[M2_KEYBONE_ROOT]);
+  if (model->keybonesCount > M2_KEYBONE_ROOT) {
+    printf("Head bone: %d\n", model->keybones[M2_KEYBONE_ROOT]);
+  }
 
   printf("att size: %zu\n", sizeof(M2Attachment));
   model->attachmentsCount = header->attachmentsCount;
@@ -495,14 +497,6 @@ inline void m2_anim_get_frame(ModelAnimationData *data, ModelAnimationRange rang
     frame = range.start + globalFrame % (range.end - range.start);
   }
 
-  uint32_t tsMax = data->timestamps[range.end];
-  if (frame > tsMax) {
-    *idx0 = range.end;
-    *idx1 = range.end;
-    *t = 1;
-    return;
-  }
-
   for (int i = range.start; i < range.end; i++) {
     uint32_t ts0 = data->timestamps[i];
     uint32_t ts1 = data->timestamps[i + 1];
@@ -539,7 +533,7 @@ void m2_calc_bone(M2Model *model, ModelBone *bone, uint32_t animId, uint32_t fra
   if (bone->translations.isGlobal) {
     trRange = bone->translations.animationRanges[0];
     translate = true;
-  } else if (animId < bone->translations.animationsCount) {
+  } else if (animId >= 0 && animId < bone->translations.animationsCount) {
     trRange = bone->translations.animationRanges[animId];
     translate = bone->translations.keyframesCount > 0;
   }
@@ -547,7 +541,7 @@ void m2_calc_bone(M2Model *model, ModelBone *bone, uint32_t animId, uint32_t fra
   if (bone->rotations.isGlobal) {
     rotRange = bone->rotations.animationRanges[0];
     rotate = true;
-  } else if (animId < bone->rotations.animationsCount) {
+  } else if (animId >= 0 && animId < bone->rotations.animationsCount) {
     rotRange = bone->rotations.animationRanges[animId];
     rotate = bone->rotations.keyframesCount > 0;
   }
@@ -555,7 +549,7 @@ void m2_calc_bone(M2Model *model, ModelBone *bone, uint32_t animId, uint32_t fra
   if (bone->scalings.isGlobal) {
     scaleRange = bone->scalings.animationRanges[0];
     scale = true;
-  } else if (animId < bone->scalings.animationsCount) {
+  } else if (animId >= 0 && animId < bone->scalings.animationsCount) {
     scaleRange = bone->scalings.animationRanges[animId];
     scale = bone->scalings.keyframesCount > 0;
   }

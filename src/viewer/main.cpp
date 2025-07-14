@@ -197,17 +197,24 @@ FRAGMENT_FUNC(fragment_model)
   Vec4f texel4;
   if (f->texture_mapping) {
     if (f->bilinear_filtering) {
-      Vec3f muv;
-      muv.x = uv.x * texture->width;
-      muv.y = uv.y * texture->height;
+      float uvx = uv.x > 0.0f ? uv.x : 1.0f - uv.x;
+      float uvy = uv.y > 0.0f ? uv.y : 1.0f - uv.y;
 
-      int tx0 = (int)(muv.x) & (texture->width - 1);
-      int ty0 = (int)(muv.y) & (texture->height - 1);
-      int tx1 = ((int)(muv.x + 1)) & (texture->width - 1);
-      int ty1 = ((int)(muv.y + 1)) & (texture->height - 1);
+      // UV coordinates of the subpixel center
+      float cuvx = (uvx + 0.5f / (float) texture->width) * (float) texture->width;
+      float cuvy = (uvy + 0.5f / (float) texture->height) * (float) texture->height;
 
-      float dx = muv.x - tx0;
-      float dy = muv.y - ty0;
+      // Distance of the subpixel center relative to the top-left pixel corner for lerping
+      float dx = cuvx - (int) cuvx;
+      float dy = cuvy - (int) cuvy;
+
+      // Integer texture coorinates of the four texels we will lerp between
+      int tx0 = (int)(cuvx) & (texture->width - 1);
+      int ty0 = (int)(cuvy) & (texture->height - 1);
+      int tx1 = ((int)(cuvx) + 1) & (texture->width - 1);
+      int ty1 = ((int)(cuvy) + 1) & (texture->height - 1);
+
+      // Fetch and lerp the values of the four texels
       Vec4f ta = TEXEL4F(texture, tx0, ty0);
       Vec4f tb = TEXEL4F(texture, tx1, ty0);
       Vec4f tc = TEXEL4F(texture, tx0, ty1);
@@ -504,6 +511,7 @@ static inline void render_m2_pass(State *state, RenderingContext *ctx, M2Model *
 
   uint32_t texture_index = model->textureLookups[pass->textureId];
   shader_data.texture = model->textures[texture_index].texture;
+  ASSERT(shader_data.texture != NULL);
 
   uint32_t faceStart = submesh->facesStart;
   uint32_t faceEnd = faceStart + submesh->facesCount;
@@ -655,6 +663,7 @@ static void render_debug_texture(State *state, RenderingContext *ctx, Texture *t
   shader_data.clampu = texture->width - 1;
   shader_data.clampv = texture->height - 1;
   shader_data.texture = texture;
+  ASSERT(shader_data.texture != NULL);
 
   shader_data.uv0 = texture_coords[0];
   shader_data.duv[0] = texture_coords[1] - shader_data.uv0;
@@ -692,14 +701,14 @@ static void animate_model(State *state)
 
   if (state->creature->type == DCT_CHARACTER) {
     if (state->lower_anim_enabled && (state->upperAnim.id != state->lowerAnim.id)) {
-      m2_calc_bones(model, &state->core_boneset, state->lowerAnim.id, state->lowerAnim.currentFrame, 0);
-      m2_calc_bones(model, &state->upper_boneset, state->upperAnim.id, state->upperAnim.currentFrame, 0);
-      m2_calc_bones(model, NULL, state->lowerAnim.id, state->lowerAnim.currentFrame, 0);
+      m2_calc_bones(model, &state->core_boneset, state->lowerAnim.id, state->lowerAnim.currentFrame, state->currentGlobalFrame);
+      m2_calc_bones(model, &state->upper_boneset, state->upperAnim.id, state->upperAnim.currentFrame, state->currentGlobalFrame);
+      m2_calc_bones(model, NULL, state->lowerAnim.id, state->lowerAnim.currentFrame, state->currentGlobalFrame);
     } else {
-      m2_calc_bones(model, NULL, state->upperAnim.id, state->upperAnim.currentFrame, 0);
+      m2_calc_bones(model, NULL, state->upperAnim.id, state->upperAnim.currentFrame, state->currentGlobalFrame);
     }
   } else {
-    m2_calc_bones(model, NULL, state->upperAnim.id, state->upperAnim.currentFrame, 0);
+    m2_calc_bones(model, NULL, state->upperAnim.id, state->upperAnim.currentFrame, state->currentGlobalFrame);
   }
 
   m2_animate_vertices(model);

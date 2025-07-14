@@ -578,6 +578,7 @@ static M2Model *_dresser_load_item(Dresser *dresser, DresserEquipmentItemSlot sl
 
   asset = asset_loader_get_texture(dresser->loader, (char *) "World/Scale/1_Null.blp");
   Texture *placeholder = asset->texture; // TODO: Generate procedurally
+  ASSERT(placeholder->pixels != NULL);
 
   for (size_t i = 0; i < model->texturesCount; i++) {
     printf("Item texture #%zu: type %u name %s\n", i, model->textures[i].type, model->textures[i].name);
@@ -757,6 +758,8 @@ static void _dresser_apply_character_geosets(Dresser *dresser, DresserCharacter 
         break;
       }
     }
+  } else {
+    printf("[ERROR] Failed to load model hair\n");
   }
 
   asset = asset_loader_get_dbc(dresser->loader, (char *) "DBFilesClient/CharacterFacialHairStyles.dbc");
@@ -771,6 +774,8 @@ static void _dresser_apply_character_geosets(Dresser *dresser, DresserCharacter 
         break;
       }
     }
+  } else {
+    printf("[ERROR] Failed to load model facial\n");
   }
 
   uint32_t hide_geosets[5][2] = {
@@ -795,6 +800,8 @@ static void _dresser_apply_character_geosets(Dresser *dresser, DresserCharacter 
         }
       }
     }
+  } else {
+    printf("[ERROR] Failed to load model helm\n");
   }
 
   printf("Head geosets (after helm): %u %u %u %u\n", geosets[0], geosets[1], geosets[2], geosets[3]);
@@ -854,7 +861,7 @@ static void dresser_set_character_equipment(Dresser *dresser, DresserCharacter *
 
     DBCItemDisplayInfoRecord *rec = (DBCItemDisplayInfoRecord *) dbc_get_record(dbc, equipment->slots[i].display_id);
     if (rec == NULL) {
-      printf("Equipment with display_id %u not found\n", equipment->slots[i].display_id);
+      printf("[ERROR] Equipment with display_id %u not found\n", equipment->slots[i].display_id);
       continue;
     }
 
@@ -1003,11 +1010,13 @@ static char *_dresser_get_creature_model_name(Dresser *dresser, uint32_t model)
 {
   Asset *asset = asset_loader_get_dbc(dresser->loader, (char *) "DBFilesClient/CreatureModelData.dbc");
   if (asset == NULL) {
+    printf("[ERROR] Failed to load creature model data\n");
     return NULL;
   }
 
   DBCCreatureModelDataRecord *rec = (DBCCreatureModelDataRecord *) dbc_get_record(asset->dbc, model);
   if (rec == NULL) {
+    printf("[ERROR] Failed to load creature model data record\n");
     return NULL;
   }
 
@@ -1059,17 +1068,20 @@ static DresserCharacter *dresser_load_character(Dresser *dresser, uint32_t race,
 
   Asset *asset = asset_loader_get_dbc(dresser->loader, (char *) "DBFilesClient/CreatureDisplayInfo.dbc");
   if (asset == NULL) {
+    printf("[ERROR] Failed to load creature display info\n");
     return result;
   }
 
   DBCCreatureDisplayInfoRecord *display_rec = (DBCCreatureDisplayInfoRecord *) dbc_get_record(asset->dbc, display_id);
   char *model_name = _dresser_get_creature_model_name(dresser, display_rec->model);
   if (model_name == NULL || *model_name == '\0') {
+    printf("[ERROR] Failed to load creature display info record\n");
     return result;
   }
 
   asset = asset_loader_get_model(dresser->loader, (char *) model_name);
   if (asset == NULL) {
+    printf("[ERROR] Failed to load creature model\n");
     return NULL;
   }
 
@@ -1089,17 +1101,20 @@ static DresserCreatureBase *dresser_load_creature(Dresser *dresser, uint32_t id)
 
   Asset *asset = asset_loader_get_dbc(dresser->loader, (char *) "DBFilesClient/CreatureDisplayInfo.dbc");
   if (asset == NULL) {
+    printf("[ERROR] Failed to load creature display info\n");
     return result;
   }
 
   DBCFile *display_dbc = asset->dbc;
   DBCCreatureDisplayInfoRecord *display_rec = (DBCCreatureDisplayInfoRecord *) dbc_get_record(asset->dbc, id);
   if (display_rec == NULL) {
+    printf("[ERROR] Failed to load creature display info record\n");
     return result;
   }
 
   asset = asset_loader_get_dbc(dresser->loader, (char *) "DBFilesClient/CreatureDisplayInfoExtra.dbc");
   if (asset == NULL) {
+    printf("[ERROR] Failed to load creature display info extra\n");
     return result;
   }
 
